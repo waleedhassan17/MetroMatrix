@@ -19,6 +19,7 @@ import { SigninDto } from './dto/signin.dto';
 import { isRoleAllowedOnPortal, wrongPortalMessage } from './signin-portal';
 import { TokenPair, TokenService } from './token.service';
 import { AccountViewService } from './account-view.service';
+import { EmailVerificationService } from './email-verification.service';
 import { AccountView, AuthResult, TotpChallengeResult } from './auth-result';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password.';
@@ -42,6 +43,7 @@ export class AuthService {
     private readonly users: UsersService,
     private readonly tokens: TokenService,
     private readonly accounts: AccountViewService,
+    private readonly emailVerification: EmailVerificationService,
     private readonly audit: OperationalAuditService,
     config: ConfigService,
   ) {
@@ -71,6 +73,7 @@ export class AuthService {
     }
 
     const tokens = await this.tokens.startSession(user, client);
+    await this.emailVerification.issue(user);
     await this.audit.record({
       actorUserId: user.id,
       action: 'auth.signup',
@@ -182,6 +185,18 @@ export class AuthService {
   async me(userId: string): Promise<AccountView> {
     const user = await this.users.getByIdOrFail(userId);
     return this.accounts.view(user);
+  }
+
+  // ── Email verification ────────────────────────────────────────────────────
+
+  async verifyEmail(userId: string, otp: string): Promise<AccountView> {
+    const user = await this.users.getByIdOrFail(userId);
+    return this.accounts.view(await this.emailVerification.verify(user, otp));
+  }
+
+  async resendVerification(userId: string) {
+    const user = await this.users.getByIdOrFail(userId);
+    return this.emailVerification.resend(user);
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────

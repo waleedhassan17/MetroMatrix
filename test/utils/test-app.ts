@@ -4,6 +4,8 @@ import request from 'supertest';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../src/app.module';
 import { configureApp } from '../../src/app.setup';
+import { MailService } from '../../src/modules/mail/mail.service';
+import { CapturingMailService } from './outbox';
 
 export interface TestApp {
   app: INestApplication;
@@ -28,7 +30,10 @@ export async function createTestApp(
   let builder = Test.createTestingModule({
     imports: [AppModule],
     controllers: opts.controllers ?? [],
-  });
+  })
+    // Emails land in the in-memory outbox (test/utils/outbox.ts).
+    .overrideProvider(MailService)
+    .useClass(CapturingMailService);
   if (opts.override) builder = opts.override(builder);
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ logger: false });

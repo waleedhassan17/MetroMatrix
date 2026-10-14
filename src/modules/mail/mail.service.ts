@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, Transporter } from 'nodemailer';
+import { emailTemplates } from './mail.templates';
 
 export interface RenderedEmail {
   subject: string;
@@ -44,6 +45,60 @@ export class MailService implements OnModuleInit {
     });
     this.logger.log(
       `SMTP transport ready (${host}:${this.config.get<number>('mail.port')})`,
+    );
+  }
+
+  // ── High-level senders ──────────────────────────────────────────────────
+
+  sendVerificationOtp(to: string, name: string | null, otp: string) {
+    const ttl = this.config.get<number>('mail.otpTtlMinutes', 10);
+    return this.send(to, emailTemplates.verifyEmail(name, otp, ttl));
+  }
+
+  sendPasswordResetOtp(to: string, name: string | null, otp: string) {
+    const ttl = this.config.get<number>('mail.otpTtlMinutes', 10);
+    return this.send(to, emailTemplates.resetPassword(name, otp, ttl));
+  }
+
+  sendBusinessApproved(
+    to: string,
+    name: string | null,
+    businessName: string,
+    opts: { reinstated?: boolean } = {},
+  ) {
+    return this.send(
+      to,
+      emailTemplates.businessApproved(name, businessName, opts.reinstated),
+    );
+  }
+
+  sendBusinessRejected(
+    to: string,
+    name: string | null,
+    businessName: string,
+    reason: string,
+    documentNotes: { label: string; note: string }[] = [],
+  ) {
+    return this.send(
+      to,
+      emailTemplates.businessRejected(
+        name,
+        businessName,
+        reason,
+        documentNotes,
+      ),
+    );
+  }
+
+  sendBusinessSuspended(
+    to: string,
+    name: string | null,
+    businessName: string,
+    reason: string,
+  ) {
+    return this.send(
+      to,
+      emailTemplates.businessSuspended(name, businessName, reason),
     );
   }
 

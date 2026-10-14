@@ -10,6 +10,8 @@ import { AccountViewService } from './account-view.service';
 import { AuthMaintenanceService } from './auth-maintenance.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RevokedAccessToken } from './entities/revoked-access-token.entity';
+import { EmailVerificationOtp } from './entities/email-verification-otp.entity';
+import { EmailVerificationService } from './email-verification.service';
 import { IdempotencyRecord } from '../../common/interceptors/idempotency-record.entity';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -21,6 +23,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TypeOrmModule.forFeature([
       RefreshToken,
       RevokedAccessToken,
+      EmailVerificationOtp,
       IdempotencyRecord,
     ]),
     JwtModule.registerAsync({
@@ -37,6 +40,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AuthService,
     TokenService,
     AccountViewService,
+    EmailVerificationService,
     AuthMaintenanceService,
     JwtStrategy,
   ],

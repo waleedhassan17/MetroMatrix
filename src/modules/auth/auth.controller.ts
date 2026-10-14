@@ -4,6 +4,7 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { RefreshTokenDto, SigninDto } from './dto/signin.dto';
+import { VerifyEmailDto } from './dto/otp.dto';
 import { PublicRoute } from '../../common/decorators/public.decorator';
 import {
   AuthenticatedUser,
@@ -71,6 +72,35 @@ export class AuthController {
   })
   signout(@Headers('authorization') authorization?: string) {
     return this.auth.signoutByToken(authorization);
+  }
+
+  // ── Email verification (bearer: signup already returned a session) ───────
+
+  @Post('verify-email')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 15 * MINUTE } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Confirm the email address with the 6-digit code. Returns { user, business }.',
+  })
+  verifyEmail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyEmailDto,
+  ) {
+    return this.auth.verifyEmail(user.id, dto.otp);
+  }
+
+  @Post('resend-verification')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: HOUR } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Email a fresh verification code. 60 s cooldown (429 RESEND_COOLDOWN).',
+  })
+  resendVerification(@CurrentUser() user: AuthenticatedUser) {
+    return this.auth.resendVerification(user.id);
   }
 
   @Get('me')
