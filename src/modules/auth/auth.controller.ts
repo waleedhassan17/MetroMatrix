@@ -26,6 +26,7 @@ import { PasswordResetService } from './password-reset.service';
 import { AccountService } from './account.service';
 import { GoogleAuthService } from './google-auth.service';
 import { GoogleSigninDto } from './dto/google.dto';
+import { AdminTotpDto } from './dto/totp.dto';
 import { PublicRoute } from '../../common/decorators/public.decorator';
 import {
   AuthenticatedUser,
@@ -70,6 +71,18 @@ export class AuthController {
   })
   signin(@Body() dto: SigninDto, @Client() client: ClientInfo) {
     return this.auth.signin(dto, client);
+  }
+
+  @Post('admin/totp')
+  @PublicRoute()
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: MINUTE } })
+  @ApiOperation({
+    summary:
+      'Admin sign-in step 2: { challengeToken, code } or { challengeToken, recoveryCode } → AuthResult.',
+  })
+  adminTotp(@Body() dto: AdminTotpDto, @Client() client: ClientInfo) {
+    return this.auth.adminTotp(dto, client);
   }
 
   @Post('google')

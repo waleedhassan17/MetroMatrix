@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -18,6 +19,9 @@ import { TokenPair, TokenService } from './token.service';
 import { AccountViewService } from './account-view.service';
 import { EmailVerificationService } from './email-verification.service';
 import { PasswordHasher } from './password-hasher';
+import { TotpService } from './totp.service';
+import { AdminTotpDto } from './dto/totp.dto';
+import { isAdminRole } from '../../types';
 import { AccountView, AuthResult, TotpChallengeResult } from './auth-result';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password.';
@@ -41,6 +45,7 @@ export class AuthService {
     private readonly emailVerification: EmailVerificationService,
     private readonly audit: OperationalAuditService,
     private readonly hasher: PasswordHasher,
+    private readonly totp: TotpService,
   ) {}
 
   // ── Sign-up / sign-in ─────────────────────────────────────────────────────
@@ -128,6 +133,37 @@ export class AuthService {
       portal: dto.portal,
       method: 'password',
     });
+  }
+
+  /**
+   * Admin sign-in step 2: the challenge from step 1 plus a TOTP code (or a
+   * recovery code). The challenge is single-use.
+   */
+  async adminTotp(dto: AdminTotpDto, client: ClientInfo): Promise<AuthResult> {
+    const expired = () =>
+      new UnauthorizedException({
+        code: ErrorCode.UNAUTHORIZED,
+        message:
+          'This sign-in has expired. Enter your email and password again.',
+      });
+    const challenge = this.tokens.verifyChallenge(dto.challengeToken);
+    if (!challenge?.exp || (await this.tokens.isRevoked(challenge.jti))) {
+      throw expired();
+    }
+    const user = await this.users.findById(challenge.sub);
+    if (!user || user.status !== 'active' || !isAdminRole(user.role)) {
+      throw expired();
+    }
+    if (!dto.code && !dto.recoveryCode) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_FAILED,
+        message:
+          'Enter the code from your authenticator app, or a recovery code.',
+      });
+    }
+    const method = await this.totp.verifySignin(user, dto);
+    await this.tokens.denylist(challenge.jti, user.id, challenge.exp);
+    return this.completeSignin(user, client, { portal: 'admin', method });
   }
 
   /** Issue the session for an account that has passed every check. */

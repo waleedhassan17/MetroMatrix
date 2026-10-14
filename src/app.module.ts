@@ -31,6 +31,7 @@ import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { MediaModule } from './modules/media/media.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
+import { AdminModule } from './modules/admin/admin.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -85,6 +86,7 @@ import { HealthModule } from './modules/health/health.module';
     AuthModule,
     MediaModule,
     BusinessesModule,
+    AdminModule,
     HealthModule,
   ],
   providers: [

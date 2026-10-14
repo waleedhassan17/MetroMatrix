@@ -18,6 +18,9 @@ import { PasswordHasher } from './password-hasher';
 import { AccountService } from './account.service';
 import { GoogleTokenVerifier } from './google-token-verifier';
 import { GoogleAuthService } from './google-auth.service';
+import { TotpService } from './totp.service';
+import { AdminRecoveryCode } from './entities/admin-recovery-code.entity';
+import { AdminTotpEnrolGuard } from './guards/admin-totp-enrol.guard';
 import { IdempotencyRecord } from '../../common/interceptors/idempotency-record.entity';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -31,6 +34,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       RevokedAccessToken,
       EmailVerificationOtp,
       PasswordResetOtp,
+      AdminRecoveryCode,
       IdempotencyRecord,
     ]),
     JwtModule.registerAsync({
@@ -53,6 +57,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AccountService,
     GoogleTokenVerifier,
     GoogleAuthService,
+    TotpService,
+    AdminTotpEnrolGuard,
     AuthMaintenanceService,
     JwtStrategy,
   ],
@@ -62,6 +68,9 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AccountViewService,
     AccountService,
     PasswordHasher,
+    TotpService,
+    AdminTotpEnrolGuard,
+    UsersModule,
   ],
 })
 export class AuthModule {}
