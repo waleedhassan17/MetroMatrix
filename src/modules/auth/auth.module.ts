@@ -16,6 +16,8 @@ import { PasswordResetOtp } from './entities/password-reset-otp.entity';
 import { PasswordResetService } from './password-reset.service';
 import { PasswordHasher } from './password-hasher';
 import { AccountService } from './account.service';
+import { GoogleTokenVerifier } from './google-token-verifier';
+import { GoogleAuthService } from './google-auth.service';
 import { IdempotencyRecord } from '../../common/interceptors/idempotency-record.entity';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -49,6 +51,8 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PasswordResetService,
     PasswordHasher,
     AccountService,
+    GoogleTokenVerifier,
+    GoogleAuthService,
     AuthMaintenanceService,
     JwtStrategy,
   ],

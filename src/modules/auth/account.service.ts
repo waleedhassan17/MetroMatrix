@@ -4,6 +4,7 @@ import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { TokenService } from './token.service';
 import { PasswordHasher } from './password-hasher';
+import { GoogleTokenVerifier } from './google-token-verifier';
 import { OperationalAuditService } from '../../common/audit/operational-audit.service';
 import { ErrorCode } from '../../common/errors/codes';
 import { DeleteAccountDto } from './dto/password.dto';
@@ -21,8 +22,6 @@ export type AccountDeletionHook = (
 @Injectable()
 export class AccountService {
   private readonly deletionHooks: AccountDeletionHook[] = [];
-  private googleReauth: ((idToken: string) => Promise<{ sub: string }>) | null =
-    null;
 
   constructor(
     private readonly users: UsersService,
@@ -30,15 +29,11 @@ export class AccountService {
     private readonly hasher: PasswordHasher,
     private readonly audit: OperationalAuditService,
     private readonly dataSource: DataSource,
+    private readonly google: GoogleTokenVerifier,
   ) {}
 
   onAccountDeleted(hook: AccountDeletionHook): void {
     this.deletionHooks.push(hook);
-  }
-
-  /** Set by the Google sign-in service: proves a fresh Google login. */
-  useGoogleReauth(fn: (idToken: string) => Promise<{ sub: string }>): void {
-    this.googleReauth = fn;
   }
 
   /**
@@ -136,10 +131,10 @@ export class AccountService {
       if (!ok) throw refuse('Your password is incorrect.');
       return;
     }
-    if (!dto.idToken || !this.googleReauth || !user.googleSub) {
+    if (!dto.idToken || !user.googleSub) {
       throw refuse('Sign in with Google again to confirm.');
     }
-    const google = await this.googleReauth(dto.idToken);
+    const google = await this.google.verify(dto.idToken);
     if (google.sub !== user.googleSub) {
       throw refuse('That Google account does not match this account.');
     }

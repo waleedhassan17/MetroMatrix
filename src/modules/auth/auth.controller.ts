@@ -24,6 +24,8 @@ import {
 } from './dto/password.dto';
 import { PasswordResetService } from './password-reset.service';
 import { AccountService } from './account.service';
+import { GoogleAuthService } from './google-auth.service';
+import { GoogleSigninDto } from './dto/google.dto';
 import { PublicRoute } from '../../common/decorators/public.decorator';
 import {
   AuthenticatedUser,
@@ -44,6 +46,7 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly passwordReset: PasswordResetService,
     private readonly account: AccountService,
+    private readonly google: GoogleAuthService,
   ) {}
 
   @Post('signup')
@@ -67,6 +70,18 @@ export class AuthController {
   })
   signin(@Body() dto: SigninDto, @Client() client: ClientInfo) {
     return this.auth.signin(dto, client);
+  }
+
+  @Post('google')
+  @PublicRoute()
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: MINUTE } })
+  @ApiOperation({
+    summary:
+      'Continue with Google (customer portal only). Links by Google id or verified email, or creates a verified customer.',
+  })
+  googleSignin(@Body() dto: GoogleSigninDto, @Client() client: ClientInfo) {
+    return this.google.signIn(dto.idToken, client);
   }
 
   @Post('refresh-token')
