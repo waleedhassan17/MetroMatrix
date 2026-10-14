@@ -1,10 +1,29 @@
-import { Body, Controller, Get, Headers, HttpCode, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Headers,
+  HttpCode,
+  Post,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
 import { RefreshTokenDto, SigninDto } from './dto/signin.dto';
-import { VerifyEmailDto } from './dto/otp.dto';
+import {
+  ForgotPasswordDto,
+  VerifyEmailDto,
+  VerifyResetOtpDto,
+} from './dto/otp.dto';
+import {
+  ChangePasswordDto,
+  DeleteAccountDto,
+  ResetPasswordDto,
+} from './dto/password.dto';
+import { PasswordResetService } from './password-reset.service';
+import { AccountService } from './account.service';
 import { PublicRoute } from '../../common/decorators/public.decorator';
 import {
   AuthenticatedUser,
@@ -21,7 +40,11 @@ const HOUR = 60 * MINUTE;
 @ApiTags('auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly auth: AuthService) {}
+  constructor(
+    private readonly auth: AuthService,
+    private readonly passwordReset: PasswordResetService,
+    private readonly account: AccountService,
+  ) {}
 
   @Post('signup')
   @PublicRoute()
@@ -101,6 +124,80 @@ export class AuthController {
   })
   resendVerification(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.resendVerification(user.id);
+  }
+
+  // ── Forgot password (OTP flow) ────────────────────────────────────────────
+
+  @Post('forgot-password')
+  @PublicRoute()
+  @HttpCode(200)
+  @Throttle({ default: { limit: 3, ttl: 15 * MINUTE } })
+  @ApiOperation({
+    summary:
+      'Email a password-reset code. Always 200 { delivered: true } — no account enumeration.',
+  })
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.passwordReset.forgot(dto.email);
+  }
+
+  @Post('verify-otp')
+  @PublicRoute()
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 15 * MINUTE } })
+  @ApiOperation({
+    summary: 'Exchange the reset code for a single-use { resetToken }.',
+  })
+  verifyOtp(@Body() dto: VerifyResetOtpDto) {
+    return this.passwordReset.verifyOtp(dto.email, dto.otp);
+  }
+
+  @Post('reset-password')
+  @PublicRoute()
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 15 * MINUTE } })
+  @ApiOperation({
+    summary:
+      'Set a new password with the reset token. Signs the account out everywhere.',
+  })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.passwordReset.reset(dto.resetToken, dto.password);
+  }
+
+  // ── The signed-in account ─────────────────────────────────────────────────
+
+  @Post('change-password')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 10, ttl: 15 * MINUTE } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Change the password (Google-only accounts may set a first one without currentPassword). Signs out other devices.',
+  })
+  changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.account.changePassword(
+      user.id,
+      user.sid,
+      dto.currentPassword,
+      dto.newPassword,
+    );
+  }
+
+  @Delete('account')
+  @HttpCode(200)
+  @Throttle({ default: { limit: 5, ttl: 15 * MINUTE } })
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Delete the account (password, or a fresh Google idToken). Anonymises it and revokes every session.',
+  })
+  deleteAccount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: DeleteAccountDto,
+  ) {
+    return this.account.deleteAccount(user.id, dto);
   }
 
   @Get('me')

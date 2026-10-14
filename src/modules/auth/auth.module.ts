@@ -12,6 +12,10 @@ import { RefreshToken } from './entities/refresh-token.entity';
 import { RevokedAccessToken } from './entities/revoked-access-token.entity';
 import { EmailVerificationOtp } from './entities/email-verification-otp.entity';
 import { EmailVerificationService } from './email-verification.service';
+import { PasswordResetOtp } from './entities/password-reset-otp.entity';
+import { PasswordResetService } from './password-reset.service';
+import { PasswordHasher } from './password-hasher';
+import { AccountService } from './account.service';
 import { IdempotencyRecord } from '../../common/interceptors/idempotency-record.entity';
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -24,6 +28,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       RefreshToken,
       RevokedAccessToken,
       EmailVerificationOtp,
+      PasswordResetOtp,
       IdempotencyRecord,
     ]),
     JwtModule.registerAsync({
@@ -41,9 +46,18 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TokenService,
     AccountViewService,
     EmailVerificationService,
+    PasswordResetService,
+    PasswordHasher,
+    AccountService,
     AuthMaintenanceService,
     JwtStrategy,
   ],
-  exports: [AuthService, TokenService, AccountViewService],
+  exports: [
+    AuthService,
+    TokenService,
+    AccountViewService,
+    AccountService,
+    PasswordHasher,
+  ],
 })
 export class AuthModule {}

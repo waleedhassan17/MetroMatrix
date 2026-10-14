@@ -5,9 +5,6 @@ import {
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-// bcryptjs (pure JS) as in FinMatrix: no native build step on Heroku/Alpine.
-import * as bcrypt from 'bcryptjs';
 import { QueryFailedError } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
@@ -20,6 +17,7 @@ import { isRoleAllowedOnPortal, wrongPortalMessage } from './signin-portal';
 import { TokenPair, TokenService } from './token.service';
 import { AccountViewService } from './account-view.service';
 import { EmailVerificationService } from './email-verification.service';
+import { PasswordHasher } from './password-hasher';
 import { AccountView, AuthResult, TotpChallengeResult } from './auth-result';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password.';
@@ -35,9 +33,6 @@ export function isUniqueViolation(err: unknown): boolean {
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  private readonly bcryptRounds: number;
-  /** Compared against when the email is unknown, so timing reveals nothing. */
-  private dummyHash: Promise<string> | null = null;
 
   constructor(
     private readonly users: UsersService,
@@ -45,10 +40,8 @@ export class AuthService {
     private readonly accounts: AccountViewService,
     private readonly emailVerification: EmailVerificationService,
     private readonly audit: OperationalAuditService,
-    config: ConfigService,
-  ) {
-    this.bcryptRounds = config.get<number>('app.bcryptRounds', 12);
-  }
+    private readonly hasher: PasswordHasher,
+  ) {}
 
   // ── Sign-up / sign-in ─────────────────────────────────────────────────────
 
@@ -57,7 +50,7 @@ export class AuthService {
 
     let user = this.users.createEntity({
       email: dto.email,
-      passwordHash: await this.hashPassword(dto.password),
+      passwordHash: await this.hasher.hash(dto.password),
       displayName: dto.displayName,
       phone: dto.phone ?? null,
       role: dto.role,
@@ -89,9 +82,10 @@ export class AuthService {
     client: ClientInfo,
   ): Promise<AuthResult | TotpChallengeResult> {
     const user = await this.users.findByEmail(dto.email);
-    const passwordOk = user?.passwordHash
-      ? await bcrypt.compare(dto.password, user.passwordHash)
-      : await this.burnCompare(dto.password);
+    const passwordOk = await this.hasher.verify(
+      dto.password,
+      user?.passwordHash,
+    );
     if (!user || !passwordOk) {
       throw new UnauthorizedException({
         code: ErrorCode.INVALID_CREDENTIALS,
@@ -201,20 +195,9 @@ export class AuthService {
 
   // ── helpers ───────────────────────────────────────────────────────────────
 
-  hashPassword(password: string): Promise<string> {
-    return bcrypt.hash(password, this.bcryptRounds);
-  }
-
   async result(user: User, tokens: TokenPair): Promise<AuthResult> {
     const view = await this.accounts.view(user);
     return { user: view.user, tokens, business: view.business };
-  }
-
-  /** A real bcrypt comparison that always fails — same cost as a hit. */
-  private async burnCompare(password: string): Promise<false> {
-    this.dummyHash ??= bcrypt.hash('metromatrix-timing-pad', this.bcryptRounds);
-    await bcrypt.compare(password, await this.dummyHash);
-    return false;
   }
 
   private emailExists() {

@@ -5,6 +5,7 @@ import { LessThan, Repository } from 'typeorm';
 import { TokenService } from './token.service';
 import { IdempotencyRecord } from '../../common/interceptors/idempotency-record.entity';
 import { EmailVerificationOtp } from './entities/email-verification-otp.entity';
+import { PasswordResetOtp } from './entities/password-reset-otp.entity';
 
 /**
  * Daily housekeeping for the auth tables. Every row it deletes is already
@@ -21,6 +22,8 @@ export class AuthMaintenanceService {
     private readonly idempotencyRepo: Repository<IdempotencyRecord>,
     @InjectRepository(EmailVerificationOtp)
     private readonly emailOtpRepo: Repository<EmailVerificationOtp>,
+    @InjectRepository(PasswordResetOtp)
+    private readonly resetOtpRepo: Repository<PasswordResetOtp>,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_3AM, { name: 'auth-maintenance' })
@@ -33,10 +36,14 @@ export class AuthMaintenanceService {
     const emailOtps = await this.emailOtpRepo.delete({
       createdAt: LessThan(weekAgo),
     });
+    const resetOtps = await this.resetOtpRepo.delete({
+      createdAt: LessThan(weekAgo),
+    });
     const counts = {
       ...tokens,
       idempotency: idempotency.affected ?? 0,
       emailOtps: emailOtps.affected ?? 0,
+      resetOtps: resetOtps.affected ?? 0,
     };
     this.logger.log(`Pruned ${JSON.stringify(counts)}`);
     return counts;
