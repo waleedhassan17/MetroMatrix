@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: metromatrix-postgres
+    restart: unless-stopped
+    ports:
+      # 5433 on the host: 5432 is commonly taken by another local Postgres.
+      - "${DB_PORT:-5433}:5432"
+    environment:
+      POSTGRES_DB: ${DB_NAME:-metromatrix}
+      POSTGRES_USER: ${DB_USERNAME:-metromatrix}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-metromatrix_local_pw}
+    volumes:
+      - metromatrix_pgdata:/var/lib/postgresql/data
+      # Creates the metromatrix_test database the e2e suite migrates from scratch.
+      - ./docker/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-metromatrix} -d ${DB_NAME:-metromatrix}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local SMTP catcher: point MAIL_HOST=localhost MAIL_PORT=1025 at it and read
+  # every email (OTPs included) at http://localhost:8025. Production uses Brevo.
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    container_name: metromatrix-mailpit
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+volumes:
+  metromatrix_pgdata:

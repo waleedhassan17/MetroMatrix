@@ -1,0 +1,45 @@
+{
+  "name": "MetroMatrix API",
+  "description": "NestJS backend for MetroMatrix — zero-commission community marketplace (Shopping, Healthcare, Food).",
+  "keywords": ["nestjs", "postgresql", "typeorm", "marketplace"],
+  "buildpacks": [{ "url": "heroku/nodejs" }],
+  "stack": "heroku-24",
+  "addons": ["heroku-postgresql:essential-0"],
+  "env": {
+    "NODE_ENV": { "value": "production" },
+    "API_PREFIX": { "value": "api/v1" },
+    "APP_URL": { "description": "Public HTTPS URL of the app, e.g. https://metromatrix-api.herokuapp.com" },
+    "CORS_ORIGINS": { "description": "Comma-separated browser origins (admin web). The mobile app needs none." },
+
+    "DB_SSL": { "value": "true" },
+    "DB_SSL_REJECT_UNAUTHORIZED": { "value": "false" },
+    "DB_MIGRATIONS_RUN": { "value": "false", "description": "Migrations run in the Procfile release phase; keep false." },
+    "DB_SYNCHRONIZE": { "value": "false" },
+
+    "JWT_SECRET": { "generator": "secret" },
+    "JWT_ACCESS_EXPIRES_IN": { "value": "15m" },
+    "JWT_REFRESH_EXPIRES_IN": { "value": "30d" },
+    "REFRESH_REUSE_GRACE_SECONDS": { "value": "10" },
+    "OTP_PEPPER": { "generator": "secret" },
+    "TOTP_ENC_KEY": { "description": "32 random bytes, base64. node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\"" },
+    "BCRYPT_ROUNDS": { "value": "12" },
+
+    "MAIL_HOST": { "value": "smtp-relay.brevo.com" },
+    "MAIL_PORT": { "value": "587" },
+    "MAIL_USER": { "description": "Brevo SMTP login" },
+    "MAIL_PASS": { "description": "Brevo SMTP key" },
+    "MAIL_FROM": { "value": "MetroMatrix <no-reply@metromatrix.pk>" },
+
+    "GOOGLE_CLIENT_IDS": { "description": "Web, Android and iOS OAuth client ids, comma-separated." },
+    "CLOUDINARY_CLOUD_NAME": { "description": "Cloudinary cloud name" },
+    "CLOUDINARY_API_KEY": { "description": "Cloudinary API key" },
+    "CLOUDINARY_API_SECRET": { "description": "Cloudinary API secret" },
+
+    "SENTRY_DSN": { "required": false, "description": "Error monitoring. Optional." },
+    "SWAGGER_ENABLED": { "value": "false" },
+    "LOG_LEVEL": { "value": "info" }
+  },
+  "formation": {
+    "web": { "quantity": 1, "size": "basic" }
+  }
+}
