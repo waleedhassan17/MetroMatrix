@@ -29,6 +29,8 @@ import { buildLoggerParams } from './common/logging/pino-options';
 import { MailModule } from './modules/mail/mail.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuthModule } from './modules/auth/auth.module';
+import { MediaModule } from './modules/media/media.module';
+import { BusinessesModule } from './modules/businesses/businesses.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -81,6 +83,8 @@ import { HealthModule } from './modules/health/health.module';
     TypeOrmModule.forFeature([IdempotencyRecord]),
     UsersModule,
     AuthModule,
+    MediaModule,
+    BusinessesModule,
     HealthModule,
   ],
   providers: [

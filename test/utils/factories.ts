@@ -70,3 +70,85 @@ export async function signin(
 
 export const sha256 = (s: string) =>
   createHash('sha256').update(s).digest('hex');
+
+/** A partner whose email is verified — ready to onboard. */
+export async function verifiedPartner(t: TestApp): Promise<SignedUp> {
+  const p = await signup(t, { role: 'partner' });
+  const { lastOtpFor } = await import('./outbox');
+  const res = await p.api.post('/auth/verify-email', {
+    otp: lastOtpFor(p.email),
+  });
+  if (res.status !== 200) {
+    throw new Error(`verify failed: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  return p;
+}
+
+const CLOUD = process.env.CLOUDINARY_CLOUD_NAME ?? 'metromatrix-test';
+let docSeq = 0;
+
+/** What Cloudinary would hand back for an upload signed for this user. */
+export function uploadedDocument(
+  userId: string,
+  purpose: 'business_document' | 'avatar' = 'business_document',
+) {
+  docSeq += 1;
+  const publicId = `metromatrix/test/${userId}/${purpose}/doc${docSeq}`;
+  return {
+    url: `https://res.cloudinary.com/${CLOUD}/image/upload/v1712345678/${publicId}.jpg`,
+    publicId,
+  };
+}
+
+export const DOCTOR_BUSINESS = {
+  serviceType: 'healthcare',
+  subType: 'doctor',
+  name: "Dr. Sana's Clinic",
+  phone: '042 35761234',
+  city: 'Lahore',
+  addressLine: '12-B Main Boulevard, Gulberg III',
+  lat: 31.520369,
+  lng: 74.358749,
+};
+
+/** Upload (fake) and attach each kind; returns the created document ids. */
+export async function addDocuments(p: SignedUp, kinds: string[]) {
+  const ids: string[] = [];
+  for (const kind of kinds) {
+    const res = await p.api.post('/businesses/me/documents', {
+      kind,
+      ...uploadedDocument(p.userId),
+    });
+    if (res.status !== 201) {
+      throw new Error(
+        `add ${kind} failed: ${res.status} ${JSON.stringify(res.body)}`,
+      );
+    }
+    ids.push(res.body.data.id);
+  }
+  return ids;
+}
+
+/** A doctor's business submitted with every document → pending_approval. */
+export async function submittedDoctor(t: TestApp) {
+  const p = await verifiedPartner(t);
+  const created = await p.api.post('/businesses', DOCTOR_BUSINESS);
+  if (created.status !== 201) {
+    throw new Error(
+      `create failed: ${created.status} ${JSON.stringify(created.body)}`,
+    );
+  }
+  await addDocuments(p, [
+    'cnic_front',
+    'cnic_back',
+    'pmdc_certificate',
+    'degree_certificate',
+  ]);
+  const submitted = await p.api.post('/businesses/me/submit');
+  if (submitted.status !== 200) {
+    throw new Error(
+      `submit failed: ${submitted.status} ${JSON.stringify(submitted.body)}`,
+    );
+  }
+  return { partner: p, businessId: created.body.data.id as string };
+}

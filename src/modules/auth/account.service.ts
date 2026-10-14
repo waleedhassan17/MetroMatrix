@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { User } from '../users/entities/user.entity';
+import { UserDevice } from '../users/entities/user-device.entity';
 import { UsersService } from '../users/users.service';
 import { TokenService } from './token.service';
 import { PasswordHasher } from './password-hasher';
@@ -106,6 +107,8 @@ export class AccountService {
         },
       );
       await this.tokens.revokeAllForUser(user.id, undefined, m);
+      // No more push notifications to a deleted account.
+      await m.delete(UserDevice, { userId: user.id });
       for (const hook of this.deletionHooks) await hook(m, user);
     });
 
