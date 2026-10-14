@@ -27,6 +27,8 @@ import { OperationalAuditModule } from './common/audit/operational-audit.module'
 import { buildLoggerParams } from './common/logging/pino-options';
 
 import { MailModule } from './modules/mail/mail.module';
+import { UsersModule } from './modules/users/users.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -77,6 +79,8 @@ import { HealthModule } from './modules/health/health.module';
     MailModule,
     OperationalAuditModule,
     TypeOrmModule.forFeature([IdempotencyRecord]),
+    UsersModule,
+    AuthModule,
     HealthModule,
   ],
   providers: [

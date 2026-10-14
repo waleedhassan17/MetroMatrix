@@ -90,9 +90,10 @@ Validation failures are `400 VALIDATION_FAILED` with `details.fields: { prop: st
 
 ## Auth model (see docs/API_AUTH.md for the full contract)
 
-- Access token: JWT `{ sub, role, sid, jti }`, `aud: 'access'`, 15 min. `sid` = the refresh
+- Access token: JWT `{ sub, role, sid, ver, jti }`, `aud: 'access'`, 15 min. `sid` = the refresh
   family (one per device). JwtStrategy re-reads the user every request (role, status,
-  `tokens_valid_after`) and checks the jti denylist.
+  `token_version` vs `ver`) and checks the jti denylist. Bumping `users.token_version`
+  (reset, disable, delete) kills every outstanding access token at once.
 - Refresh token: opaque random string, SHA-256 at rest, rotated on every use within its
   family; reuse outside the grace window revokes the family (`REFRESH_REUSED`).
 - Portals: `signin-portal.ts` — password first, then portal, so a stranger never learns the
