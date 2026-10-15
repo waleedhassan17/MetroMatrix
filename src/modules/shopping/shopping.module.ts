@@ -20,6 +20,22 @@ import { InventoryService } from './inventory/inventory.service';
 import { PartnerInventoryController } from './inventory/inventory.controller';
 import { CatalogService } from './catalog/catalog.service';
 import { CatalogController } from './catalog/catalog.controller';
+import { Cart } from './cart/entities/cart.entity';
+import { CartItem } from './cart/entities/cart-item.entity';
+import { WishlistItem } from './wishlist/entities/wishlist-item.entity';
+import { Coupon } from './coupons/entities/coupon.entity';
+import { CouponRedemption } from './coupons/entities/coupon-redemption.entity';
+import { CartService } from './cart/cart.service';
+import { CartController } from './cart/cart.controller';
+import { WishlistService } from './wishlist/wishlist.service';
+import { WishlistController } from './wishlist/wishlist.controller';
+import { CouponsService } from './coupons/coupons.service';
+import {
+  PartnerCouponsController,
+  StoreCouponsController,
+} from './coupons/coupons.controller';
+import { CheckoutPlanner } from './checkout/checkout-planner.service';
+import { AuthModule } from '../auth/auth.module';
 
 /**
  * MetroMatrix Shopping. Sub-domains live in their own folders (catalog,
@@ -42,7 +58,13 @@ import { CatalogController } from './catalog/catalog.controller';
       ProductImage,
       ProductVariant,
       InventoryMovement,
+      Cart,
+      CartItem,
+      WishlistItem,
+      Coupon,
+      CouponRedemption,
     ]),
+    AuthModule,
     BusinessesModule,
     MediaModule,
   ],
@@ -51,6 +73,10 @@ import { CatalogController } from './catalog/catalog.controller';
     PartnerStoreController,
     PartnerProductsController,
     PartnerInventoryController,
+    PartnerCouponsController,
+    StoreCouponsController,
+    CartController,
+    WishlistController,
   ],
   providers: [
     StoresService,
@@ -58,6 +84,10 @@ import { CatalogController } from './catalog/catalog.controller';
     ProductsService,
     InventoryService,
     CatalogService,
+    CartService,
+    WishlistService,
+    CouponsService,
+    CheckoutPlanner,
   ],
   exports: [StoresService, InventoryService],
 })

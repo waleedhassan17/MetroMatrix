@@ -1,4 +1,5 @@
 import { TestApp } from './test-app';
+import { buildPkIban } from '../../src/modules/shopping/common/payment-account.validation';
 import {
   addDocuments,
   DOCTOR_BUSINESS,
@@ -94,4 +95,79 @@ export function asset(userId: string, purpose: string) {
     url: `https://res.cloudinary.com/metromatrix-test/image/upload/v1712345678/${publicId}.jpg`,
     publicId,
   };
+}
+
+export type Partner = SignedUp & { businessId: string };
+
+const categoryIds = new Map<string, string>();
+/** A seeded category id by slug. */
+export async function categoryId(t: TestApp, slug: string): Promise<string> {
+  if (!categoryIds.size) {
+    const rows = await t.ds.query(`SELECT id, slug FROM shop_categories`);
+    rows.forEach((r: { id: string; slug: string }) =>
+      categoryIds.set(r.slug, r.id),
+    );
+  }
+  const id = categoryIds.get(slug);
+  if (!id) throw new Error(`no category ${slug}`);
+  return id;
+}
+
+/** An active product with one image; pass variants/prices to taste. */
+export async function listProduct(
+  t: TestApp,
+  p: Partner,
+  body: Record<string, unknown> & { name: string },
+): Promise<any> {
+  const res = await p.api.post('/shop/partner/products', {
+    description: 'A fixture product.',
+    categoryId: await categoryId(t, 'women-kurtas-tunics'),
+    basePrice: 1000,
+    status: 'active',
+    images: [asset(p.userId, 'product_image')],
+    ...body,
+  });
+  if (res.status !== 201) {
+    throw new Error(
+      `product failed: ${res.status} ${JSON.stringify(res.body)}`,
+    );
+  }
+  return res.body.data;
+}
+
+/** Save a delivery address for a customer; returns its id. */
+export async function addAddress(
+  c: SignedUp,
+  over: Record<string, unknown> = {},
+): Promise<string> {
+  const res = await c.api.post('/addresses', {
+    label: 'home',
+    fullName: 'Ayesha Khan',
+    phone: '0312 4890176',
+    city: 'Lahore',
+    area: 'Gulberg III',
+    line1: 'House 12, Street 4',
+    ...over,
+  });
+  if (res.status !== 201) {
+    throw new Error(
+      `address failed: ${res.status} ${JSON.stringify(res.body)}`,
+    );
+  }
+  return res.body.data.id;
+}
+
+/** The partner's store row id and slug. */
+export async function storeOf(
+  p: Partner,
+): Promise<{ id: string; slug: string }> {
+  const res = await p.api.get('/shop/partner/store');
+  return { id: res.body.data.id, slug: res.body.data.slug };
+}
+
+/** A valid PK IBAN, unique per call. */
+let ibanSeq = 0;
+export function testIban(): string {
+  ibanSeq += 1;
+  return buildPkIban('MEZN', `7${String(ibanSeq).padStart(15, '0')}`);
 }
