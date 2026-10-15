@@ -7,7 +7,7 @@ import {
   addDocuments,
 } from './utils/factories';
 import { Admin, approvedPartner, asset } from './utils/shopping';
-import { buildPkIban } from '../src/modules/shopping/common/payment-account.validation';
+import { buildPkIban } from '../src/common/payments/payment-account.validation';
 
 describe('Shopping P1: stores, payment accounts, collections (e2e)', () => {
   let t: TestApp;

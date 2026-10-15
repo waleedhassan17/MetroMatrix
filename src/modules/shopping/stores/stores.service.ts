@@ -30,7 +30,7 @@ import { onBrandColor, INK, WHITE } from '../common/contrast';
 import {
   normalizeAccountNumber,
   PaymentAccountKind,
-} from '../common/payment-account.validation';
+} from '../../../common/payments/payment-account.validation';
 
 export const MAX_ACTIVE_PAYMENT_ACCOUNTS = 4;
 const DEFAULT_BRAND_COLOR = INK;

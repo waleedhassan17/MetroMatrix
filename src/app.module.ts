@@ -37,6 +37,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ShoppingModule } from './modules/shopping/shopping.module';
+import { HealthcareModule } from './modules/healthcare/healthcare.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -97,6 +98,7 @@ import { HealthModule } from './modules/health/health.module';
     AddressesModule,
     NotificationsModule,
     ShoppingModule,
+    HealthcareModule,
     HealthModule,
   ],
   providers: [

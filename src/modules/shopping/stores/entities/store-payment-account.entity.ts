@@ -4,7 +4,7 @@ import { Store } from './store.entity';
 import {
   PAYMENT_ACCOUNT_KINDS,
   PaymentAccountKind,
-} from '../../common/payment-account.validation';
+} from '../../../../common/payments/payment-account.validation';
 
 /**
  * Where customers transfer money for a transfer order. The store's own

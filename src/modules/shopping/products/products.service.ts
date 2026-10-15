@@ -24,7 +24,7 @@ import { MediaService } from '../../media/media.service';
 import { slugify } from '../../businesses/businesses.service';
 import { ErrorCode } from '../../../common/errors/codes';
 import { paged } from '../../../common/pagination/pagination';
-import { invalidTransition } from '../common/transitions';
+import { invalidTransition } from '../../../common/state/transitions';
 import {
   LOW_STOCK_THRESHOLD,
   likeEscape,

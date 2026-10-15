@@ -6,7 +6,7 @@ import { onBrandColor } from '../../../modules/shopping/common/contrast';
 import {
   buildPkIban,
   normalizeAccountNumber,
-} from '../../../modules/shopping/common/payment-account.validation';
+} from '../../../common/payments/payment-account.validation';
 import { slugify } from '../../../modules/businesses/businesses.service';
 
 describe('shopping demo catalogue', () => {

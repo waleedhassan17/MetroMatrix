@@ -2,7 +2,7 @@ import { createTestApp, TestApp, ApiClient } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
 import { SignedUp } from './utils/factories';
 import { Admin, approvedPartner, asset, shopper } from './utils/shopping';
-import { buildPkIban } from '../src/modules/shopping/common/payment-account.validation';
+import { buildPkIban } from '../src/common/payments/payment-account.validation';
 
 type Partner = SignedUp & { businessId: string };
 

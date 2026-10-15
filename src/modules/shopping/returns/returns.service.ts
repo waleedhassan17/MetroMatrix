@@ -24,7 +24,7 @@ import { StoreOrder } from '../orders/entities/store-order.entity';
 import { StoreOrderItem } from '../orders/entities/store-order-item.entity';
 import { OrderTransitionsService } from '../orders/order-transitions.service';
 import { InventoryService } from '../inventory/inventory.service';
-import { invalidTransition } from '../common/transitions';
+import { invalidTransition } from '../../../common/state/transitions';
 import { ErrorCode } from '../../../common/errors/codes';
 import { paged } from '../../../common/pagination/pagination';
 import { MediaService } from '../../media/media.service';

@@ -1,6 +1,6 @@
 import { TestApp } from './test-app';
 import { randomUUID } from 'crypto';
-import { buildPkIban } from '../../src/modules/shopping/common/payment-account.validation';
+import { buildPkIban } from '../../src/common/payments/payment-account.validation';
 import {
   addDocuments,
   DOCTOR_BUSINESS,

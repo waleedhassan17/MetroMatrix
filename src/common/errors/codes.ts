@@ -67,6 +67,38 @@ export const ErrorCode = {
   REVIEW_EXISTS: 'REVIEW_EXISTS',
   /** Checkout must carry an Idempotency-Key header. */
   IDEMPOTENCY_KEY_REQUIRED: 'IDEMPOTENCY_KEY_REQUIRED',
+
+  // ── Chunk 3: Healthcare ───────────────────────────────────────────────────
+  // (WRONG_SERVICE, INVALID_TRANSITION, REVIEW_NOT_ALLOWED and REVIEW_EXISTS
+  // are shared with Shopping.)
+  /** The doctor exists but is not published (or not accepting bookings). */
+  DOCTOR_NOT_LISTED: 'DOCTOR_NOT_LISTED',
+  /** The requested start time is not one of the doctor's real slots. */
+  SLOT_INVALID: 'SLOT_INVALID',
+  /** Someone else took the slot (exclusion constraint); details.alternatives. */
+  SLOT_TAKEN: 'SLOT_TAKEN',
+  /** Too many upcoming appointments with the same doctor. */
+  BOOKING_LIMIT: 'BOOKING_LIMIT',
+  /** The patient already has an appointment at that time. */
+  PATIENT_OVERLAP: 'PATIENT_OVERLAP',
+  /** Two of the doctor's weekly ranges overlap (details.conflict). */
+  SCHEDULE_OVERLAP: 'SCHEDULE_OVERLAP',
+  /** Time off covers booked appointments (details.appointments). */
+  TIME_OFF_CONFLICTS: 'TIME_OFF_CONFLICTS',
+  /** A location with future bookings can't be deactivated (details.appointments). */
+  LOCATION_HAS_BOOKINGS: 'LOCATION_HAS_BOOKINGS',
+  CANCEL_CUTOFF_PASSED: 'CANCEL_CUTOFF_PASSED',
+  RESCHEDULE_NOT_ALLOWED: 'RESCHEDULE_NOT_ALLOWED',
+  /** Outside the join window, or the appointment can't be joined. */
+  VIDEO_NOT_JOINABLE: 'VIDEO_NOT_JOINABLE',
+  /** A required prepayment hasn't been confirmed. */
+  PAYMENT_REQUIRED: 'PAYMENT_REQUIRED',
+  /** Prescriptions are immutable 24 h after the visit is completed. */
+  PRESCRIPTION_LOCKED: 'PRESCRIPTION_LOCKED',
+  /** Publishing needs a complete profile (details.missing). */
+  PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
+  /** A doctor business can't be approved before its PMDC number is verified. */
+  PMDC_NOT_VERIFIED: 'PMDC_NOT_VERIFIED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

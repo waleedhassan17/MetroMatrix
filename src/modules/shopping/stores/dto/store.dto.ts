@@ -23,7 +23,7 @@ import { HEX_COLOR } from '../../common/contrast';
 import {
   PAYMENT_ACCOUNT_KINDS,
   PaymentAccountKind,
-} from '../../common/payment-account.validation';
+} from '../../../../common/payments/payment-account.validation';
 
 export class StoreSocialsDto {
   @IsOptional() @Trim() @IsString() @MaxLength(200) instagram?: string;

@@ -18,7 +18,7 @@ import { onBrandColor } from '../../../modules/shopping/common/contrast';
 import {
   buildPkIban,
   normalizeAccountNumber,
-} from '../../../modules/shopping/common/payment-account.validation';
+} from '../../../common/payments/payment-account.validation';
 import { normalizePkPhone } from '../../../common/validation/phone';
 import { PASSWORD_REGEX } from '../../../common/validation/password';
 import {

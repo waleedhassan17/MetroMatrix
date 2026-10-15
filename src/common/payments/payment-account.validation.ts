@@ -1,4 +1,4 @@
-import { isPkMobile, normalizePkPhone } from '../../../common/validation/phone';
+import { isPkMobile, normalizePkPhone } from '../validation/phone';
 
 export const PAYMENT_ACCOUNT_KINDS = [
   'raast',

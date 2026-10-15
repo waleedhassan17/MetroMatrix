@@ -1,0 +1,402 @@
+name,strength,form
+Paracetamol,500 mg,tablet
+Paracetamol,665 mg,tablet
+Paracetamol,120 mg/5 ml,syrup
+Paracetamol,250 mg/5 ml,syrup
+Paracetamol,1 g/100 ml,injection
+Ibuprofen,200 mg,tablet
+Ibuprofen,400 mg,tablet
+Ibuprofen,600 mg,tablet
+Ibuprofen,100 mg/5 ml,syrup
+Diclofenac sodium,50 mg,tablet
+Diclofenac sodium,75 mg,tablet
+Diclofenac sodium,75 mg/3 ml,injection
+Diclofenac diethylamine,1%,cream
+Mefenamic acid,250 mg,tablet
+Mefenamic acid,500 mg,tablet
+Mefenamic acid,50 mg/5 ml,syrup
+Naproxen,250 mg,tablet
+Naproxen,500 mg,tablet
+Celecoxib,200 mg,capsule
+Etoricoxib,60 mg,tablet
+Etoricoxib,90 mg,tablet
+Tramadol,50 mg,capsule
+Aspirin,75 mg,tablet
+Aspirin,300 mg,tablet
+Ketorolac,30 mg/ml,injection
+Amoxicillin,250 mg,capsule
+Amoxicillin,500 mg,capsule
+Amoxicillin,125 mg/5 ml,syrup
+Amoxicillin,250 mg/5 ml,syrup
+Amoxicillin + clavulanic acid,375 mg,tablet
+Amoxicillin + clavulanic acid,625 mg,tablet
+Amoxicillin + clavulanic acid,1 g,tablet
+Amoxicillin + clavulanic acid,156 mg/5 ml,syrup
+Amoxicillin + clavulanic acid,312 mg/5 ml,syrup
+Azithromycin,250 mg,tablet
+Azithromycin,500 mg,tablet
+Azithromycin,200 mg/5 ml,syrup
+Clarithromycin,250 mg,tablet
+Clarithromycin,500 mg,tablet
+Erythromycin,250 mg,tablet
+Erythromycin,500 mg,tablet
+Cefixime,400 mg,capsule
+Cefixime,100 mg/5 ml,syrup
+Cefuroxime,250 mg,tablet
+Cefuroxime,500 mg,tablet
+Cephalexin,250 mg,capsule
+Cephalexin,500 mg,capsule
+Cefadroxil,500 mg,capsule
+Ceftriaxone,500 mg,injection
+Ceftriaxone,1 g,injection
+Ciprofloxacin,250 mg,tablet
+Ciprofloxacin,500 mg,tablet
+Levofloxacin,250 mg,tablet
+Levofloxacin,500 mg,tablet
+Levofloxacin,750 mg,tablet
+Moxifloxacin,400 mg,tablet
+Ofloxacin,200 mg,tablet
+Doxycycline,100 mg,capsule
+Metronidazole,200 mg,tablet
+Metronidazole,400 mg,tablet
+Metronidazole,200 mg/5 ml,syrup
+Nitrofurantoin,100 mg,capsule
+Co-trimoxazole,480 mg,tablet
+Co-trimoxazole,960 mg,tablet
+Clindamycin,150 mg,capsule
+Clindamycin,300 mg,capsule
+Linezolid,600 mg,tablet
+Fosfomycin,3 g sachet,other
+Rifaximin,550 mg,tablet
+Fluconazole,50 mg,capsule
+Fluconazole,150 mg,capsule
+Itraconazole,100 mg,capsule
+Terbinafine,250 mg,tablet
+Terbinafine,1%,cream
+Clotrimazole,1%,cream
+Ketoconazole,2%,cream
+Ketoconazole,2% shampoo,other
+Miconazole,2%,cream
+Acyclovir,200 mg,tablet
+Acyclovir,400 mg,tablet
+Acyclovir,800 mg,tablet
+Acyclovir,5%,cream
+Valacyclovir,500 mg,tablet
+Valacyclovir,1 g,tablet
+Albendazole,400 mg,tablet
+Albendazole,200 mg/5 ml,syrup
+Mebendazole,100 mg,tablet
+Ivermectin,6 mg,tablet
+Ivermectin,12 mg,tablet
+Permethrin,5%,cream
+Artemether + lumefantrine,20/120 mg,tablet
+Artemether + lumefantrine,80/480 mg,tablet
+Hydroxychloroquine,200 mg,tablet
+Omeprazole,20 mg,capsule
+Omeprazole,40 mg,capsule
+Esomeprazole,20 mg,tablet
+Esomeprazole,40 mg,tablet
+Esomeprazole,40 mg,injection
+Pantoprazole,20 mg,tablet
+Pantoprazole,40 mg,tablet
+Lansoprazole,30 mg,capsule
+Rabeprazole,20 mg,tablet
+Famotidine,20 mg,tablet
+Famotidine,40 mg,tablet
+Domperidone,10 mg,tablet
+Domperidone,5 mg/5 ml,syrup
+Metoclopramide,10 mg,tablet
+Metoclopramide,10 mg/2 ml,injection
+Ondansetron,4 mg,tablet
+Ondansetron,8 mg,tablet
+Ondansetron,4 mg/2 ml,injection
+Ondansetron,4 mg/5 ml,syrup
+Loperamide,2 mg,capsule
+Oral rehydration salts,sachet,other
+Zinc sulphate,20 mg/5 ml,syrup
+Zinc sulphate,20 mg,tablet
+Lactulose,3.35 g/5 ml,syrup
+Bisacodyl,5 mg,tablet
+Ispaghula husk,3.5 g sachet,other
+Polyethylene glycol,17 g sachet,other
+Hyoscine butylbromide,10 mg,tablet
+Hyoscine butylbromide,20 mg/ml,injection
+Drotaverine,40 mg,tablet
+Drotaverine,80 mg,tablet
+Mebeverine,135 mg,tablet
+Simethicone,40 mg/0.6 ml,drops
+Magnesium hydroxide + aluminium hydroxide,suspension,syrup
+Sucralfate,1 g/5 ml,syrup
+Ursodeoxycholic acid,150 mg,tablet
+Ursodeoxycholic acid,250 mg,tablet
+Itopride,50 mg,tablet
+Probiotic (Saccharomyces boulardii),250 mg,capsule
+Amlodipine,5 mg,tablet
+Amlodipine,10 mg,tablet
+Losartan,25 mg,tablet
+Losartan,50 mg,tablet
+Losartan,100 mg,tablet
+Valsartan,80 mg,tablet
+Valsartan,160 mg,tablet
+Telmisartan,40 mg,tablet
+Telmisartan,80 mg,tablet
+Lisinopril,5 mg,tablet
+Lisinopril,10 mg,tablet
+Enalapril,5 mg,tablet
+Enalapril,10 mg,tablet
+Ramipril,2.5 mg,capsule
+Ramipril,5 mg,capsule
+Captopril,25 mg,tablet
+Bisoprolol,2.5 mg,tablet
+Bisoprolol,5 mg,tablet
+Atenolol,50 mg,tablet
+Metoprolol,25 mg,tablet
+Metoprolol,50 mg,tablet
+Propranolol,10 mg,tablet
+Propranolol,40 mg,tablet
+Carvedilol,6.25 mg,tablet
+Carvedilol,12.5 mg,tablet
+Hydrochlorothiazide,25 mg,tablet
+Furosemide,40 mg,tablet
+Furosemide,20 mg/2 ml,injection
+Spironolactone,25 mg,tablet
+Spironolactone,100 mg,tablet
+Indapamide,1.5 mg,tablet
+Atorvastatin,10 mg,tablet
+Atorvastatin,20 mg,tablet
+Atorvastatin,40 mg,tablet
+Rosuvastatin,5 mg,tablet
+Rosuvastatin,10 mg,tablet
+Rosuvastatin,20 mg,tablet
+Simvastatin,20 mg,tablet
+Ezetimibe,10 mg,tablet
+Clopidogrel,75 mg,tablet
+Warfarin,1 mg,tablet
+Warfarin,5 mg,tablet
+Rivaroxaban,10 mg,tablet
+Rivaroxaban,20 mg,tablet
+Isosorbide mononitrate,20 mg,tablet
+Isosorbide mononitrate,60 mg,tablet
+Glyceryl trinitrate,0.5 mg sublingual,tablet
+Digoxin,0.25 mg,tablet
+Trimetazidine,35 mg,tablet
+Metformin,500 mg,tablet
+Metformin,850 mg,tablet
+Metformin,1 g,tablet
+Glimepiride,1 mg,tablet
+Glimepiride,2 mg,tablet
+Glimepiride,3 mg,tablet
+Gliclazide,30 mg,tablet
+Gliclazide,80 mg,tablet
+Sitagliptin,50 mg,tablet
+Sitagliptin,100 mg,tablet
+Sitagliptin + metformin,50/500 mg,tablet
+Sitagliptin + metformin,50/1000 mg,tablet
+Vildagliptin,50 mg,tablet
+Linagliptin,5 mg,tablet
+Empagliflozin,10 mg,tablet
+Empagliflozin,25 mg,tablet
+Dapagliflozin,10 mg,tablet
+Pioglitazone,15 mg,tablet
+Pioglitazone,30 mg,tablet
+Insulin glargine,100 IU/ml,injection
+Insulin regular,100 IU/ml,injection
+Insulin NPH,100 IU/ml,injection
+Insulin 70/30,100 IU/ml,injection
+Levothyroxine,25 mcg,tablet
+Levothyroxine,50 mcg,tablet
+Levothyroxine,100 mcg,tablet
+Carbimazole,5 mg,tablet
+Allopurinol,100 mg,tablet
+Allopurinol,300 mg,tablet
+Febuxostat,40 mg,tablet
+Febuxostat,80 mg,tablet
+Colchicine,0.5 mg,tablet
+Salbutamol,100 mcg inhaler,other
+Salbutamol,2 mg/5 ml,syrup
+Salbutamol,2.5 mg/2.5 ml nebuliser,other
+Budesonide,200 mcg inhaler,other
+Fluticasone + salmeterol,250/50 mcg inhaler,other
+Ipratropium,nebuliser solution,other
+Montelukast,10 mg,tablet
+Montelukast,4 mg chewable,tablet
+Montelukast,5 mg chewable,tablet
+Theophylline,200 mg,tablet
+Cetirizine,10 mg,tablet
+Cetirizine,5 mg/5 ml,syrup
+Levocetirizine,5 mg,tablet
+Loratadine,10 mg,tablet
+Fexofenadine,120 mg,tablet
+Fexofenadine,180 mg,tablet
+Desloratadine,5 mg,tablet
+Chlorpheniramine,4 mg,tablet
+Chlorpheniramine,2 mg/5 ml,syrup
+Hydroxyzine,10 mg,tablet
+Hydroxyzine,25 mg,tablet
+Dextromethorphan,15 mg/5 ml,syrup
+Guaifenesin,100 mg/5 ml,syrup
+Ambroxol,15 mg/5 ml,syrup
+Ambroxol,30 mg/5 ml,syrup
+Bromhexine,4 mg/5 ml,syrup
+Fluticasone,nasal spray 50 mcg,drops
+Mometasone,nasal spray 50 mcg,drops
+Xylometazoline,0.05%,drops
+Xylometazoline,0.1%,drops
+Sodium chloride,0.65% nasal,drops
+Prednisolone,5 mg,tablet
+Prednisolone,15 mg/5 ml,syrup
+Dexamethasone,0.5 mg,tablet
+Dexamethasone,4 mg/ml,injection
+Hydrocortisone,100 mg,injection
+Methylprednisolone,4 mg,tablet
+Methylprednisolone,16 mg,tablet
+Sertraline,50 mg,tablet
+Sertraline,100 mg,tablet
+Escitalopram,5 mg,tablet
+Escitalopram,10 mg,tablet
+Escitalopram,20 mg,tablet
+Fluoxetine,20 mg,capsule
+Paroxetine,20 mg,tablet
+Citalopram,20 mg,tablet
+Venlafaxine,75 mg,capsule
+Duloxetine,30 mg,capsule
+Duloxetine,60 mg,capsule
+Mirtazapine,15 mg,tablet
+Mirtazapine,30 mg,tablet
+Amitriptyline,10 mg,tablet
+Amitriptyline,25 mg,tablet
+Alprazolam,0.25 mg,tablet
+Alprazolam,0.5 mg,tablet
+Clonazepam,0.5 mg,tablet
+Clonazepam,2 mg,tablet
+Diazepam,5 mg,tablet
+Lorazepam,1 mg,tablet
+Bromazepam,3 mg,tablet
+Quetiapine,25 mg,tablet
+Quetiapine,100 mg,tablet
+Olanzapine,5 mg,tablet
+Olanzapine,10 mg,tablet
+Risperidone,1 mg,tablet
+Risperidone,2 mg,tablet
+Aripiprazole,10 mg,tablet
+Sodium valproate,200 mg,tablet
+Sodium valproate,500 mg,tablet
+Sodium valproate,200 mg/5 ml,syrup
+Levetiracetam,250 mg,tablet
+Levetiracetam,500 mg,tablet
+Carbamazepine,200 mg,tablet
+Lamotrigine,25 mg,tablet
+Lamotrigine,100 mg,tablet
+Gabapentin,100 mg,capsule
+Gabapentin,300 mg,capsule
+Pregabalin,50 mg,capsule
+Pregabalin,75 mg,capsule
+Pregabalin,150 mg,capsule
+Phenytoin,100 mg,tablet
+Topiramate,25 mg,tablet
+Topiramate,50 mg,tablet
+Flunarizine,5 mg,capsule
+Flunarizine,10 mg,capsule
+Sumatriptan,50 mg,tablet
+Betahistine,8 mg,tablet
+Betahistine,16 mg,tablet
+Cinnarizine,25 mg,tablet
+Methylphenidate,10 mg,tablet
+Melatonin,3 mg,tablet
+Zolpidem,10 mg,tablet
+Donepezil,5 mg,tablet
+Donepezil,10 mg,tablet
+Methocarbamol,500 mg,tablet
+Tizanidine,2 mg,tablet
+Tizanidine,4 mg,tablet
+Orphenadrine + paracetamol,35/450 mg,tablet
+Thiocolchicoside,4 mg,capsule
+Thiocolchicoside,8 mg,capsule
+Glucosamine,1500 mg sachet,other
+Calcium carbonate + vitamin D3,600 mg/400 IU,tablet
+Alendronate,70 mg,tablet
+Vitamin D3 (cholecalciferol),50000 IU,capsule
+Vitamin D3 (cholecalciferol),400 IU/drop,drops
+Vitamin D3 (cholecalciferol),200000 IU,injection
+Folic acid,5 mg,tablet
+Ferrous sulphate,200 mg,tablet
+Iron polymaltose,50 mg/5 ml,syrup
+Iron sucrose,100 mg/5 ml,injection
+Vitamin B12 (methylcobalamin),500 mcg,tablet
+Vitamin B12 (cyanocobalamin),1000 mcg,injection
+Vitamin B complex,standard,tablet
+Multivitamin,standard,syrup
+Multivitamin + minerals,standard,tablet
+Omega-3 fatty acids,1000 mg,capsule
+Magnesium,250 mg,tablet
+Potassium chloride,15%,syrup
+Progesterone,200 mg,tablet
+Dydrogesterone,10 mg,tablet
+Norethisterone,5 mg,tablet
+Clomiphene,50 mg,tablet
+Letrozole,2.5 mg,tablet
+Tranexamic acid,500 mg,tablet
+Tranexamic acid,500 mg/5 ml,injection
+Combined oral contraceptive,standard,tablet
+Cabergoline,0.5 mg,tablet
+Metformin extended release,500 mg,tablet
+Metformin extended release,750 mg,tablet
+Inositol,2 g sachet,other
+Tamsulosin,0.4 mg,capsule
+Silodosin,8 mg,capsule
+Finasteride,1 mg,tablet
+Finasteride,5 mg,tablet
+Solifenacin,5 mg,tablet
+Sildenafil,50 mg,tablet
+Sildenafil,100 mg,tablet
+Tadalafil,5 mg,tablet
+Tadalafil,20 mg,tablet
+Potassium citrate,1080 mg/10 ml,syrup
+Hydrocortisone,1%,cream
+Betamethasone,0.1%,cream
+Clobetasol,0.05%,cream
+Mometasone,0.1%,cream
+Fusidic acid,2%,cream
+Mupirocin,2% ointment,other
+Silver sulfadiazine,1%,cream
+Benzoyl peroxide,2.5% gel,other
+Benzoyl peroxide,5% gel,other
+Adapalene,0.1% gel,other
+Tretinoin,0.025%,cream
+Tretinoin,0.05%,cream
+Clindamycin,1% gel,other
+Isotretinoin,10 mg,capsule
+Isotretinoin,20 mg,capsule
+Azelaic acid,20%,cream
+Minoxidil,2% solution,other
+Minoxidil,5% solution,other
+Calamine,lotion,other
+Salicylic acid,2% face wash,other
+Hydroquinone,2%,cream
+Hydroquinone,4%,cream
+Sunscreen SPF 50,broad spectrum,cream
+Emollient (paraffin),standard,cream
+Urea,10%,cream
+Moxifloxacin,0.5% eye,drops
+Tobramycin,0.3% eye,drops
+Ciprofloxacin,0.3% eye/ear,drops
+Chloramphenicol,0.5% eye,drops
+Artificial tears (carboxymethylcellulose),0.5%,drops
+Olopatadine,0.1% eye,drops
+Timolol,0.5% eye,drops
+Latanoprost,0.005% eye,drops
+Prednisolone acetate,1% eye,drops
+Ofloxacin,0.3% ear,drops
+Clotrimazole,1% ear,drops
+Wax softener (docusate),ear,drops
+Chlorhexidine,0.2% mouthwash,other
+Benzocaine,oral gel,other
+Lidocaine,2% gel,other
+Lidocaine,2%,injection
+Nicotine,2 mg gum,other
+Activated charcoal,sachet,other
+Hepatitis B vaccine,20 mcg/ml,injection
+Tetanus toxoid,0.5 ml,injection
+Normal saline,0.9% 500 ml,injection
+Ringer lactate,500 ml,injection
+Dextrose,5% 500 ml,injection

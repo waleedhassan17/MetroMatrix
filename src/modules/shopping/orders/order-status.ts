@@ -1,4 +1,7 @@
-import { invalidTransition, stateMachine } from '../common/transitions';
+import {
+  invalidTransition,
+  stateMachine,
+} from '../../../common/state/transitions';
 
 export const ORDER_STATUSES = [
   'placed',

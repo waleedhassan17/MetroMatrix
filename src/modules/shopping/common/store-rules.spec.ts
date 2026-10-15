@@ -3,7 +3,7 @@ import {
   buildPkIban,
   ibanChecksumOk,
   normalizeAccountNumber,
-} from './payment-account.validation';
+} from '../../../common/payments/payment-account.validation';
 
 describe('brand colour contrast', () => {
   it('matches known WCAG ratios', () => {

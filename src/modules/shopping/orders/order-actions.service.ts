@@ -9,7 +9,7 @@ import { StoreOrder } from './entities/store-order.entity';
 import { Actor, OrderTransitionsService } from './order-transitions.service';
 import { OrderViewsService } from './order-views.service';
 import { PaymentProofDto, RefundDto, ShipOrderDto } from './dto/order.dto';
-import { invalidTransition } from '../common/transitions';
+import { invalidTransition } from '../../../common/state/transitions';
 import { assertOrderTransition } from './order-status';
 import { ErrorCode } from '../../../common/errors/codes';
 import {

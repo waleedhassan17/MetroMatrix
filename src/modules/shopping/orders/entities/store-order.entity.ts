@@ -14,7 +14,7 @@ import {
   PAYMENT_METHODS,
   PaymentMethod,
 } from '../../checkout/dto/checkout.dto';
-import { PaymentAccountKind } from '../../common/payment-account.validation';
+import { PaymentAccountKind } from '../../../../common/payments/payment-account.validation';
 
 /** A store's payment account as it was at checkout. */
 export interface PaymentAccountSnapshot {

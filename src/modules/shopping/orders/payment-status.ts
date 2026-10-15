@@ -1,4 +1,7 @@
-import { invalidTransition, stateMachine } from '../common/transitions';
+import {
+  invalidTransition,
+  stateMachine,
+} from '../../../common/state/transitions';
 import { ActorRole } from './order-status';
 
 export const PAYMENT_STATUSES = [

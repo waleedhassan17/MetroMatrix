@@ -30,7 +30,7 @@ import { slugify } from '../../businesses/businesses.service';
 import { MediaService } from '../../media/media.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { SqlParams, likeEscape } from '../common/catalog-sql';
-import { invalidTransition } from '../common/transitions';
+import { invalidTransition } from '../../../common/state/transitions';
 
 const notFound = (what: string) =>
   new NotFoundException({

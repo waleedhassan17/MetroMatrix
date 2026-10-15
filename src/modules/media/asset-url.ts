@@ -57,6 +57,25 @@ export const UPLOAD_PURPOSES = {
     formats: ['jpg', 'jpeg', 'png', 'webp'],
     maxBytes: 8_000_000,
   },
+  // ── Healthcare ──
+  /** The doctor's profile photo. */
+  doctor_photo: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 5_000_000,
+  },
+  /** A patient's lab report, scan or old prescription (photo or PDF). */
+  health_record: {
+    resourceType: 'auto',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'],
+    maxBytes: 15_000_000,
+  },
+  /** Files on a doctor's private visit notes. */
+  medical_note: {
+    resourceType: 'auto',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'],
+    maxBytes: 15_000_000,
+  },
 } as const;
 
 export type UploadPurpose = keyof typeof UPLOAD_PURPOSES;

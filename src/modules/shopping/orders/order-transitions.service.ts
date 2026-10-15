@@ -19,7 +19,7 @@ import {
 } from './payment-status';
 import { CouponRedemption } from '../coupons/entities/coupon-redemption.entity';
 import { InventoryService } from '../inventory/inventory.service';
-import { invalidTransition } from '../common/transitions';
+import { invalidTransition } from '../../../common/state/transitions';
 import { ErrorCode } from '../../../common/errors/codes';
 
 export interface Actor {

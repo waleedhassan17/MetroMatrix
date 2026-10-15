@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { ErrorCode } from '../../../common/errors/codes';
+import { ErrorCode } from '../errors/codes';
 
 /** 409 INVALID_TRANSITION with `{ from, to, allowed }` in details. */
 export function invalidTransition(

@@ -25,7 +25,7 @@ import { StoreOrderItem } from '../orders/entities/store-order-item.entity';
 import { StoreOrderEvent } from '../orders/entities/store-order-event.entity';
 import { CouponRedemption } from '../coupons/entities/coupon-redemption.entity';
 import { CartItem } from '../cart/entities/cart-item.entity';
-import { newGroupCode, storeOrderCode } from '../orders/order-codes';
+import { newGroupCode, storeOrderCode } from '../../../common/utils/codes';
 import { OrderViewsService } from '../orders/order-views.service';
 
 /**
