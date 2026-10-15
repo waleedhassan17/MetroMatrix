@@ -216,18 +216,33 @@ export async function seedShopping(
 
   await ds.transaction(async (m) => {
     for (const [i, b] of DEMO_BANNERS.entries()) {
-      if (await m.exists(ShopBanner, { where: { title: b.title } })) continue;
       const t = b.target;
-      const owner = storeIds.get('store' in t ? t.store : 'beauty')!;
+      const storeKey = 'store' in t ? t.store : 'beauty';
+      const owner = storeIds.get(storeKey)!;
       const targetId =
         t.type === 'store'
           ? owner.storeId
           : t.type === 'collection'
-            ? owner.collections.get(t.collection)!
-            : categories.get(t.category)!;
-      const demo = DEMO_STORES.find(
-        (s) => s.key === ('store' in t ? t.store : 'beauty'),
-      )!;
+            ? owner.collections.get(t.collection)
+            : categories.get(t.category);
+      if (!targetId) {
+        throw new Error(
+          `Banner "${b.title}": its ${t.type} target was not found`,
+        );
+      }
+      const existing = await m.findOne(ShopBanner, {
+        where: { title: b.title },
+      });
+      if (existing) {
+        // Re-point it in case the target was recreated (or was wrong).
+        await m.update(
+          ShopBanner,
+          { id: existing.id },
+          { targetType: t.type, targetId },
+        );
+        continue;
+      }
+      const demo = DEMO_STORES.find((s) => s.key === storeKey)!;
       const image = await opts.images.image({
         ownerUserId: owner.ownerId,
         purpose: 'banner',

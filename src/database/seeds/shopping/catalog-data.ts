@@ -919,6 +919,6 @@ export const DEMO_BANNERS = [
   {
     title: 'Summer skin, sorted',
     subtitle: 'Sunscreen and light moisturisers',
-    target: { type: 'category', category: 'beauty' },
+    target: { type: 'category', category: 'beauty-care' },
   },
 ] as const;

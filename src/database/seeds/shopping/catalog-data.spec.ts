@@ -45,6 +45,16 @@ describe('shopping demo catalogue', () => {
       }
     }
     expect(DEMO_BANNERS).toHaveLength(3);
+    for (const b of DEMO_BANNERS) {
+      const t = b.target;
+      if (t.type === 'category')
+        expect(taxonomy).toContain(`slug: '${t.category}'`);
+      if (t.type === 'collection') {
+        expect(
+          DEMO_STORES.find((s) => s.key === t.store)!.collections,
+        ).toContain(t.collection);
+      }
+    }
   });
 
   it('tiles escape their text and placeholder URLs are deterministic', () => {

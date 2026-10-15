@@ -32,6 +32,7 @@
     "seed:shopping": "ts-node -r tsconfig-paths/register src/database/seeds/shopping-seed.ts",
     "seed:shopping:prod": "node dist/database/seeds/shopping-seed.js",
     "postman:local": "bash scripts/postman-local.sh",
+    "postman:shopping": "COLLECTION=shopping bash scripts/postman-local.sh --delay-request 700",
     "backfill:stores": "ts-node -r tsconfig-paths/register src/database/backfill-stores.ts",
     "backfill:stores:prod": "node dist/database/backfill-stores.js"
   },

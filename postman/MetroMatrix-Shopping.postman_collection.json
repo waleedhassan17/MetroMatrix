@@ -1,0 +1,3551 @@
+{
+  "info": {
+    "name": "MetroMatrix — Chunk 2 (Shopping)",
+    "description": "Browse → cart → preview → 2-store checkout (COD + transfer) → store lifecycle → transfer reject/resubmit → return → review → store catalogue tools → admin.\n\nNeeds: migrated DB, `npm run seed:superadmin`, `npm run seed:shopping` (SEED_DEMO_PASSWORD), Mailpit. Run with `npm run postman:shopping` (passes adminPassword and demoPassword from env; never stored here).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0 · Setup (needs seed:shopping)",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Health → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('database up', () => pm.expect(d.status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: sign in (step 1)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"portal\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: sign in (step 1) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('challengeToken', d.challengeToken);",
+                  "pm.execution.setNextRequest(d.enrolmentRequired ? 'Admin: enrol TOTP (first time)' : 'Admin: sign in (step 2, TOTP)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: enrol TOTP (first time)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/me/totp/enrol",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{challengeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: enrol TOTP (first time) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.environment.set('adminTotpSecret', d.secret);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: confirm TOTP (first time)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/me/totp/confirm",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{challengeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cryptoJs = require('crypto-js');",
+                  "function base32ToHex(b32) {",
+                  "  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const c of b32.replace(/=+$/, '').toUpperCase()) {",
+                  "    const v = a.indexOf(c);",
+                  "    if (v >= 0) bits += v.toString(2).padStart(5, '0');",
+                  "  }",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  return hex;",
+                  "}",
+                  "function totp(secret) {",
+                  "  const counter = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                  "  const h = cryptoJs.HmacSHA1(cryptoJs.enc.Hex.parse(counter), cryptoJs.enc.Hex.parse(base32ToHex(secret))).toString(cryptoJs.enc.Hex);",
+                  "  const o = parseInt(h.substr(h.length - 1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}",
+                  "pm.collectionVariables.set('totpCode', totp(pm.environment.get('adminTotpSecret')));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: confirm TOTP (first time) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('adminAccessToken', d.auth.tokens.accessToken);",
+                  "pm.execution.setNextRequest('Partner (fashion): sign in');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: sign in (step 2, TOTP)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/admin/totp",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeToken\": \"{{challengeToken}}\",\n  \"code\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cryptoJs = require('crypto-js');",
+                  "function base32ToHex(b32) {",
+                  "  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const c of b32.replace(/=+$/, '').toUpperCase()) {",
+                  "    const v = a.indexOf(c);",
+                  "    if (v >= 0) bits += v.toString(2).padStart(5, '0');",
+                  "  }",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  return hex;",
+                  "}",
+                  "function totp(secret) {",
+                  "  const counter = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                  "  const h = cryptoJs.HmacSHA1(cryptoJs.enc.Hex.parse(counter), cryptoJs.enc.Hex.parse(base32ToHex(secret))).toString(cryptoJs.enc.Hex);",
+                  "  const o = parseInt(h.substr(h.length - 1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}",
+                  "pm.collectionVariables.set('totpCode', totp(pm.environment.get('adminTotpSecret')));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: sign in (step 2, TOTP) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('adminAccessToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Partner (fashion): sign in",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo.fashion@metromatrix.test\",\n  \"password\": \"{{demoPassword}}\",\n  \"portal\": \"partner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Partner (fashion): sign in → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('a store partner', () => pm.expect(d.user.role).to.eql('partner'));",
+                  "pm.collectionVariables.set('fashionToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Partner (handmade): sign in",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo.handmade@metromatrix.test\",\n  \"password\": \"{{demoPassword}}\",\n  \"portal\": \"partner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Partner (handmade): sign in → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('a store partner', () => pm.expect(d.user.role).to.eql('partner'));",
+                  "pm.collectionVariables.set('handmadeToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Partner (home): sign in",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo.home@metromatrix.test\",\n  \"password\": \"{{demoPassword}}\",\n  \"portal\": \"partner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Partner (home): sign in → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('a store partner', () => pm.expect(d.user.role).to.eql('partner'));",
+                  "pm.collectionVariables.set('homeToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 · Browse (guest)",
+      "item": [
+        {
+          "name": "Home",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/home",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Home → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('banners, featured stores, rails, categories', () => {",
+                  "  pm.expect(d.banners.length).to.be.at.least(3);",
+                  "  pm.expect(d.featuredStores.map((s) => s.slug)).to.include('lahore-loom');",
+                  "  pm.expect(d.newArrivals.length).to.be.above(0);",
+                  "  pm.expect(d.categories.length).to.be.at.least(8);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/categories",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Categories → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "const women = d.find((c) => c.slug === 'women');",
+                  "pm.test('a tree', () => pm.expect(women.children.length).to.be.above(2));",
+                  "pm.collectionVariables.set('categoryId', women.children.find((c) => c.slug === 'women-dupattas-shawls').id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stores",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/stores?pageSize=50",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Stores → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the demo stores are listed', () => pm.expect(d.items.map((s) => s.slug)).to.include.members(['lahore-loom', 'haath-kaari', 'glow-theory', 'ghar-ghar-home']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: Lahore Loom",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/stores/lahore-loom",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: Lahore Loom → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('fashionStoreId', d.id);",
+                  "pm.test('policies, payment kinds, never account numbers', () => {",
+                  "  pm.expect(d.policies.paymentMethods).to.include('cod');",
+                  "  pm.expect(d.policies.transferVia).to.include('bank');",
+                  "  pm.expect(JSON.stringify(body)).not.to.match(/PK\\d{2}[A-Z]{4}\\d{16}/);",
+                  "  pm.expect(JSON.stringify(body)).not.to.match(/\\+923\\d{9}/);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: Haath Kaari",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/stores/haath-kaari",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: Haath Kaari → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('handmadeStoreId', d.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: Ghar Ghar Home",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/stores/ghar-ghar-home",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: Ghar Ghar Home → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('homeStoreId', d.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search with a typo: kurtta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products?q=kurtta&storeId={{fashionStoreId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Search with a typo: kurtta → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('typo still finds kurtas', () => pm.expect(d.items.some((p) => /kurta/i.test(p.name))).to.be.true);",
+                  "const kurta = d.items.find((p) => p.name === 'Embroidered lawn kurta');",
+                  "pm.collectionVariables.set('kurtaId', kurta.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "On sale, cheapest first",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products?onSale=true&sort=price_asc&pageSize=50",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('On sale, cheapest first → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('only sale items', () => d.items.forEach((p) => pm.expect(p.onSale).to.be.true));",
+                  "pm.test('sorted by effective price', () => {",
+                  "  const prices = d.items.map((p) => p.price);",
+                  "  pm.expect(prices).to.eql([...prices].sort((a, b) => a - b));",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Suggest",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/suggest?q=pottery",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Suggest → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('products for search-as-you-type', () => pm.expect(d.products.length).to.be.above(0));",
+                  "const mug = d.products.find((p) => p.name === 'Blue pottery mug');",
+                  "if (mug) pm.collectionVariables.set('mugId', mug.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product: kurta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{kurtaId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Product: kurta → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('stock as flags only', () => d.variants.forEach((v) => pm.expect(v).to.not.have.property('stock')));",
+                  "const v = d.variants.find((x) => x.inStock);",
+                  "pm.test('a variant in stock', () => pm.expect(v, 'restock the demo kurta (re-seed a fresh DB)').to.be.ok);",
+                  "pm.collectionVariables.set('kurtaVariantId', v.id);",
+                  "pm.collectionVariables.set('kurtaPrice', v.price);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product: blue pottery mug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{mugId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Product: blue pottery mug → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "const v = d.variants.find((x) => x.inStock);",
+                  "pm.collectionVariables.set('mugVariantId', v.id);",
+                  "pm.collectionVariables.set('mugPrice', v.price);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Related",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{kurtaId}}/related",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Related → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('a list', () => pm.expect(d).to.be.an('array'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reviews",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{mugId}}/reviews",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reviews → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('summary + breakdown', () => pm.expect(d.summary.breakdown).to.have.keys('1', '2', '3', '4', '5'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 · Customer: cart, preview, 2-store checkout",
+      "item": [
+        {
+          "name": "Customer: sign up",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signup",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"Secret123\",\n  \"displayName\": \"Postman Shopper\",\n  \"role\": \"customer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const run = Date.now().toString(36);",
+                  "pm.collectionVariables.set('runId', run);",
+                  "pm.collectionVariables.set('customerEmail', 'pm.shopper.' + run + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: sign up → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('customerToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mailpit: verification code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpitUrl}}/api/v1/search?query={{mailpitQuery}}&limit=1",
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "Local only: reads the code from Mailpit (docker-compose)."
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('mailpitQuery', encodeURIComponent('to:' + pm.collectionVariables.get('customerEmail') + ' subject:\"Verify your MetroMatrix email\"'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit: verification code → 200', () => pm.response.to.have.status(200));",
+                  "const msg = pm.response.json().messages[0];",
+                  "pm.test('an email arrived', () => pm.expect(msg, 'no email yet').to.be.ok);",
+                  "const code = (msg.Snippet.match(/\\b(\\d{6})\\b/) || [])[1];",
+                  "pm.collectionVariables.set('customerOtp', code);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: verify email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/verify-email",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{customerOtp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: verify email → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('verified', () => pm.expect(d.user.isEmailVerified).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: add address",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/addresses",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"home\",\n  \"fullName\": \"Postman Shopper\",\n  \"phone\": \"0312 4890176\",\n  \"city\": \"Lahore\",\n  \"area\": \"Gulberg III\",\n  \"line1\": \"House 12, Street 4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: add address → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('addressId', d.id);",
+                  "pm.test('first address is the default', () => pm.expect(d.isDefault).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Wishlist: save the kurta",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/wishlist/{{kurtaId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Wishlist: save the kurta → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('saved', () => pm.expect(d.isWishlisted).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cart: add kurta",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/cart/items",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variantId\": \"{{kurtaVariantId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cart: add kurta → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('one line', () => pm.expect(d.lineCount).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cart: add the same kurta again (merges)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/cart/items",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variantId\": \"{{kurtaVariantId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cart: add the same kurta again (merges) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('still one line, quantity 2', () => { pm.expect(d.lineCount).to.eql(1); pm.expect(d.itemCount).to.eql(2); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cart: add a blue pottery mug",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/cart/items",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variantId\": \"{{mugVariantId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cart: add a blue pottery mug → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('two stores', () => pm.expect(d.stores.length).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cart",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/cart",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cart → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('grouped by store, live prices', () => pm.expect(d.stores.map((s) => s.store.slug)).to.eql(['lahore-loom', 'haath-kaari']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Coupons available at Lahore Loom",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/stores/{{fashionStoreId}}/coupons/available",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Coupons available at Lahore Loom → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('LOOM10 applies', () => pm.expect(d.items.find((c) => c.code === 'LOOM10').eligible).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preview: COD + coupon at Lahore Loom, transfer at Haath Kaari",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/cart/preview",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"stores\": [\n    {\n      \"storeId\": \"{{fashionStoreId}}\",\n      \"paymentMethod\": \"cod\",\n      \"couponCode\": \"loom10\"\n    },\n    {\n      \"storeId\": \"{{handmadeStoreId}}\",\n      \"paymentMethod\": \"transfer\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preview: COD + coupon at Lahore Loom, transfer at Haath Kaari → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('ok', () => pm.expect(d.ok, JSON.stringify(d.issues) + JSON.stringify(d.stores.map((s) => s.issues))).to.be.true);",
+                  "const kurta = Number(pm.collectionVariables.get('kurtaPrice'));",
+                  "const a = d.stores[0];",
+                  "pm.test('10% off the kurtas, rounded down, max Rs 800', () => pm.expect(a.discount).to.eql(Math.min(Math.floor(kurta * 2 * 10 / 100), 800)));",
+                  "pm.test('transfer via bank or wallet', () => pm.expect(d.stores[1].transferVia.length).to.be.above(0));",
+                  "pm.collectionVariables.set('previewTotals', JSON.stringify(d.totals));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout (Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/shop/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"stores\": [\n    {\n      \"storeId\": \"{{fashionStoreId}}\",\n      \"paymentMethod\": \"cod\",\n      \"couponCode\": \"LOOM10\",\n      \"note\": \"Please call before delivery\"\n    },\n    {\n      \"storeId\": \"{{handmadeStoreId}}\",\n      \"paymentMethod\": \"transfer\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('checkoutKey', 'pm-checkout-' + pm.collectionVariables.get('runId'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Checkout (Idempotency-Key) → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('MM- code, one store order per store', () => { pm.expect(d.code).to.match(/^MM-[A-Z2-9]{6}$/); pm.expect(d.storeOrders).to.have.length(2); });",
+                  "pm.test('group = Σ store orders, to the rupee', () => pm.expect(d.grandTotal).to.eql(d.storeOrders.reduce((n, o) => n + o.total, 0)));",
+                  "pm.test('each store order adds up', () => d.storeOrders.forEach((o) => pm.expect(o.total).to.eql(o.subtotal - o.discount + o.shippingFee)));",
+                  "pm.test('same totals as the preview', () => {",
+                  "  const p = JSON.parse(pm.collectionVariables.get('previewTotals'));",
+                  "  pm.expect({ itemsTotal: d.itemsTotal, discountTotal: d.discountTotal, shippingTotal: d.shippingTotal, grandTotal: d.grandTotal }).to.eql(p);",
+                  "});",
+                  "const t = d.storeOrders[1];",
+                  "pm.test('transfer instructions: the store’s own accounts and a deadline', () => { pm.expect(t.payment.accounts.length).to.be.above(0); pm.expect(t.payment.payBy).to.be.a('string'); });",
+                  "pm.collectionVariables.set('groupCode', d.code);",
+                  "pm.collectionVariables.set('codOrderId', d.storeOrders[0].id);",
+                  "pm.collectionVariables.set('codItemId', d.storeOrders[0].items[0].id);",
+                  "pm.collectionVariables.set('transferOrderId', t.id);",
+                  "pm.collectionVariables.set('transferItemId', t.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout replay (same key → same order)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/shop/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"stores\": [\n    {\n      \"storeId\": \"{{fashionStoreId}}\",\n      \"paymentMethod\": \"cod\",\n      \"couponCode\": \"LOOM10\"\n    },\n    {\n      \"storeId\": \"{{handmadeStoreId}}\",\n      \"paymentMethod\": \"transfer\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Checkout replay (same key → same order) → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('replayed, not placed twice', () => pm.expect(d.code).to.eql(pm.collectionVariables.get('groupCode')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout without a key is refused",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"stores\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Checkout without a key is refused → 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('IDEMPOTENCY_KEY_REQUIRED', () => pm.expect(body.error.code).to.eql('IDEMPOTENCY_KEY_REQUIRED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cart is empty after checkout",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/cart",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cart is empty after checkout → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('empty', () => pm.expect(d.lineCount).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/orders?status=active",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('My orders → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the new group is listed', () => pm.expect(d.items.map((g) => g.code)).to.include(pm.collectionVariables.get('groupCode')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Order group",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/orders/{{groupCode}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Order group → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('timeline starts at placed', () => pm.expect(d.storeOrders[0].events[0].to).to.eql('placed'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 · Store: COD order lifecycle (Lahore Loom)",
+      "item": [
+        {
+          "name": "Store: new orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders?status=placed&pageSize=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: new orders → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the order is waiting', () => pm.expect(d.items.map((o) => o.id)).to.include(pm.collectionVariables.get('codOrderId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: order detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: order detail → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('delivery contact only', () => { pm.expect(d.customer.name).to.eql('Postman Shopper'); pm.expect(JSON.stringify(d)).not.to.include(pm.collectionVariables.get('customerEmail')); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: pack before confirming is refused",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/pack",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: pack before confirming is refused → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('INVALID_TRANSITION with what is allowed', () => { pm.expect(body.error.code).to.eql('INVALID_TRANSITION'); pm.expect(body.error.details.allowed).to.eql(['confirmed', 'cancelled']); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: confirm",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/confirm",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: confirm → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('confirmed', () => pm.expect(d.status).to.eql('confirmed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: pack",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/pack",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: pack → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('packed', () => pm.expect(d.status).to.eql('packed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: ship (TCS)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/ship",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courierName\": \"TCS\",\n  \"trackingRef\": \"TCS-77120934\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: ship (TCS) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('shipped with tracking', () => { pm.expect(d.status).to.eql('shipped'); pm.expect(d.shipping.trackingRef).to.eql('TCS-77120934'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: deliver",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/deliver",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: deliver → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('delivered', () => pm.expect(d.status).to.eql('delivered'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: cash collected",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/cash-collected",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: cash collected → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('paid', () => pm.expect(d.paymentStatus).to.eql('paid'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/dashboard",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: dashboard → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('recorded sales, not money held', () => pm.expect(d.recordedSales.last7Days).to.be.above(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: insights (7 days)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/insights?range=7d",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: insights (7 days) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('7 days of orders', () => pm.expect(d.ordersPerDay).to.have.length(7));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 · Transfer order: proof → reject → proof → confirm (Haath Kaari)",
+      "item": [
+        {
+          "name": "Store: confirm",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{transferOrderId}}/confirm",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: confirm → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: pack",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{transferOrderId}}/pack",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: pack → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: ship before payment is refused",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{transferOrderId}}/ship",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courierName\": \"Leopards\",\n  \"trackingRef\": \"LP-1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: ship before payment is refused → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('PAYMENT_NOT_CONFIRMED', () => pm.expect(body.error.code).to.eql('PAYMENT_NOT_CONFIRMED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: payment proof",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/store-orders/{{transferOrderId}}/payment-proof",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentRef\": \"IBFT 100200\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: payment proof → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('proof submitted', () => pm.expect(d.paymentStatus).to.eql('proof_submitted'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: payment not received",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{transferOrderId}}/payment/reject",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Nothing in the account yet\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: payment not received → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('back to awaiting transfer, with the reason', () => { pm.expect(d.paymentStatus).to.eql('awaiting_transfer'); pm.expect(d.payment.rejectedReason).to.eql('Nothing in the account yet'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: payment proof again",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/store-orders/{{transferOrderId}}/payment-proof",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paymentRef\": \"IBFT 100201\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: payment proof again → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: payment confirmed",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{transferOrderId}}/payment/confirm",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: payment confirmed → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('paid', () => pm.expect(d.paymentStatus).to.eql('paid'));",
+                  "pm.test('payment timeline', () => pm.expect(d.events.filter((e) => e.kind === 'payment').map((e) => e.to)).to.eql(['proof_submitted', 'awaiting_transfer', 'proof_submitted', 'paid']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: ship with own rider",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/orders/{{transferOrderId}}/ship",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"courierName\": \"self\",\n  \"riderName\": \"Bilal\",\n  \"riderPhone\": \"0300 1234567\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: ship with own rider → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('shipped by rider', () => pm.expect(d.shipping).to.include({ courierName: 'self', riderName: 'Bilal', riderPhone: '+923001234567' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: I received it",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/store-orders/{{transferOrderId}}/received",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: I received it → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('delivered; review possible', () => { pm.expect(d.status).to.eql('delivered'); pm.expect(d.items[0].canReview).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 · Return, review, report",
+      "item": [
+        {
+          "name": "Customer: return one kurta",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/store-orders/{{codOrderId}}/returns",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"orderItemId\": \"{{codItemId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"reason\": \"size_issue\",\n  \"details\": \"Too tight on the shoulders.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: return one kurta → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('returnId', d.id);",
+                  "pm.collectionVariables.set('returnItemId', d.items[0].id);",
+                  "pm.test('requested', () => pm.expect(d.status).to.eql('requested'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: a second return is refused",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/store-orders/{{codOrderId}}/returns",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"orderItemId\": \"{{codItemId}}\",\n      \"quantity\": 1\n    }\n  ],\n  \"reason\": \"other\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: a second return is refused → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('RETURN_ALREADY_OPEN', () => pm.expect(body.error.code).to.eql('RETURN_ALREADY_OPEN'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: approve return",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/returns/{{returnId}}/approve",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Send it with the tags on\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: approve return → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: receive and restock",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/returns/{{returnId}}/receive",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"items\": [\n    {\n      \"returnItemId\": \"{{returnItemId}}\",\n      \"restock\": true\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: receive and restock → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('received, restocked', () => { pm.expect(d.status).to.eql('received'); pm.expect(d.items[0].restocked).to.be.true; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: record the refund",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/returns/{{returnId}}/refund",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": {{refundAmount}},\n  \"refundRef\": \"IBFT 55120\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('refundAmount', pm.collectionVariables.get('kurtaPrice'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: record the refund → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('refunded', () => pm.expect(d.status).to.eql('refunded'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: review the mug",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/order-items/{{transferItemId}}/review",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"text\": \"Beautiful glaze, arrived safely.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: review the mug → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('reviewId', d.id);",
+                  "pm.test('shown with a short name', () => pm.expect(d.author.name).to.eql('Postman S.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: a second review is refused",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/order-items/{{transferItemId}}/review",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: a second review is refused → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('REVIEW_EXISTS', () => pm.expect(body.error.code).to.eql('REVIEW_EXISTS'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: reply to the review",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/reviews/{{reviewId}}/reply",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{handmadeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Thank you — enjoy your chai!\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: reply to the review → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('replied', () => pm.expect(d.storeReply).to.eql('Thank you — enjoy your chai!'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Product reviews show it",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{mugId}}/reviews?rating=5",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Product reviews show it → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('listed', () => pm.expect(d.items.map((r) => r.id)).to.include(pm.collectionVariables.get('reviewId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: report a product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{kurtaId}}/report",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"misleading\",\n  \"details\": \"Colour differs from the photo (Postman run {{runId}})\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: report a product → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('reportId', d.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 · Store: products, inventory, coupons (Lahore Loom)",
+      "item": [
+        {
+          "name": "Store: create a draft product",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/products",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Postman scarf {{runId}}\",\n  \"description\": \"Created by the Postman run.\",\n  \"categoryId\": \"{{categoryId}}\",\n  \"basePrice\": 1500,\n  \"salePrice\": 1200,\n  \"variants\": [\n    {\n      \"option1\": \"Red\",\n      \"stock\": 5\n    },\n    {\n      \"option1\": \"Blue\",\n      \"stock\": 2\n    }\n  ],\n  \"status\": \"draft\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: create a draft product → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('newProductId', d.id);",
+                  "pm.collectionVariables.set('newVariantId', d.variants[0].id);",
+                  "pm.collectionVariables.set('newVariant2Id', d.variants[1].id);",
+                  "pm.test('exact stock for the store', () => pm.expect(d.totalStock).to.eql(7));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: sale price above regular is refused",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/products/{{newProductId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"salePrice\": 1600\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: sale price above regular is refused → 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('VALIDATION_FAILED on salePrice', () => pm.expect(body.error.details.fields).to.have.property('salePrice'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: publishing without a photo is refused",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/products/{{newProductId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"active\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: publishing without a photo is refused → 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('needs an image', () => pm.expect(body.error.details.fields).to.have.property('images'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: adjust stock (delta)",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/inventory/{{newVariantId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"delta\": -2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: adjust stock (delta) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('5 − 2 = 3', () => pm.expect(d.stock).to.eql(3));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: bulk set stock",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/inventory/bulk",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "[\n  { \"variantId\": \"{{newVariantId}}\", \"setTo\": 10 },\n  { \"variantId\": \"{{newVariant2Id}}\", \"setTo\": 0 }\n]",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: bulk set stock → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('both updated', () => pm.expect(d.updated).to.eql(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: stock movements",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/inventory/{{newVariantId}}/movements",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: stock movements → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('balance after each change', () => pm.expect(d.items.map((m) => m.balanceAfter)).to.eql([10, 3, 5]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: another store’s variant is not found",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/inventory/{{newVariantId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{homeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"setTo\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: another store’s variant is not found → 404', () => pm.response.to.have.status(404));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('404, never 403', () => pm.expect(body.error.code).to.eql('NOT_FOUND'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: create a coupon",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/coupons",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"pm{{runId}}\",\n  \"type\": \"fixed\",\n  \"value\": 300,\n  \"minOrder\": 2000,\n  \"endsAt\": \"{{couponEnds}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('couponEnds', new Date(Date.now() + 7 * 864e5).toISOString());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: create a coupon → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('couponId', d.id);",
+                  "pm.test('upper-cased, active', () => { pm.expect(d.code).to.eql(d.code.toUpperCase()); pm.expect(d.state).to.eql('active'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: deactivate the coupon",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/coupons/{{couponId}}/deactivate",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: deactivate the coupon → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('inactive', () => pm.expect(d.state).to.eql('inactive'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Store: delete the unsold product",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/shop/partner/products/{{newProductId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Store: delete the unsold product → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('deleted (never ordered)', () => pm.expect(d).to.eql({ archived: false, deleted: true }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7 · Admin",
+      "item": [
+        {
+          "name": "Admin: open reports",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/reports?pageSize=100",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: open reports → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('our report is queued', () => pm.expect(d.items.map((r) => r.id)).to.include(pm.collectionVariables.get('reportId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: dismiss the report",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/reports/{{reportId}}/dismiss",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Photo matches; lighting differs\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: dismiss the report → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('dismissed', () => pm.expect(d.status).to.eql('dismissed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: look up the order",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/orders?code={{groupCode}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: look up the order → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('both store orders', () => pm.expect(d.items).to.have.length(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Find a home-store product",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products?storeId={{homeStoreId}}&q=candle",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Find a home-store product → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('candleId', d.items[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: remove it",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/products/{{candleId}}/remove",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman moderation check\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: remove it → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('removed', () => pm.expect(d.status).to.eql('removed'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Removed product is hidden",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/shop/products/{{candleId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Removed product is hidden → 404', () => pm.response.to.have.status(404));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: restore it",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/products/{{candleId}}/restore",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: restore it → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('active again', () => pm.expect(d.status).to.eql('active'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: hide the review",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/reviews/{{reviewId}}/hide",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Postman moderation check\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: hide the review → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: unhide the review",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/reviews/{{reviewId}}/unhide",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: unhide the review → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: feature Glow Theory",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/stores/{{beautyStoreId}}/feature",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.sendRequest(pm.environment.get('baseUrl') + '/shop/stores/glow-theory', (err, res) => {",
+                  "  if (!err) pm.collectionVariables.set('beautyStoreId', res.json().data.id);",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: feature Glow Theory → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('featured', () => pm.expect(d.isFeatured).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: unfeature Glow Theory",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/stores/{{beautyStoreId}}/unfeature",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: unfeature Glow Theory → 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: categories",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/categories",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: categories → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('eight roots or more', () => pm.expect(d.length).to.be.at.least(8));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: notifications",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/notifications?pageSize=50",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: notifications → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('order updates arrived', () => pm.expect(d.items.map((n) => n.type)).to.include.members(['shop.order.placed', 'shop.order.shipped', 'shop.payment.confirmed']));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Every API response is enveloped.",
+          "if (pm.request.url.toString().includes(pm.environment.get('baseUrl'))) {",
+          "  const body = pm.response.json();",
+          "  pm.test('envelope', () => pm.expect(body.success).to.be.a('boolean'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "customerOtp",
+      "value": ""
+    },
+    {
+      "key": "mailpitQuery",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "challengeToken",
+      "value": ""
+    },
+    {
+      "key": "totpCode",
+      "value": ""
+    },
+    {
+      "key": "adminAccessToken",
+      "value": ""
+    },
+    {
+      "key": "fashionToken",
+      "value": ""
+    },
+    {
+      "key": "handmadeToken",
+      "value": ""
+    },
+    {
+      "key": "homeToken",
+      "value": ""
+    },
+    {
+      "key": "fashionStoreId",
+      "value": ""
+    },
+    {
+      "key": "handmadeStoreId",
+      "value": ""
+    },
+    {
+      "key": "homeStoreId",
+      "value": ""
+    },
+    {
+      "key": "beautyStoreId",
+      "value": ""
+    },
+    {
+      "key": "categoryId",
+      "value": ""
+    },
+    {
+      "key": "kurtaId",
+      "value": ""
+    },
+    {
+      "key": "kurtaVariantId",
+      "value": ""
+    },
+    {
+      "key": "kurtaPrice",
+      "value": ""
+    },
+    {
+      "key": "mugId",
+      "value": ""
+    },
+    {
+      "key": "mugVariantId",
+      "value": ""
+    },
+    {
+      "key": "mugPrice",
+      "value": ""
+    },
+    {
+      "key": "addressId",
+      "value": ""
+    },
+    {
+      "key": "previewTotals",
+      "value": ""
+    },
+    {
+      "key": "checkoutKey",
+      "value": ""
+    },
+    {
+      "key": "groupCode",
+      "value": ""
+    },
+    {
+      "key": "codOrderId",
+      "value": ""
+    },
+    {
+      "key": "codItemId",
+      "value": ""
+    },
+    {
+      "key": "transferOrderId",
+      "value": ""
+    },
+    {
+      "key": "transferItemId",
+      "value": ""
+    },
+    {
+      "key": "returnId",
+      "value": ""
+    },
+    {
+      "key": "returnItemId",
+      "value": ""
+    },
+    {
+      "key": "refundAmount",
+      "value": ""
+    },
+    {
+      "key": "reviewId",
+      "value": ""
+    },
+    {
+      "key": "reportId",
+      "value": ""
+    },
+    {
+      "key": "newProductId",
+      "value": ""
+    },
+    {
+      "key": "newVariantId",
+      "value": ""
+    },
+    {
+      "key": "newVariant2Id",
+      "value": ""
+    },
+    {
+      "key": "couponEnds",
+      "value": ""
+    },
+    {
+      "key": "couponId",
+      "value": ""
+    },
+    {
+      "key": "candleId",
+      "value": ""
+    }
+  ]
+}
