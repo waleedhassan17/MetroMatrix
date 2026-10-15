@@ -255,7 +255,8 @@ export class AdminShopService {
     const m = this.dataSource.manager;
     const b = await m.findOne(ShopBanner, { where: { id } });
     if (!b) throw notFound('Banner');
-    if (dto.imageUrl !== undefined)
+    // A new image must be the admin's own upload; the current one may be re-sent.
+    if (dto.imageUrl !== undefined && dto.imageUrl !== b.imageUrl) {
       this.media.assertOwnedAsset(
         adminId,
         'banner',
@@ -263,6 +264,7 @@ export class AdminShopService {
         undefined,
         'imageUrl',
       );
+    }
     const targetType = dto.targetType ?? b.targetType;
     const targetId = dto.targetId !== undefined ? dto.targetId : b.targetId;
     if (dto.targetType !== undefined || dto.targetId !== undefined)

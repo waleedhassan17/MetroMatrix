@@ -271,7 +271,16 @@ export class ProductsService {
       }
 
       if (dto.images) {
-        this.checkImages(ownerUserId, dto.images);
+        // New images must be the partner's own uploads; ones already on the
+        // product (re-sent unchanged by an edit form) are kept as they are.
+        const current = await m.find(ProductImage, {
+          where: { productId: product.id },
+        });
+        const known = new Set(current.map((i) => i.url));
+        this.checkImages(
+          ownerUserId,
+          dto.images.filter((i) => !known.has(i.url.trim())),
+        );
         await this.replaceImages(m, product.id, dto.images);
       }
       if (dto.variants) {

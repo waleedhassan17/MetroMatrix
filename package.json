@@ -29,6 +29,8 @@
     "migration:check": "ts-node -r tsconfig-paths/register src/database/check-schema.ts",
     "seed:superadmin": "ts-node -r tsconfig-paths/register src/database/seeds/super-admin-seed.ts",
     "seed:superadmin:prod": "node dist/database/seeds/super-admin-seed.js",
+    "seed:shopping": "ts-node -r tsconfig-paths/register src/database/seeds/shopping-seed.ts",
+    "seed:shopping:prod": "node dist/database/seeds/shopping-seed.js",
     "postman:local": "bash scripts/postman-local.sh",
     "backfill:stores": "ts-node -r tsconfig-paths/register src/database/backfill-stores.ts",
     "backfill:stores:prod": "node dist/database/backfill-stores.js"

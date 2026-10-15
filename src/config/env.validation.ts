@@ -107,6 +107,9 @@ export const envValidationSchema = Joi.object({
   PUSH_ENABLED: Joi.boolean().empty('').default(false),
   EXPO_ACCESS_TOKEN: Joi.string().optional().allow(''),
 
+  // seed:shopping only: the four demo partners' password (never in code).
+  SEED_DEMO_PASSWORD: Joi.string().optional().allow(''),
+
   // Scheduled jobs (shopping deadlines, reminders, completion).
   JOBS_ENABLED: Joi.boolean().empty('').default(true),
 
