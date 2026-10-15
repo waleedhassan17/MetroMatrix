@@ -43,6 +43,30 @@ export const ErrorCode = {
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   /** A POST with this Idempotency-Key is still being processed. */
   IDEMPOTENCY_IN_PROGRESS: 'IDEMPOTENCY_IN_PROGRESS',
+
+  // ── Chunk 2: Shopping ─────────────────────────────────────────────────────
+  /** A partner of another service (food, healthcare) on a shopping route. */
+  WRONG_SERVICE: 'WRONG_SERVICE',
+  STORE_UNAVAILABLE: 'STORE_UNAVAILABLE',
+  DELIVERY_UNAVAILABLE: 'DELIVERY_UNAVAILABLE',
+  CART_EMPTY: 'CART_EMPTY',
+  /** The stores in the checkout body don't match the stores in the cart. */
+  CHECKOUT_MISMATCH: 'CHECKOUT_MISMATCH',
+  OUT_OF_STOCK: 'OUT_OF_STOCK',
+  PRICE_CHANGED: 'PRICE_CHANGED',
+  COUPON_INVALID: 'COUPON_INVALID',
+  COUPON_EXPIRED: 'COUPON_EXPIRED',
+  COUPON_MIN_ORDER: 'COUPON_MIN_ORDER',
+  COUPON_LIMIT_REACHED: 'COUPON_LIMIT_REACHED',
+  COD_LIMIT_EXCEEDED: 'COD_LIMIT_EXCEEDED',
+  PAYMENT_METHOD_UNAVAILABLE: 'PAYMENT_METHOD_UNAVAILABLE',
+  PAYMENT_NOT_CONFIRMED: 'PAYMENT_NOT_CONFIRMED',
+  RETURN_WINDOW_CLOSED: 'RETURN_WINDOW_CLOSED',
+  RETURN_ALREADY_OPEN: 'RETURN_ALREADY_OPEN',
+  REVIEW_NOT_ALLOWED: 'REVIEW_NOT_ALLOWED',
+  REVIEW_EXISTS: 'REVIEW_EXISTS',
+  /** Checkout must carry an Idempotency-Key header. */
+  IDEMPOTENCY_KEY_REQUIRED: 'IDEMPOTENCY_KEY_REQUIRED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

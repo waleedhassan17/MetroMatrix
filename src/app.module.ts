@@ -13,6 +13,7 @@ import jwtConfig from './config/jwt.config';
 import mailConfig from './config/mail.config';
 import authConfig from './config/auth.config';
 import integrationsConfig from './config/integrations.config';
+import notificationsConfig from './config/notifications.config';
 import { envValidationSchema } from './config/env.validation';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -32,6 +33,8 @@ import { AuthModule } from './modules/auth/auth.module';
 import { MediaModule } from './modules/media/media.module';
 import { BusinessesModule } from './modules/businesses/businesses.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { AddressesModule } from './modules/addresses/addresses.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -47,6 +50,7 @@ import { HealthModule } from './modules/health/health.module';
         mailConfig,
         authConfig,
         integrationsConfig,
+        notificationsConfig,
       ],
       envFilePath: ['.env'],
       // Tests set their own environment (test/setup-env.ts); a developer's
@@ -87,6 +91,8 @@ import { HealthModule } from './modules/health/health.module';
     MediaModule,
     BusinessesModule,
     AdminModule,
+    AddressesModule,
+    NotificationsModule,
     HealthModule,
   ],
   providers: [

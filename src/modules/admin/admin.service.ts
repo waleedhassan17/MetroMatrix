@@ -129,6 +129,8 @@ export class AdminService {
         { businessId: business.id, status: 'pending' },
         { status: 'accepted' },
       );
+      // Service set-up (e.g. the shopping store) commits with the approval.
+      await this.businessesService.runApprovedHooks(m, business);
     });
     await this.audit.record({
       action: 'business.approve',

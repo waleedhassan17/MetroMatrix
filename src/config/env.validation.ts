@@ -103,6 +103,10 @@ export const envValidationSchema = Joi.object({
   CLOUDINARY_API_KEY: requiredInProd(Joi.string()),
   CLOUDINARY_API_SECRET: requiredInProd(Joi.string()),
 
+  // Expo push. Off unless explicitly enabled.
+  PUSH_ENABLED: Joi.boolean().default(false),
+  EXPO_ACCESS_TOKEN: Joi.string().optional().allow(''),
+
   SENTRY_DSN: Joi.string().uri().optional().allow(''),
   SWAGGER_ENABLED: Joi.boolean().default(true),
   LOG_LEVEL: Joi.string()

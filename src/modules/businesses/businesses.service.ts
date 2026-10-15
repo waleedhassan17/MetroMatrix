@@ -129,8 +129,20 @@ const notEditable = (status: BusinessStatus) =>
     details: { status },
   });
 
+/**
+ * Run inside the approval transaction when a business is first approved
+ * (not on reinstate) — e.g. Shopping creates the store row. Registered by the
+ * service modules in onModuleInit.
+ */
+export type BusinessApprovedHook = (
+  manager: EntityManager,
+  business: Business,
+) => Promise<void>;
+
 @Injectable()
 export class BusinessesService implements OnModuleInit {
+  private readonly approvedHooks: BusinessApprovedHook[] = [];
+
   constructor(
     @InjectRepository(Business)
     private readonly repo: Repository<Business>,
@@ -144,6 +156,18 @@ export class BusinessesService implements OnModuleInit {
 
   onModuleInit(): void {
     this.account.onAccountDeleted((m, user) => this.onOwnerDeleted(m, user));
+  }
+
+  onApproved(hook: BusinessApprovedHook): void {
+    this.approvedHooks.push(hook);
+  }
+
+  /** Called by the admin approval, inside its transaction. */
+  async runApprovedHooks(
+    manager: EntityManager,
+    business: Business,
+  ): Promise<void> {
+    for (const hook of this.approvedHooks) await hook(manager, business);
   }
 
   // ── Partner: their own business ───────────────────────────────────────────

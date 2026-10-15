@@ -6,6 +6,7 @@ import {
   Injectable,
   NestInterceptor,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Request, Response } from 'express';
 import { Repository } from 'typeorm';
@@ -15,6 +16,7 @@ import { catchError, concatMap } from 'rxjs/operators';
 import { IdempotencyRecord } from './idempotency-record.entity';
 import { ErrorCode } from '../errors/codes';
 import { AuthenticatedUser } from '../decorators/current-user.decorator';
+import { REQUIRE_IDEMPOTENCY_KEY } from '../decorators/require-idempotency-key.decorator';
 
 const MAX_KEY_LENGTH = 200;
 
@@ -31,6 +33,10 @@ const MAX_KEY_LENGTH = 200;
  * and sign-up results carrying live tokens, which must never be stored at rest
  * or handed to whoever repeats the key.
  *
+ * Routes marked @RequireIdempotencyKey() (checkout) refuse to run without
+ * the header, and a key may only ever be replayed on the path it was first
+ * used for.
+ *
  * Registered BEFORE the response-envelope interceptor so it is the OUTER
  * interceptor: it captures (and replays) the fully-enveloped client response.
  */
@@ -39,6 +45,7 @@ export class IdempotencyInterceptor implements NestInterceptor {
   constructor(
     @InjectRepository(IdempotencyRecord)
     private readonly repo: Repository<IdempotencyRecord>,
+    private readonly reflector: Reflector,
   ) {}
 
   async intercept(
@@ -53,6 +60,17 @@ export class IdempotencyInterceptor implements NestInterceptor {
       req.headers['idempotency-key'] ?? req.headers['x-idempotency-key'];
     const key = Array.isArray(header) ? header[0] : header;
 
+    const required = this.reflector.getAllAndOverride<boolean>(
+      REQUIRE_IDEMPOTENCY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (required && !key) {
+      throw new BadRequestException({
+        code: ErrorCode.IDEMPOTENCY_KEY_REQUIRED,
+        message:
+          'Send an Idempotency-Key header (a fresh UUID per attempt) so a retry can never place the order twice.',
+      });
+    }
     if (req.method !== 'POST' || !key || !req.user?.id) {
       return next.handle();
     }
@@ -75,6 +93,13 @@ export class IdempotencyInterceptor implements NestInterceptor {
     const existing = await this.repo.findOne({
       where: { scope, idempotencyKey: key },
     });
+    if (existing && existing.path !== path.slice(0, 300)) {
+      throw new ConflictException({
+        code: ErrorCode.CONFLICT,
+        message:
+          'This Idempotency-Key was already used for a different request.',
+      });
+    }
     if (existing) {
       if (existing.status === 'completed') {
         if (existing.statusCode) res.status(existing.statusCode);

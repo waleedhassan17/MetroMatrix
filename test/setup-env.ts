@@ -31,6 +31,8 @@ export function applyTestEnv(): void {
   env.CLOUDINARY_API_KEY ??= '123456789012345';
   env.CLOUDINARY_API_SECRET ??= 'test-only-cloudinary-secret';
   env.SENTRY_DSN = '';
+  // Tests replace ExpoPushClient; nothing ever reaches Expo from a test run.
+  env.PUSH_ENABLED = 'false';
   env.SWAGGER_ENABLED ??= 'false';
   env.LOG_LEVEL ??= 'silent';
   // Route-level @Throttle limits still apply; only the 100/min default is

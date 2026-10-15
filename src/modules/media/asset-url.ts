@@ -23,6 +23,40 @@ export const UPLOAD_PURPOSES = {
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'],
     maxBytes: 10_000_000,
   },
+  // ── Shopping ──
+  product_image: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+  },
+  /** Store logo and cover. */
+  store_branding: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 5_000_000,
+  },
+  review_photo: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+  },
+  return_photo: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 10_000_000,
+  },
+  /** A transfer screenshot or a PDF receipt. */
+  payment_proof: {
+    resourceType: 'auto',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'],
+    maxBytes: 10_000_000,
+  },
+  /** Admin home-screen banners. */
+  banner: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp'],
+    maxBytes: 8_000_000,
+  },
 } as const;
 
 export type UploadPurpose = keyof typeof UPLOAD_PURPOSES;
