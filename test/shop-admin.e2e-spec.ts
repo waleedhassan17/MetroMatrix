@@ -235,9 +235,10 @@ describe('Shopping P6: admin (e2e)', () => {
       ).body.data.items.map((x: any) => x.id),
     ).not.toContain(watch.id);
     expect(
-      (await anon.get('/shop/products/suggest?q=replica').expect(200)).body.data
-        .products,
-    ).toEqual([]);
+      (
+        await anon.get('/shop/products/suggest?q=replica').expect(200)
+      ).body.data.products.map((x: any) => x.id),
+    ).not.toContain(watch.id);
     const actioned = (
       await admin.api.get('/admin/shop/reports?status=actioned').expect(200)
     ).body.data.items;

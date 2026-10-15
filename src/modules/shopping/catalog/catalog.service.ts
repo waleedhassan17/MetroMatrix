@@ -21,7 +21,7 @@ import {
 } from './dto/catalog-query.dto';
 
 /** Below this, a typo is not treated as a match. */
-const TRIGRAM_MIN = 0.4;
+const TRIGRAM_MIN = 0.55;
 const HOME_LIMIT = 12;
 
 const notFound = (what: string) =>
