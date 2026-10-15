@@ -74,6 +74,8 @@ import { ReportsService } from './reports/reports.service';
 import { ProductReportsController } from './reports/reports.controller';
 import { InsightsService } from './insights/insights.service';
 import { PartnerInsightsController } from './insights/insights.controller';
+import { AdminShopService } from './admin/admin-shop.service';
+import { AdminShopController } from './admin/admin-shop.controller';
 
 /**
  * MetroMatrix Shopping. Sub-domains live in their own folders (catalog,
@@ -134,6 +136,7 @@ import { PartnerInsightsController } from './insights/insights.controller';
     PartnerReviewsController,
     ProductReportsController,
     PartnerInsightsController,
+    AdminShopController,
   ],
   providers: [
     StoresService,
@@ -155,6 +158,7 @@ import { PartnerInsightsController } from './insights/insights.controller';
     ReviewsService,
     ReportsService,
     InsightsService,
+    AdminShopService,
   ],
   exports: [StoresService, InventoryService],
 })
