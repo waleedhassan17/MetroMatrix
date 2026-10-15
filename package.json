@@ -29,7 +29,7 @@
     "migration:check": "ts-node -r tsconfig-paths/register src/database/check-schema.ts",
     "seed:superadmin": "ts-node -r tsconfig-paths/register src/database/seeds/super-admin-seed.ts",
     "seed:superadmin:prod": "node dist/database/seeds/super-admin-seed.js",
-    "postman:local": "npx --yes newman@6.2.1 run postman/MetroMatrix-Auth.postman_collection.json -e postman/MetroMatrix-Local.postman_environment.json"
+    "postman:local": "bash scripts/postman-local.sh"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",

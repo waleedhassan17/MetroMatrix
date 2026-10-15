@@ -26,6 +26,11 @@ services:
     image: axllent/mailpit:v1.21.8
     container_name: metromatrix-mailpit
     restart: unless-stopped
+    environment:
+      # Accept any SMTP login, like Brevo would accept the real one, so a
+      # production-configured container (MAIL_USER/MAIL_PASS set) can send here.
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
     ports:
       - "1025:1025"
       - "8025:8025"

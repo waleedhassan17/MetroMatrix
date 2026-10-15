@@ -99,8 +99,29 @@ Validation failures are `400 VALIDATION_FAILED` with `details.fields: { prop: st
 - Portals: `signin-portal.ts` — password first, then portal, so a stranger never learns the
   account type. Admins always need TOTP (`aud: 'totp'` challenge token).
 - `EmailVerifiedGuard` for anything that needs a proven address (partner onboarding).
-- Partner routes in later chunks: `@Roles('partner')` + `@UseGuards(EmailVerifiedGuard,
-  BusinessApprovedGuard)` and read the business with `@CurrentBusiness()`.
+- Partner routes in later chunks: `@Roles('partner')` + `@UseGuards(BusinessApprovedGuard)`
+  (it also asserts the email is verified) and read the business with `@CurrentBusiness()`.
+  Import `BusinessesModule` (it exports the guard). 403 `BUSINESS_NOT_APPROVED` /
+  `BUSINESS_SUSPENDED` take effect on the next request.
+- Admin TOTP: sign-in on the admin portal returns a 5-min challenge (`aud: 'totp'`), never
+  tokens. `/auth/admin/totp` completes it; `/admin/me/totp/*` (AdminTotpEnrolGuard) enrols
+  the first authenticator with the challenge, or rotates with an access token + current code.
+
+## Businesses
+
+- `businesses/required-documents.ts` is the ONLY place document rules live; the API, the
+  e2e suite and docs/API_AUTH.md all derive from it.
+- Status changes go through `BusinessesService.transition()` only — it checks
+  `business-status.ts` and does a conditional `UPDATE … WHERE status = :from`.
+- Uploaded files never pass through the API: `/media/sign-upload` signs a Cloudinary
+  direct upload into `metromatrix/{env}/{userId}/{purpose}`, and `MediaService.assertOwnedAsset`
+  refuses any URL outside that folder.
+
+## Lists
+
+`common/pagination/pagination.ts`: extend `PaginationQueryDto` (`page`, `pageSize` ≤ 100),
+return `paged(items, total, q)` → `{ items, total, page, pageSize }`. In query builders with
+joins + skip/take, `orderBy` must use entity paths (`b.createdAt`), not column names.
 
 ## Audit
 
@@ -127,6 +148,18 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   gets its own IP (X-Forwarded-For) so route throttles don't bleed between tests.
 - Time-based rules (OTP expiry, refresh grace) are tested by back-dating rows with SQL, not
   by sleeping.
+- Emails land in the in-memory outbox (`test/utils/outbox.ts`: `lastOtpFor(email)`); Google
+  is faked (`test/utils/fake-google.ts`); admins come from `test/utils/admin.ts`
+  (`enrolledAdmin(t)` computes real TOTP codes with otplib).
+- `test/qa-matrix.e2e-spec.ts` is the release gate: one test per QA row. Add rows, never
+  delete them.
+
+## Keep in sync when the API changes
+
+- `docs/API_AUTH.md` — the contract the app is built from.
+- `postman/MetroMatrix-Auth.postman_collection.json` — runnable flow (`npm run
+  postman:local` against a local server + Mailpit).
+- `.env.example` and `env.validation.ts` — together, always.
 
 ## Commands
 
@@ -137,4 +170,7 @@ npm run migration:run         apply migrations
 npm run migration:check       entities ↔ migrations drift check
 npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* env
 npm run lint && npm run build && npm test && npm run test:e2e
+npm run postman:local         newman run of the Postman collection (needs a running server)
 ```
+
+Deploying: see `DEPLOYMENT.md` (nothing is provisioned by default — the owner decides).
