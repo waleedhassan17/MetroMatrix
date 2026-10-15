@@ -9,6 +9,7 @@ import { CustomerOrderQueryDto, PartnerOrderQueryDto } from './dto/order.dto';
 import { ErrorCode } from '../../../common/errors/codes';
 import { paged } from '../../../common/pagination/pagination';
 import { SqlParams, likeEscape } from '../common/catalog-sql';
+import { ReviewsService } from '../reviews/reviews.service';
 
 const notFound = () =>
   new NotFoundException({
@@ -111,7 +112,10 @@ function storeOrderCore(
  */
 @Injectable()
 export class OrderViewsService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly reviews: ReviewsService,
+  ) {}
 
   private async details(orderIds: string[]) {
     const m = this.dataSource.manager;
@@ -119,7 +123,7 @@ export class OrderViewsService {
       orderIds.length
         ? m.find(StoreOrderItem, {
             where: { storeOrderId: In(orderIds) },
-            order: { createdAt: 'ASC', id: 'ASC' },
+            order: { lineNo: 'ASC', id: 'ASC' },
           })
         : [],
       orderIds.length
@@ -131,10 +135,39 @@ export class OrderViewsService {
     ]);
     const by = <T extends { storeOrderId: string }>(rows: T[], id: string) =>
       rows.filter((r) => r.storeOrderId === id);
+    const [reviewed, openReturns] = await Promise.all([
+      this.reviews.reviewedLines(items.map((i) => i.id)),
+      orderIds.length
+        ? m
+            .query(
+              `SELECT DISTINCT store_order_id AS id FROM return_requests
+                WHERE store_order_id = ANY($1::uuid[]) AND status IN ('requested', 'approved', 'received')`,
+              [orderIds],
+            )
+            .then(
+              (rows: Array<{ id: string }>) => new Set(rows.map((r) => r.id)),
+            )
+        : new Set<string>(),
+    ]);
     return {
       items: (id: string) => by(items, id),
       events: (id: string) => by(events, id),
+      reviewed: (lineId: string) => reviewed.has(lineId),
+      returnOpen: (id: string) => openReturns.has(id),
     };
+  }
+
+  /** Customer-only extras: which lines can still be reviewed or returned. */
+  private customerItems(
+    o: StoreOrder,
+    d: Awaited<ReturnType<OrderViewsService['details']>>,
+  ) {
+    const delivered = o.status === 'delivered' || o.status === 'completed';
+    return d.items(o.id).map((i) => ({
+      ...itemView(i),
+      reviewed: d.reviewed(i.id),
+      canReview: delivered && !d.reviewed(i.id),
+    }));
   }
 
   private async stores(storeIds: string[]): Promise<Map<string, StoreBrief>> {
@@ -154,7 +187,7 @@ export class OrderViewsService {
 
   // ── Customer ──────────────────────────────────────────────────────────────
 
-  private customerActions(o: StoreOrder) {
+  private customerActions(o: StoreOrder, returnOpen = false) {
     return {
       cancel: allowedOrderMoves(o.status, 'customer').includes('cancelled'),
       requestCancel:
@@ -165,6 +198,11 @@ export class OrderViewsService {
         o.paymentStatus === 'awaiting_transfer' &&
         o.status !== 'cancelled',
       markReceived: o.status === 'shipped',
+      requestReturn:
+        o.status === 'delivered' &&
+        !returnOpen &&
+        !!o.deliveredAt &&
+        o.deliveredAt.getTime() + o.returnWindowDays * DAY_MS > Date.now(),
     };
   }
 
@@ -192,8 +230,9 @@ export class OrderViewsService {
       grandTotal: group.grandTotal,
       storeOrders: orders.map((o) => ({
         ...storeOrderCore(o, d.items(o.id), d.events(o.id)),
+        items: this.customerItems(o, d),
         store: stores.get(o.storeId),
-        can: this.customerActions(o),
+        can: this.customerActions(o, d.returnOpen(o.id)),
       })),
     };
   }
@@ -212,9 +251,10 @@ export class OrderViewsService {
     ]);
     return {
       ...storeOrderCore(o, d.items(o.id), d.events(o.id)),
+      items: this.customerItems(o, d),
       groupCode: group.code,
       store: stores.get(o.storeId),
-      can: this.customerActions(o),
+      can: this.customerActions(o, d.returnOpen(o.id)),
     };
   }
 

@@ -225,8 +225,9 @@ export class CheckoutService {
     );
     await m.insert(
       StoreOrderItem,
-      s.lines.map((l) => ({
+      s.lines.map((l, i) => ({
         storeOrderId: order.id,
+        lineNo: i + 1,
         productId: l.productId,
         variantId: l.variantId,
         productName: l.productName,

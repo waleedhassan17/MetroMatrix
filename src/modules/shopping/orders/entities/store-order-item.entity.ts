@@ -59,4 +59,8 @@ export class StoreOrderItem extends BaseEntity {
 
   @Column({ type: 'int', name: 'returned_qty', default: 0 })
   returnedQty!: number;
+
+  /** 1, 2, … in the order the lines were in the cart. */
+  @Column({ type: 'smallint', name: 'line_no', default: 0 })
+  lineNo!: number;
 }

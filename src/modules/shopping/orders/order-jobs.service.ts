@@ -162,7 +162,7 @@ export class OrderJobsService {
 
   /**
    * Delivered orders past their return window with no open return become
-   * completed. (The return check joins return_requests once returns exist.)
+   * completed.
    */
   async completeDelivered(now = new Date()) {
     return this.run('shop:complete-delivered', async (m) => {
@@ -263,5 +263,6 @@ export class OrderJobsService {
   }
 }
 
-/** Replaced by a NOT EXISTS on return_requests once returns ship (P5). */
-const OPEN_RETURN_GUARD = 'TRUE';
+/** A delivered order with a return in progress waits until the return is settled. */
+const OPEN_RETURN_GUARD = `NOT EXISTS (SELECT 1 FROM return_requests r
+  WHERE r.store_order_id = o.id AND r.status IN ('requested', 'approved', 'received'))`;

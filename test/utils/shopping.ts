@@ -1,4 +1,5 @@
 import { TestApp } from './test-app';
+import { randomUUID } from 'crypto';
 import { buildPkIban } from '../../src/modules/shopping/common/payment-account.validation';
 import {
   addDocuments,
@@ -170,4 +171,92 @@ let ibanSeq = 0;
 export function testIban(): string {
   ibanSeq += 1;
   return buildPkIban('MEZN', `7${String(ibanSeq).padStart(15, '0')}`);
+}
+
+export type Customer = SignedUp & { addressId: string };
+
+/** A verified customer with a default Lahore address. */
+export async function customer(
+  t: TestApp,
+  over: Record<string, unknown> = {},
+): Promise<Customer> {
+  const s = await shopper(t);
+  return { ...s, addressId: await addAddress(s, over) };
+}
+
+export async function fillCart(c: SignedUp, lines: Array<[string, number]>) {
+  for (const [variantId, quantity] of lines) {
+    const res = await c.api.post('/shop/cart/items', { variantId, quantity });
+    if (res.status !== 200)
+      throw new Error(`add failed: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+}
+
+export const checkoutBody = (
+  c: Customer,
+  ...stores: Array<[string, 'cod' | 'transfer', string?]>
+) => ({
+  addressId: c.addressId,
+  stores: stores.map(([storeId, paymentMethod, couponCode]) => ({
+    storeId,
+    paymentMethod,
+    couponCode,
+  })),
+});
+
+export const checkout = (
+  c: SignedUp,
+  payload: object,
+  key: string = randomUUID(),
+) => c.api.post('/shop/checkout', payload).set('Idempotency-Key', key);
+
+/** Cart these lines from one store and check out; returns the store order (customer view). */
+export async function orderFrom(
+  c: Customer,
+  storeId: string,
+  lines: Array<[string, number]>,
+  method: 'cod' | 'transfer' = 'cod',
+): Promise<any> {
+  await fillCart(c, lines);
+  const res = await checkout(c, checkoutBody(c, [storeId, method]));
+  if (res.status !== 201)
+    throw new Error(
+      `checkout failed: ${res.status} ${JSON.stringify(res.body)}`,
+    );
+  return res.body.data.storeOrders[0];
+}
+
+/** Walk a COD store order from placed to delivered as its store. */
+export async function deliverOrder(p: Partner, storeOrderId: string) {
+  for (const [step, payload] of [
+    ['confirm', {}],
+    ['pack', {}],
+    ['ship', { courierName: 'TCS', trackingRef: 'TCS-100200' }],
+    ['deliver', {}],
+  ] as const) {
+    const res = await p.api.post(
+      `/shop/partner/orders/${storeOrderId}/${step}`,
+      payload,
+    );
+    if (res.status !== 200)
+      throw new Error(
+        `${step} failed: ${res.status} ${JSON.stringify(res.body)}`,
+      );
+  }
+}
+
+/** A one-variant active product; returns ids. */
+export async function simpleProduct(
+  t: TestApp,
+  p: Partner,
+  name: string,
+  price: number,
+  stock: number,
+) {
+  const made = await listProduct(t, p, {
+    name,
+    basePrice: price,
+    variants: [{ option1: 'One', stock }],
+  });
+  return { id: made.id as string, variantId: made.variants[0].id as string };
 }

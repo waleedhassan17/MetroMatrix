@@ -55,6 +55,25 @@ import {
   CustomerOrdersController,
   PartnerOrdersController,
 } from './orders/orders.controller';
+import { ReturnRequest } from './returns/entities/return-request.entity';
+import { ReturnRequestItem } from './returns/entities/return-request-item.entity';
+import { ProductReview } from './reviews/entities/product-review.entity';
+import { ProductReport } from './reports/entities/product-report.entity';
+import { ReturnsService } from './returns/returns.service';
+import {
+  CustomerReturnsController,
+  PartnerReturnsController,
+} from './returns/returns.controller';
+import { ReviewsService } from './reviews/reviews.service';
+import {
+  CustomerReviewsController,
+  PartnerReviewsController,
+  ProductReviewsController,
+} from './reviews/reviews.controller';
+import { ReportsService } from './reports/reports.service';
+import { ProductReportsController } from './reports/reports.controller';
+import { InsightsService } from './insights/insights.service';
+import { PartnerInsightsController } from './insights/insights.controller';
 
 /**
  * MetroMatrix Shopping. Sub-domains live in their own folders (catalog,
@@ -86,6 +105,10 @@ import {
       StoreOrder,
       StoreOrderItem,
       StoreOrderEvent,
+      ReturnRequest,
+      ReturnRequestItem,
+      ProductReview,
+      ProductReport,
     ]),
     AuthModule,
     NotificationsModule,
@@ -104,6 +127,13 @@ import {
     CheckoutController,
     CustomerOrdersController,
     PartnerOrdersController,
+    CustomerReturnsController,
+    PartnerReturnsController,
+    ProductReviewsController,
+    CustomerReviewsController,
+    PartnerReviewsController,
+    ProductReportsController,
+    PartnerInsightsController,
   ],
   providers: [
     StoresService,
@@ -121,6 +151,10 @@ import {
     OrderViewsService,
     OrderActionsService,
     OrderJobsService,
+    ReturnsService,
+    ReviewsService,
+    ReportsService,
+    InsightsService,
   ],
   exports: [StoresService, InventoryService],
 })

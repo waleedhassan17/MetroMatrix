@@ -12,6 +12,7 @@ import {
   variantLabel,
 } from '../common/catalog-sql';
 import { WishlistService } from '../wishlist/wishlist.service';
+import { ReviewsService } from '../reviews/reviews.service';
 import { PRODUCT_CARD_COLUMNS, ProductCard, productCard } from './product-card';
 import {
   CatalogProductQueryDto,
@@ -68,6 +69,7 @@ export class CatalogService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly wishlist: WishlistService,
+    private readonly reviews: ReviewsService,
   ) {}
 
   // ── Categories ────────────────────────────────────────────────────────────
@@ -257,7 +259,7 @@ export class CatalogService {
            FROM product_variants WHERE product_id = $1 AND is_active ORDER BY sort, created_at, id`,
         [id],
       ),
-      this.ratingBreakdown(id),
+      this.reviews.breakdown(id),
     ]);
     const card = productCard(row);
     const distinct = (key: 'option1' | 'option2') =>
@@ -306,17 +308,6 @@ export class CatalogService {
       result.isWishlisted = (await this.wishlist.idsIn(userId, [id])).has(id);
     return result;
   }
-
-  /** Overridden once reviews exist: { 5: n, 4: n, … }. */
-  ratingBreakdown: (
-    productId: string,
-  ) => Promise<Record<1 | 2 | 3 | 4 | 5, number>> = async () => ({
-    1: 0,
-    2: 0,
-    3: 0,
-    4: 0,
-    5: 0,
-  });
 
   /** Same category; other stores first, then this store's. */
   async related(id: string) {
