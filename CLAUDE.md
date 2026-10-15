@@ -143,7 +143,8 @@ write and every auth event worth investigating gets one. Actions are dotted verb
 ## Testing conventions
 
 - Unit: `src/**/*.spec.ts` (`npm test`). E2E: `test/*.e2e-spec.ts` (`npm run test:e2e`),
-  real Postgres from `docker compose up -d` (host port 5433, DB `metromatrix_test`).
+  real Postgres from `docker compose up -d --wait` (127.0.0.1:5433, DB `metromatrix_test`,
+  created by global setup if missing).
 - Build apps with `createTestApp()`; simulate clients with `new ApiClient(t.http)` — each
   gets its own IP (X-Forwarded-For) so route throttles don't bleed between tests.
 - Time-based rules (OTP expiry, refresh grace) are tested by back-dating rows with SQL, not
@@ -164,7 +165,7 @@ write and every auth event worth investigating gets one. Actions are dotted verb
 ## Commands
 
 ```
-docker compose up -d          Postgres (5433) + Mailpit (SMTP 1025, UI 8025)
+docker compose up -d --wait   Postgres (127.0.0.1:5433) + Mailpit (SMTP 1025, UI 8025), healthy
 npm run start:dev             watch mode
 npm run migration:run         apply migrations
 npm run migration:check       entities ↔ migrations drift check

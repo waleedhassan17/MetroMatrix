@@ -14,7 +14,7 @@ Requires Node 22 and Docker.
 ```bash
 npm ci
 cp .env.example .env        # then fill in values — see below
-docker compose up -d        # Postgres on localhost:5433, Mailpit on :1025 / http://localhost:8025
+docker compose up -d --wait # Postgres on 127.0.0.1:5433, Mailpit on :1025 / http://localhost:8025
 npm run migration:run
 npm run seed:superadmin     # needs SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in .env
 npm run start:dev           # http://localhost:3000/api/v1 · Swagger at /api/docs

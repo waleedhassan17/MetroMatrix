@@ -1,24 +1,47 @@
+# Local development services: Postgres (+PostGIS) and a mail catcher.
+#
+#   docker compose up -d --wait      # returns once both report healthy
+#
+# A fixed project name: containers, network and volume no longer depend on the
+# folder the repo was cloned into.
+name: metromatrix
+
 services:
   postgres:
     image: postgis/postgis:16-3.4
+    # postgis/postgis publishes amd64 only. Pinning the platform lets Apple
+    # Silicon run it under emulation instead of failing on the manifest.
+    platform: linux/amd64
     container_name: metromatrix-postgres
     restart: unless-stopped
     ports:
-      # 5433 on the host: 5432 is commonly taken by another local Postgres.
-      - "${DB_PORT:-5433}:5432"
+      # Loopback only: a dev database with a well-known password must not be
+      # reachable from the LAN. 5433 because 5432 is often another local Postgres.
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: ${DB_NAME:-metromatrix}
       POSTGRES_USER: ${DB_USERNAME:-metromatrix}
       POSTGRES_PASSWORD: ${DB_PASSWORD:-metromatrix_local_pw}
     volumes:
       - metromatrix_pgdata:/var/lib/postgresql/data
-      # Creates the metromatrix_test database the e2e suite migrates from scratch.
+      # Creates the metromatrix_test database the e2e suite migrates from scratch
+      # (first boot of an empty volume only; test/global-setup.ts creates it if absent).
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USERNAME:-metromatrix} -d ${DB_NAME:-metromatrix}"]
+      # Over TCP, with the container's own settings ($$ = left for the
+      # container's shell, not interpolated by compose from the host's .env).
+      # On first boot the entrypoint runs the init scripts against a temporary
+      # server that listens on the Unix socket only — probing the socket
+      # reported "healthy" before the real server, and metromatrix_test, existed.
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -q -h 127.0.0.1 -p 5432 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\"",
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
+      start_period: 30s
 
   # Local SMTP catcher: point MAIL_HOST=localhost MAIL_PORT=1025 at it and read
   # every email (OTPs included) at http://localhost:8025. Production uses Brevo.
@@ -32,8 +55,11 @@ services:
       MP_SMTP_AUTH_ACCEPT_ANY: "true"
       MP_SMTP_AUTH_ALLOW_INSECURE: "true"
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      # Loopback only: the inbox holds every OTP and reset code.
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
 volumes:
   metromatrix_pgdata:
+    # A fixed name, so the data survives renaming or re-cloning the repo.
+    name: metromatrix_pgdata

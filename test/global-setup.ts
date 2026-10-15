@@ -17,13 +17,28 @@ export default async function globalSetup(): Promise<void> {
     );
   }
 
-  const client = new Client({
+  const connection = {
     host: process.env.DB_HOST,
     port: Number(process.env.DB_PORT),
     user: process.env.DB_USERNAME,
     password: process.env.DB_PASSWORD,
-    database,
-  });
+  };
+
+  // docker/initdb creates the test database only on a volume's FIRST boot; an
+  // older volume won't have it. Create it on demand rather than failing.
+  const admin = new Client({ ...connection, database: 'postgres' });
+  await admin.connect();
+  try {
+    const { rowCount } = await admin.query(
+      'SELECT 1 FROM pg_database WHERE datname = $1',
+      [database],
+    );
+    if (!rowCount) await admin.query(`CREATE DATABASE "${database}"`);
+  } finally {
+    await admin.end();
+  }
+
+  const client = new Client({ ...connection, database });
   await client.connect();
   try {
     await client.query('DROP SCHEMA IF EXISTS public CASCADE');
