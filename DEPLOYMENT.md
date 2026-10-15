@@ -1,7 +1,7 @@
 # Deploying MetroMatrix API to Heroku
 
-Chunk 1 is ready to deploy. Nothing has been provisioned yet: the deploy, and any cost it
-carries, is the owner's call. This runbook gets a fresh app live in about 15 minutes.
+Chunks 1 (auth, onboarding, admin) and 2 (Shopping) are ready to deploy. Nothing has been
+provisioned yet: the deploy, and any cost it carries, is the owner's call. This runbook gets a fresh app live in about 15 minutes.
 
 The production image was proven locally before writing this:
 - production Docker build;
@@ -79,6 +79,9 @@ Rules:
 - `OTP_PEPPER` invalidates outstanding codes when changed. That is harmless; they last 10 minutes.
 - `JWT_SECRET` signs everyone out when changed.
 - Leave `DB_SYNCHRONIZE` unset. It is refused in production.
+- `JOBS_ENABLED` defaults to true (Shopping's order deadlines, reminders, completion and
+  low-stock digest). Each job takes a Postgres advisory lock, so several dynos are safe.
+- `PUSH_ENABLED=true` once the app ships Expo push; until then notifications are in-app only.
 
 ## 4. Deploy
 
@@ -110,6 +113,19 @@ heroku run -a metromatrix-api \
   npm run seed:superadmin:prod -- --reset-totp
 ```
 
+### Demo stores (optional)
+
+`seed:shopping` creates four demo store partners with products, coupons and banners — for a
+demo or staging app, not for real customers. It refuses a production database unless asked:
+```bash
+heroku run -a metromatrix-api \
+  --env "SEED_DEMO_PASSWORD=<strong password>" \
+  npm run seed:shopping:prod -- --allow-production
+```
+With `CLOUDINARY_*` set it uploads generated image tiles (or licensed photos from
+`seed/assets/shopping/`) into each partner's media folder. Without keys it needs
+`--placeholder-images` and uses placehold.co URLs. Re-running only adds what's missing.
+
 ## 6. Smoke test
 
 ```bash
@@ -137,6 +153,12 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
   than one dyno, move it to Redis before relying on the limits.
 - A daily cron (03:00 server time) prunes expired denylist entries, dead refresh tokens, old
   OTP rows and idempotency records.
+- Shopping jobs (advisory-locked, idempotent, counts logged): every 10 min cancel unpaid
+  transfer orders past their 24 h deadline; hourly reminders; 03:00 PKT complete delivered
+  orders past their return window; 09:00 PKT low-stock digest.
+- Sign-in is rate-limited per client address (in memory, per dyno). Running both Postman
+  collections back to back from one machine can hit it; wait out the window or run them
+  against a freshly started process.
 
 ## Verified locally (production mode)
 
@@ -146,3 +168,16 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
 - In that container: `run-migrations.js` applied all five migrations, the seed created the
   super admin, the Docker HEALTHCHECK passed, and the full collection ran green through Mailpit
   over authenticated SMTP.
+
+### Chunk 2 (Shopping), same procedure
+
+- Image rebuilt (`docker build -t metromatrix-api:local .`), run with `NODE_ENV=production`
+  against an **empty** database (`DATABASE_URL=…?sslmode=disable`), SMTP to Mailpit with a login.
+- `run-migrations.js` applied all twelve migrations; `seed:superadmin:prod` created the admin;
+  `seed:shopping:prod` refused without `--allow-production`, then with
+  `--allow-production --placeholder-images` created 4 partners, 72 products, 149 variants,
+  8 coupons, 8 collections, 7 payment accounts and 3 banners.
+- Docker HEALTHCHECK `healthy`; `/health` ok; no error-level log lines with jobs enabled.
+- `MetroMatrix-Auth`: 38 requests / 102 assertions green. `MetroMatrix-Shopping`: 89
+  requests / 256 assertions green (after a restart: run straight after the Auth collection
+  from the same address, its partner sign-ins were correctly rate-limited).

@@ -35,6 +35,9 @@
     "CLOUDINARY_API_KEY": { "description": "Cloudinary API key" },
     "CLOUDINARY_API_SECRET": { "description": "Cloudinary API secret" },
 
+    "PUSH_ENABLED": { "value": "false", "description": "true once the app ships Expo push." },
+    "JOBS_ENABLED": { "value": "true", "description": "Shopping order deadlines, reminders, completion, low-stock digest." },
+
     "SENTRY_DSN": { "required": false, "description": "Error monitoring. Optional." },
     "SWAGGER_ENABLED": { "value": "false" },
     "LOG_LEVEL": { "value": "info" }

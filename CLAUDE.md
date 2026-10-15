@@ -155,11 +155,35 @@ write and every auth event worth investigating gets one. Actions are dotted verb
 - `test/qa-matrix.e2e-spec.ts` is the release gate: one test per QA row. Add rows, never
   delete them.
 
+## Shopping (Chunk 2)
+
+- `src/modules/shopping/` is split by sub-domain (catalog, stores, products, inventory, cart,
+  wishlist, checkout, orders, returns, reviews, reports, coupons, insights, admin); one
+  `shopping.module.ts` wires them. Core `addresses/` and `notifications/` are shared.
+- **No money is held.** Customers pay stores directly (COD or transfer to the store's own
+  account). Never add a wallet, payout, commission or fee. Money is integer rupees.
+- Partner routes: `@ShoppingPartner()` (partner + approved + `ServiceTypeGuard('shopping')` +
+  `PartnerStoreGuard`) and `@CurrentStore()`. Every partner service takes `storeId` first and
+  scopes every query by it — another store's row is **404**, never 403.
+  Customer routes: `@ShoppingCustomer()` (customer + verified email).
+- Visibility is one rule (`common/catalog-sql.ts`): business approved, store not paused,
+  product `active`. Use `VISIBLE_PRODUCT_SQL` / `PRODUCT_FROM_SQL`, never a hand-rolled copy.
+- Stock changes only through `InventoryService.apply()` (locks `FOR UPDATE` in id order,
+  writes a movement with `balance_after`). Order and payment status only through
+  `OrderTransitionsService` (state machines in `orders/order-status.ts`,
+  `orders/payment-status.ts`); returns through `returns/return-status.ts`.
+- Money maths only in `checkout/pricing.ts`; validation + pricing only in `CheckoutPlanner`
+  (preview and checkout both call it). Checkout is one transaction; notify after commit.
+- Jobs (`orders/order-jobs.service.ts`) are advisory-locked and idempotent; `JOBS_ENABLED=false`
+  in tests, which call the job methods directly.
+- `test/qa-matrix-shopping.e2e-spec.ts` is Chunk 2's release gate (24 rows).
+
 ## Keep in sync when the API changes
 
-- `docs/API_AUTH.md` — the contract the app is built from.
-- `postman/MetroMatrix-Auth.postman_collection.json` — runnable flow (`npm run
-  postman:local` against a local server + Mailpit).
+- `docs/API_AUTH.md` and `docs/API_SHOPPING.md` — the contracts the apps are built from.
+- `postman/MetroMatrix-Auth.postman_collection.json` (`npm run postman:local`) and
+  `postman/MetroMatrix-Shopping.postman_collection.json` (`npm run postman:shopping`, needs
+  `seed:shopping`) — runnable flows against a local server + Mailpit.
 - `.env.example` and `env.validation.ts` — together, always.
 
 ## Commands
@@ -170,8 +194,10 @@ npm run start:dev             watch mode
 npm run migration:run         apply migrations
 npm run migration:check       entities ↔ migrations drift check
 npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* env
+npm run seed:shopping         demo stores/products (SEED_DEMO_PASSWORD; --placeholder-images = no uploads)
 npm run lint && npm run build && npm test && npm run test:e2e
-npm run postman:local         newman run of the Postman collection (needs a running server)
+npm run postman:local         newman run of the Auth collection (needs a running server)
+npm run postman:shopping      newman run of the Shopping collection (needs seed:shopping)
 ```
 
 Deploying: see `DEPLOYMENT.md` (nothing is provisioned by default — the owner decides).

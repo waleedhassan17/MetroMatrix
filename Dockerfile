@@ -15,6 +15,8 @@ ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package*.json ./
+# Seed assets (README + any licensed photos) for `seed:shopping:prod`.
+COPY --from=builder /app/seed ./seed
 # Create non-root user
 RUN addgroup -S nodejs && adduser -S nodejs -G nodejs && chown -R nodejs:nodejs /app
 USER nodejs
