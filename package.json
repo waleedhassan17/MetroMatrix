@@ -29,7 +29,9 @@
     "migration:check": "ts-node -r tsconfig-paths/register src/database/check-schema.ts",
     "seed:superadmin": "ts-node -r tsconfig-paths/register src/database/seeds/super-admin-seed.ts",
     "seed:superadmin:prod": "node dist/database/seeds/super-admin-seed.js",
-    "postman:local": "bash scripts/postman-local.sh"
+    "postman:local": "bash scripts/postman-local.sh",
+    "backfill:stores": "ts-node -r tsconfig-paths/register src/database/backfill-stores.ts",
+    "backfill:stores:prod": "node dist/database/backfill-stores.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.22",
