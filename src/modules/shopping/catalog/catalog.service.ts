@@ -427,16 +427,28 @@ export class CatalogService {
 
   // ── Home ──────────────────────────────────────────────────────────────────
 
-  /** Overridden once orders exist: units sold in the last 14 days. */
-  trending: (limit: number) => Promise<ProductCard[]> = async (limit) => {
+  /**
+   * Units sold in the last 14 days (cancelled orders don't count); quiet
+   * catalogues are topped up by all-time sales so the rail is never empty.
+   */
+  async trending(limit: number): Promise<ProductCard[]> {
     const rows = await this.dataSource.query(
-      `SELECT ${PRODUCT_CARD_COLUMNS} ${PRODUCT_FROM_SQL}
+      `WITH recent AS (
+         SELECT i.product_id, sum(i.quantity)::int AS units
+           FROM store_order_items i
+           JOIN store_orders so ON so.id = i.store_order_id
+          WHERE so.created_at > now() - interval '14 days' AND so.status <> 'cancelled'
+          GROUP BY i.product_id
+       )
+       SELECT ${PRODUCT_CARD_COLUMNS} ${PRODUCT_FROM_SQL}
+         LEFT JOIN recent r ON r.product_id = p.id
         WHERE ${VISIBLE_PRODUCT_SQL}
-        ORDER BY p.sold_count DESC, p.rating_avg DESC, p.id LIMIT $1`,
+        ORDER BY coalesce(r.units, 0) DESC, p.sold_count DESC, p.rating_avg DESC, p.id
+        LIMIT $1`,
       [limit],
     );
     return rows.map(productCard);
-  };
+  }
 
   async home(userId?: string) {
     const [banners, featured, newArrivals, trending, categories] =

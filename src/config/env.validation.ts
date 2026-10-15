@@ -58,12 +58,12 @@ export const envValidationSchema = Joi.object({
     then: Joi.optional(),
     otherwise: Joi.required(),
   }),
-  DB_SSL: Joi.boolean().default(false),
-  DB_SSL_REJECT_UNAUTHORIZED: Joi.boolean().default(true),
+  DB_SSL: Joi.boolean().empty('').default(false),
+  DB_SSL_REJECT_UNAUTHORIZED: Joi.boolean().empty('').default(true),
   DB_POOL_MAX: Joi.number().default(10),
   DB_POOL_MIN: Joi.number().default(2),
-  DB_LOGGING: Joi.boolean().default(false),
-  DB_MIGRATIONS_RUN: Joi.boolean().default(false),
+  DB_LOGGING: Joi.boolean().empty('').default(false),
+  DB_MIGRATIONS_RUN: Joi.boolean().empty('').default(false),
   // Migrations own the schema. Never synchronize a database that matters.
   DB_SYNCHRONIZE: Joi.boolean()
     .default(false)
@@ -104,11 +104,14 @@ export const envValidationSchema = Joi.object({
   CLOUDINARY_API_SECRET: requiredInProd(Joi.string()),
 
   // Expo push. Off unless explicitly enabled.
-  PUSH_ENABLED: Joi.boolean().default(false),
+  PUSH_ENABLED: Joi.boolean().empty('').default(false),
   EXPO_ACCESS_TOKEN: Joi.string().optional().allow(''),
 
+  // Scheduled jobs (shopping deadlines, reminders, completion).
+  JOBS_ENABLED: Joi.boolean().empty('').default(true),
+
   SENTRY_DSN: Joi.string().uri().optional().allow(''),
-  SWAGGER_ENABLED: Joi.boolean().default(true),
+  SWAGGER_ENABLED: Joi.boolean().empty('').default(true),
   LOG_LEVEL: Joi.string()
     .valid('trace', 'debug', 'info', 'warn', 'error', 'fatal', 'silent')
     .default('info'),

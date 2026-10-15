@@ -33,6 +33,8 @@ export function applyTestEnv(): void {
   env.SENTRY_DSN = '';
   // Tests replace ExpoPushClient; nothing ever reaches Expo from a test run.
   env.PUSH_ENABLED = 'false';
+  // Tests run job methods directly; no cron tick may race them.
+  env.JOBS_ENABLED = 'false';
   env.SWAGGER_ENABLED ??= 'false';
   env.LOG_LEVEL ??= 'silent';
   // Route-level @Throttle limits still apply; only the 100/min default is

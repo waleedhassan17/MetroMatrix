@@ -114,13 +114,6 @@ const optionKey = (v: { option1?: string | null; option2?: string | null }) =>
  */
 @Injectable()
 export class ProductsService {
-  /**
-   * Set by the orders module: does any order line point at this product?
-   * (Decides archive vs hard delete.) Until orders exist, nothing does.
-   */
-  productHasOrders: (m: EntityManager, productId: string) => Promise<boolean> =
-    async () => false;
-
   constructor(
     @InjectRepository(Product) private readonly products: Repository<Product>,
     private readonly dataSource: DataSource,
@@ -638,6 +631,18 @@ export class ProductsService {
       .map((v) => v.id);
     if (dropped.length)
       await m.update(ProductVariant, { id: In(dropped) }, { isActive: false });
+  }
+
+  /** Was this product ever ordered? Then it is archived, never deleted (order lines point at it). */
+  private async productHasOrders(
+    m: EntityManager,
+    productId: string,
+  ): Promise<boolean> {
+    const [row] = await m.query(
+      `SELECT 1 FROM store_order_items WHERE product_id = $1 LIMIT 1`,
+      [productId],
+    );
+    return !!row;
   }
 
   /** For checkout/admin: a store's product, or throw. */

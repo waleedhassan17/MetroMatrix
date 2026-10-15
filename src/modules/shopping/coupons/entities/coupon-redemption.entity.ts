@@ -2,6 +2,7 @@ import { Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
 import { BaseEntity } from '../../../../common/base/base.entity';
 import { Coupon } from './coupon.entity';
 import { User } from '../../../users/entities/user.entity';
+import { StoreOrder } from '../../orders/entities/store-order.entity';
 
 /**
  * One use of a coupon by one store order. Counting a customer's rows enforces
@@ -25,10 +26,14 @@ export class CouponRedemption extends BaseEntity {
   @JoinColumn({ name: 'user_id' })
   user?: User;
 
-  /** The store order that used it (FK added with store_orders in P4). */
+  /** The store order that used it. */
   @Index({ unique: true })
   @Column({ type: 'uuid', name: 'store_order_id' })
   storeOrderId!: string;
+
+  @ManyToOne(() => StoreOrder, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'store_order_id' })
+  storeOrder?: StoreOrder;
 
   @Column({ type: 'int' })
   discount!: number;

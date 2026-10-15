@@ -14,6 +14,7 @@ import mailConfig from './config/mail.config';
 import authConfig from './config/auth.config';
 import integrationsConfig from './config/integrations.config';
 import notificationsConfig from './config/notifications.config';
+import jobsConfig from './config/jobs.config';
 import { envValidationSchema } from './config/env.validation';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -52,6 +53,7 @@ import { HealthModule } from './modules/health/health.module';
         authConfig,
         integrationsConfig,
         notificationsConfig,
+        jobsConfig,
       ],
       envFilePath: ['.env'],
       // Tests set their own environment (test/setup-env.ts); a developer's

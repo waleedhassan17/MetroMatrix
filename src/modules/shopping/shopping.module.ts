@@ -36,6 +36,25 @@ import {
 } from './coupons/coupons.controller';
 import { CheckoutPlanner } from './checkout/checkout-planner.service';
 import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { OrderGroup } from './orders/entities/order-group.entity';
+import { StoreOrder } from './orders/entities/store-order.entity';
+import { StoreOrderItem } from './orders/entities/store-order-item.entity';
+import { StoreOrderEvent } from './orders/entities/store-order-event.entity';
+import {
+  CHECKOUT_FAULT_INJECTOR,
+  CheckoutService,
+  noCheckoutFaults,
+} from './checkout/checkout.service';
+import { CheckoutController } from './checkout/checkout.controller';
+import { OrderTransitionsService } from './orders/order-transitions.service';
+import { OrderViewsService } from './orders/order-views.service';
+import { OrderActionsService } from './orders/order-actions.service';
+import { OrderJobsService } from './orders/order-jobs.service';
+import {
+  CustomerOrdersController,
+  PartnerOrdersController,
+} from './orders/orders.controller';
 
 /**
  * MetroMatrix Shopping. Sub-domains live in their own folders (catalog,
@@ -63,8 +82,13 @@ import { AuthModule } from '../auth/auth.module';
       WishlistItem,
       Coupon,
       CouponRedemption,
+      OrderGroup,
+      StoreOrder,
+      StoreOrderItem,
+      StoreOrderEvent,
     ]),
     AuthModule,
+    NotificationsModule,
     BusinessesModule,
     MediaModule,
   ],
@@ -77,6 +101,9 @@ import { AuthModule } from '../auth/auth.module';
     StoreCouponsController,
     CartController,
     WishlistController,
+    CheckoutController,
+    CustomerOrdersController,
+    PartnerOrdersController,
   ],
   providers: [
     StoresService,
@@ -88,6 +115,12 @@ import { AuthModule } from '../auth/auth.module';
     WishlistService,
     CouponsService,
     CheckoutPlanner,
+    CheckoutService,
+    { provide: CHECKOUT_FAULT_INJECTOR, useValue: noCheckoutFaults },
+    OrderTransitionsService,
+    OrderViewsService,
+    OrderActionsService,
+    OrderJobsService,
   ],
   exports: [StoresService, InventoryService],
 })

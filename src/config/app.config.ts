@@ -16,5 +16,5 @@ export default registerAs('app', () => ({
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS ?? '12', 10),
   throttleTtlSeconds: parseInt(process.env.THROTTLE_TTL_SECONDS ?? '60', 10),
   throttleLimit: parseInt(process.env.THROTTLE_LIMIT ?? '100', 10),
-  swaggerEnabled: (process.env.SWAGGER_ENABLED ?? 'true') === 'true',
+  swaggerEnabled: (process.env.SWAGGER_ENABLED || 'true') === 'true',
 }));

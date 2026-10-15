@@ -16,6 +16,7 @@ export interface CartStore {
   codEnabled: boolean;
   codLimit: number;
   deliveryCities: string[];
+  returnWindowDays: number;
 }
 
 /** One cart line joined to its live variant, product and store. */
@@ -56,7 +57,7 @@ export async function loadCartLines(
             s.id AS store_id, s.slug AS store_slug, b.name AS store_name, s.logo_url,
             b.owner_user_id, (s.is_paused = false AND b.status = 'approved') AS store_open,
             s.pause_message, s.shipping_flat_fee, s.free_shipping_over, s.cod_enabled, s.cod_limit,
-            s.delivery_cities
+            s.delivery_cities, s.return_window_days
        FROM cart_items ci
        JOIN product_variants v ON v.id = ci.variant_id
        JOIN products p ON p.id = v.product_id
@@ -83,6 +84,7 @@ export async function loadCartLines(
         codEnabled: r.cod_enabled,
         codLimit: r.cod_limit,
         deliveryCities: r.delivery_cities ?? [],
+        returnWindowDays: r.return_window_days,
       };
       stores.set(r.store_id, store);
     }
