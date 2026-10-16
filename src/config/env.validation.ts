@@ -8,6 +8,14 @@ const requiredInProd = (schema: Joi.StringSchema) =>
     otherwise: Joi.optional().allow(''),
   });
 
+/** Required when VIDEO_PROVIDER=jaas, optional otherwise. */
+const requiredForJaas = (schema: Joi.StringSchema) =>
+  schema.when('VIDEO_PROVIDER', {
+    is: 'jaas',
+    then: Joi.required(),
+    otherwise: Joi.optional().allow(''),
+  });
+
 const base64Key32 = Joi.string()
   .custom((value: string, helpers) =>
     Buffer.from(value, 'base64').length === 32
@@ -106,6 +114,23 @@ export const envValidationSchema = Joi.object({
   // Expo push. Off unless explicitly enabled.
   PUSH_ENABLED: Joi.boolean().empty('').default(false),
   EXPO_ACCESS_TOKEN: Joi.string().optional().allow(''),
+
+  // Healthcare video (docs/VIDEO.md): public_jitsi = meet.jit.si (dev/demo),
+  // jaas = 8x8 Jitsi as a Service with signed room tokens.
+  VIDEO_PROVIDER: Joi.string()
+    .valid('public_jitsi', 'jaas')
+    .empty('')
+    .default('public_jitsi'),
+  JAAS_APP_ID: requiredForJaas(Joi.string().pattern(/^vpaas-magic-cookie-/)),
+  JAAS_KID: requiredForJaas(
+    Joi.string().pattern(/^vpaas-magic-cookie-[^/]+\/.+/),
+  ),
+  /** PEM; "\n" escapes are accepted for one-line config vars. */
+  JAAS_PRIVATE_KEY: requiredForJaas(Joi.string()),
+
+  // Symptom checker model. Optional: without a key the keyword matcher answers.
+  GEMINI_API_KEY: Joi.string().optional().allow(''),
+  GEMINI_MODEL: Joi.string().empty('').default('gemini-2.5-flash'),
 
   // seed:shopping only: the four demo partners' password (never in code).
   SEED_DEMO_PASSWORD: Joi.string().optional().allow(''),

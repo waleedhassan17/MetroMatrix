@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BusinessesModule } from '../businesses/businesses.module';
 import { MediaModule } from '../media/media.module';
@@ -83,6 +84,24 @@ import {
   PatientReviewsController,
   PublicReviewsController,
 } from './reviews/reviews.controller';
+import {
+  JaasConfig,
+  JaasProvider,
+  PublicJitsiProvider,
+  VideoProvider,
+} from './video/video-provider';
+import { VideoService } from './video/video.service';
+import {
+  DoctorVideoController,
+  PatientVideoController,
+} from './video/video.controller';
+import { SymptomCheck } from './symptom-checker/entities/symptom-check.entity';
+import {
+  GeminiSymptomModel,
+  SymptomModel,
+} from './symptom-checker/symptom-model';
+import { SymptomCheckerService } from './symptom-checker/symptom-checker.service';
+import { SymptomCheckerController } from './symptom-checker/symptom-checker.controller';
 
 /**
  * MetroMatrix Healthcare. Sub-domains live in their own folders (reference,
@@ -121,6 +140,7 @@ import {
       HealthRecord,
       AppointmentAttachment,
       DoctorReview,
+      SymptomCheck,
     ]),
     BusinessesModule,
     MediaModule,
@@ -146,6 +166,9 @@ import {
     PatientReviewsController,
     DoctorReviewsController,
     AdminReviewsController,
+    PatientVideoController,
+    DoctorVideoController,
+    SymptomCheckerController,
   ],
   providers: [
     HealthEvents,
@@ -169,6 +192,27 @@ import {
     RecordsService,
     DoctorAggregatesService,
     ReviewsService,
+    {
+      provide: VideoProvider,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): VideoProvider =>
+        config.get('integrations.video.provider') === 'jaas'
+          ? new JaasProvider(
+              config.getOrThrow<JaasConfig>('integrations.video.jaas'),
+            )
+          : new PublicJitsiProvider(),
+    },
+    VideoService,
+    {
+      provide: SymptomModel,
+      inject: [ConfigService],
+      useFactory: (config: ConfigService): SymptomModel =>
+        new GeminiSymptomModel(
+          config.get<string>('integrations.gemini.apiKey', ''),
+          config.get<string>('integrations.gemini.model', 'gemini-2.5-flash'),
+        ),
+    },
+    SymptomCheckerService,
   ],
 })
 export class HealthcareModule {}
