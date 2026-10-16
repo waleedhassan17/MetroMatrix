@@ -7,8 +7,13 @@ import { DOCTOR_FROM_SQL, LISTED_DOCTOR_SQL } from '../discovery/listing-sql';
 export const MIN_SAMPLES = 5;
 /** Wait and consult times are measured over completed visits this recent. */
 export const TIMING_WINDOW_DAYS = 90;
-/** Top-booked = the busiest 10% (by visits completed in 30 days) in a specialty and city. */
+/**
+ * Top-booked = the busiest 10% (by visits completed in 30 days) in a
+ * specialty and city: at least one doctor, but only where there is someone
+ * to be ahead of (two or more listed doctors in that specialty and city).
+ */
 export const TOP_BOOKED_SHARE = 0.1;
+export const TOP_BOOKED_MIN_GROUP = 2;
 
 /**
  * Derived numbers on the doctor row: rating and satisfaction (visible
@@ -95,7 +100,7 @@ export class DoctorAggregatesService implements OnModuleInit {
     return changed ?? 0;
   }
 
-  /** Flags the busiest 10% (at least one) per specialty and clinic city. */
+  /** Flags the busiest 10% (at least one, in groups of two or more) per specialty and clinic city. */
   async refreshTopBooked(m: EntityManager | null): Promise<number> {
     const q = m ?? this.dataSource.manager;
     const [, changed] = await q.query(
@@ -109,11 +114,12 @@ export class DoctorAggregatesService implements OnModuleInit {
                 count(*) OVER (PARTITION BY sp, city) AS n
            FROM g
        ), top AS (
-         SELECT DISTINCT id FROM ranked WHERE c > 0 AND rn <= ceil(n * $1::numeric)
+         SELECT DISTINCT id FROM ranked
+          WHERE c > 0 AND n >= $2 AND rn <= greatest(1, floor(n * $1::numeric))
        )
        UPDATE doctors d SET is_top_booked = (d.id IN (SELECT id FROM top))
         WHERE d.is_top_booked IS DISTINCT FROM (d.id IN (SELECT id FROM top))`,
-      [TOP_BOOKED_SHARE],
+      [TOP_BOOKED_SHARE, TOP_BOOKED_MIN_GROUP],
     );
     return changed ?? 0;
   }

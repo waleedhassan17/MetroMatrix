@@ -142,7 +142,7 @@ export class SeedImages {
    */
   async image(opts: {
     ownerUserId: string;
-    purpose: 'product_image' | 'store_branding' | 'banner';
+    purpose: 'product_image' | 'store_branding' | 'banner' | 'doctor_photo';
     storeKey: string;
     name: string;
     title: string;
@@ -152,6 +152,8 @@ export class SeedImages {
     motif: Motif;
     width?: number;
     height?: number;
+    /** A ready-made SVG instead of the generated tile (e.g. an initials avatar). */
+    svg?: string;
   }): Promise<SeedImage> {
     const w = opts.width ?? 800;
     const h = opts.height ?? 800;
@@ -168,7 +170,7 @@ export class SeedImages {
       .find((f) => existsSync(f));
     const source =
       photo ??
-      `data:image/svg+xml;base64,${Buffer.from(tileSvg({ ...opts, width: w, height: h })).toString('base64')}`;
+      `data:image/svg+xml;base64,${Buffer.from(opts.svg ?? tileSvg({ ...opts, width: w, height: h })).toString('base64')}`;
     const res = await cloudinary.uploader.upload(source, {
       folder,
       public_id: id,
