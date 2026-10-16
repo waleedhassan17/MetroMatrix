@@ -357,6 +357,11 @@ already registered is `409 CONFLICT`.
 }
 ```
 
+A doctor's business (*Chunk 3*) also carries `isListed` (the profile is published to
+patients) and `pmdcVerified` (staff have checked the PMDC number), here and on
+`GET /admin/businesses/:id`. Other businesses don't have these keys. The doctor app opens on
+practice set-up until `isListed` is true.
+
 #### `GET /businesses/me`
 **200** `BusinessDetail`. **Errors:** `404 NOT_FOUND` (no business yet).
 

@@ -30,7 +30,7 @@ export class DiscoveryController {
   @Get('home')
   @ApiOperation({
     summary:
-      '{ specialties (top 12), commonConditions, availableTodayNearby (?city), upcomingAppointment, featuredDoctors }',
+      '{ city, cities, specialties (top 12, doctorCount in the city), commonConditions, availableTodayNearby, upcomingAppointment, featuredDoctors (+ featuredScope), banners, emergencyNumbers }',
   })
   home(@Query() q: HomeQueryDto, @CurrentUser() user?: AuthenticatedUser) {
     return this.discovery.home(q.city, user?.id);

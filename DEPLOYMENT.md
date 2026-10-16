@@ -150,7 +150,10 @@ heroku run -a metromatrix-api \
   --env "SEED_DEMO_PASSWORD=<strong password>" \
   npm run seed:health:prod -- --allow-production [--placeholder-images]
 ```
-Avatars are generated initials, never photos of people.
+Each demo doctor gets a licensed stock portrait and the Health home five banners (Unsplash
+License; `src/database/seeds/health/CREDITS.md`), uploaded to Cloudinary with keys, otherwise
+stored as Unsplash URLs. Every demo profile says the doctor is fictional. A production
+database should only get them for a demo, and never alongside real doctors.
 
 ## 6. Smoke test
 

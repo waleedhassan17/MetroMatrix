@@ -13,6 +13,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { Trim } from '../../../../common/validation/transforms';
 import { PaginationQueryDto } from '../../../../common/pagination/pagination';
 import { REVIEW_TAGS, ReviewTag } from '../entities/doctor-review.entity';
@@ -97,6 +98,18 @@ export class ReviewQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(['clinic', 'video'])
   kind?: 'clinic' | 'video';
+
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 5,
+    description: 'Only reviews with this many stars.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  rating?: number;
 
   @ApiPropertyOptional({
     enum: ['true', 'false'],

@@ -363,6 +363,110 @@ export const DEMO_DOCTORS: DemoDoctor[] = [
   },
 ];
 
+/**
+ * Licensed stock portraits for the fictional demo doctors (Unsplash License;
+ * photographers in ./CREDITS.md): one person each, matched to the doctor's
+ * gender, cropped to the face. Demo data only — a real doctor's own photo
+ * replaces it, and every demo profile says the doctor is fictional.
+ */
+export const DEMO_PORTRAITS: Record<string, string> = {
+  dr01: 'photo-1659353888906-adb3e0041693', // Fotos
+  dr02: 'photo-1637059824899-a441006a6875', // vaibhav vivian
+  dr03: 'photo-1706565029539-d09af5896340', // Jonathan Borba
+  dr04: 'photo-1612349317150-e413f6a5b16d', // Usman Yousaf
+  dr05: 'photo-1623854767648-e7bb8009f0db', // Siednji Leon
+  dr06: 'photo-1756699279298-c89cdef354ab', // SoyBreno
+  dr07: 'photo-1753486986377-1395ccfb4a8a', // Muhammad Faiz Zulkeflee
+  dr08: 'photo-1559839734-2b71ea197ec2', // Humberto Chávez
+  dr09: 'photo-1652946619040-1388aa7e819f', // Mufid Majnun
+  dr10: 'photo-1713865467253-ce0ac8477d34', // Look Studio
+  dr11: 'photo-1622902046580-2b47f47f5471', // Dalton Ngangi
+  dr12: 'photo-1770134223774-13b735e29201', // Beatriz Mendez
+  dr13: 'photo-1659353888096-cc5e333db5e0', // Fotos
+  dr14: 'photo-1644335326474-544fbcf8855f', // Othman El Marzak
+  dr15: 'photo-1659353889416-fab1265eaa7f', // Fotos
+  dr16: 'photo-1678940805950-73f2127f9d4e', // Frederick Medina
+  dr17: 'photo-1758691462651-611d730c5272', // Vitaly Gariev
+  dr18: 'photo-1700041785712-649e859d9909', // mohamad azaam
+  dr19: 'photo-1678695972687-033fa0bdbac9', // Ato Aikins
+  dr20: 'photo-1645066928295-2506defde470', // Muhammad Hicham
+  dr21: 'photo-1670191247079-f9713ae06dcf', // Kamal Hoseinianzade
+  dr22: 'photo-1769072610024-5b8a50f05c73', // David Akinwale
+  dr23: 'photo-1622253694242-abeb37a33e97', // Bruno Rodrigues
+  dr24: 'photo-1643297654416-05795d62e39c', // Eben Kassaye
+  dr25: 'photo-1626201061255-51c25afa69e6', // Michael Dagonakis
+  dr26: 'photo-1659080542687-2c0f650b087e', // Fotos
+  dr27: 'photo-1730597842283-943c7986ee2c', // Muhammad Hicham
+  dr28: 'photo-1673865641073-4479f93a7776', // Bermix Studio
+  dr29: 'photo-1666887360369-1901f341fdad', // Nappy
+  dr30: 'photo-1757125736482-328a3cdd9743', // Ike Ellyana
+};
+
+/** A square, face-centred crop of an Unsplash portrait. */
+export const portraitUrl = (photoId: string, size = 600) =>
+  `https://images.unsplash.com/${photoId}?w=${size}&h=${size}&fit=facearea&facepad=3.2&q=80&auto=format`;
+
+/** A 2:1 crop of an Unsplash photo for a home banner. */
+export const bannerUrl = (photoId: string) =>
+  `https://images.unsplash.com/${photoId}?w=1600&h=800&fit=crop&q=80&auto=format`;
+
+export type DemoBannerTarget =
+  | { type: 'specialty'; slug: string }
+  | { type: 'condition'; slug: string }
+  | {
+      type: 'screen';
+      screen:
+        | 'video_consultation'
+        | 'symptom_checker'
+        | 'emergency'
+        | 'records'
+        | 'available_today';
+    };
+
+/**
+ * The Health home's demo banners (photos: Unsplash License, ./CREDITS.md).
+ * Each photo shows what the banner opens. Idempotent by title.
+ */
+export const DEMO_HEALTH_BANNERS: Array<{
+  title: string;
+  subtitle: string;
+  photo: string;
+  target: DemoBannerTarget;
+  city?: City;
+}> = [
+  {
+    title: 'See a doctor by video today',
+    subtitle: 'PMDC-verified doctors, from home. You pay the doctor directly.',
+    photo: 'photo-1758691463620-188ca7c1a04f', // Vitaly Gariev
+    target: { type: 'screen', screen: 'video_consultation' },
+  },
+  {
+    title: 'Skin and hair specialists',
+    subtitle: 'Acne, hair fall and eczema, seen by dermatologists near you.',
+    photo: 'photo-1688588162416-f7a7e726e0bf', // Anna Keibalo
+    target: { type: 'specialty', slug: 'dermatologist' },
+  },
+  {
+    title: 'Not sure who to see?',
+    subtitle: 'Describe how you feel and we will suggest the right specialist.',
+    photo: 'photo-1758273241078-8eec353836be', // Vitaly Gariev
+    target: { type: 'screen', screen: 'symptom_checker' },
+  },
+  {
+    title: 'Gentle care for your child',
+    subtitle: 'Paediatricians in Lahore for check-ups, fevers and vaccines.',
+    photo: 'photo-1708687045004-a3e3c4420e6d', // Ortopediatri Çocuk Ortopedi Akademisi
+    target: { type: 'specialty', slug: 'pediatrician' },
+    city: 'Lahore',
+  },
+  {
+    title: "Your family's records, in one place",
+    subtitle: 'Reports and prescriptions for everyone you book for.',
+    photo: 'photo-1632053002928-1919605ee6f7', // CDC
+    target: { type: 'screen', screen: 'records' },
+  },
+];
+
 export const SPECIALTY_PROFILE: Record<
   string,
   {

@@ -25,6 +25,10 @@ export class Condition extends BaseEntity {
   @Column({ type: 'boolean', name: 'is_common', default: false })
   isCommon!: boolean;
 
+  /** An icon key (the specialties' vocabulary: "thermometer", "tooth"), for the home's concern chips. */
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  icon!: string | null;
+
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive!: boolean;
 }

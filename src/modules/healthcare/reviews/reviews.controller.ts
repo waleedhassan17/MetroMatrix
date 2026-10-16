@@ -40,7 +40,7 @@ export class PublicReviewsController {
   @Get(':id/reviews')
   @ApiOperation({
     summary:
-      '?sort=recent|highest|lowest&kind=clinic|video&page — visible, verified-visit reviews.',
+      '?sort=latest|highest|lowest&kind=clinic|video&rating=1..5&page — visible, verified-visit reviews.',
   })
   list(@Param('id', ParseUUIDPipe) id: string, @Query() q: ReviewQueryDto) {
     return this.reviews.publicList(id, q);
@@ -75,9 +75,21 @@ export class DoctorReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'All your reviews, hidden ones flagged.' })
+  @ApiOperation({
+    summary:
+      'All your reviews, hidden ones flagged. ?sort&kind&rating&unreplied&page',
+  })
   list(@CurrentDoctor() d: CurrentDoctorRef, @Query() q: ReviewQueryDto) {
     return this.reviews.doctorList(d.id, q);
+  }
+
+  @Get('summary')
+  @ApiOperation({
+    summary:
+      'Your review summary as patients see it: count, averages, satisfaction, distribution (index 0 = 1 star), top tags, latest.',
+  })
+  summary(@CurrentDoctor() d: CurrentDoctorRef) {
+    return this.reviews.summary(d.id);
   }
 
   @Post(':id/reply')

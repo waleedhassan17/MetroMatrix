@@ -41,14 +41,19 @@ import {
   CITY_AREAS,
   CLINIC_HOURS,
   DEMO_DOCTORS,
+  DEMO_HEALTH_BANNERS,
   DEMO_PATIENTS,
+  DEMO_PORTRAITS,
   DemoDoctor,
   MBBS_COLLEGES,
   REVIEW_TEXTS,
   SPECIALTY_PROFILE,
   VIDEO_HOURS,
+  bannerUrl,
+  portraitUrl,
 } from './doctors-data';
 import { SeedImages } from '../shopping/tiles';
+import { HealthBanner } from '../../../modules/healthcare/discovery/entities/health-banner.entity';
 
 export const DEMO_DOCTOR_EMAIL = (key: string) =>
   `demo.${key}@metromatrix.test`;
@@ -73,7 +78,13 @@ export interface SeedHealthResult {
   }>;
   patients: string[];
   created: Record<
-    'doctors' | 'patients' | 'locations' | 'appointments' | 'reviews',
+    | 'doctors'
+    | 'patients'
+    | 'locations'
+    | 'appointments'
+    | 'reviews'
+    | 'banners'
+    | 'portraitsRefreshed',
     number
   >;
 }
@@ -89,7 +100,11 @@ const initials = (name: string) =>
     .slice(0, 2)
     .join('');
 
-/** A round initials avatar — a generated image, never a photo of a person. */
+/** An initials avatar an earlier run made (a placeholder or our own upload). */
+const isGeneratedAvatar = (url: string | null, key: string) =>
+  !url || url.includes('placehold.co') || url.includes(`seed-${key}-avatar`);
+
+/** A round initials avatar — a generated image, for a doctor without a portrait. */
 export function avatarSvg(text: string, bg: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="400" height="400" viewBox="0 0 400 400">
@@ -101,13 +116,16 @@ export function avatarSvg(text: string, bg: string): string {
 
 /**
  * The demo Healthcare directory: 30 approved, PMDC-verified (demo numbers),
- * listed doctors with clinics, hours, video for half, qualifications,
- * services, conditions, payment accounts; eight demo patients; and a history
- * of completed visits (with check-in/start/complete times, so wait and
- * consult stats are real) and 0–40 reviews per doctor.
+ * listed doctors with licensed stock portraits, clinics, hours, video for
+ * half, qualifications, services, conditions, payment accounts; eight demo
+ * patients; a history of completed visits (with check-in/start/complete
+ * times, so wait and consult stats are real) and 0–40 reviews per doctor;
+ * and the Health home's five banners.
  *
- * Idempotent: a doctor or patient found by email is left as it is; derived
- * numbers (ratings, wait times, next available) are recomputed every run.
+ * Idempotent: a doctor or patient found by email is left as it is (an
+ * initials avatar from an earlier run becomes the doctor's portrait); a
+ * banner found by title is re-pointed; derived numbers (ratings, wait times,
+ * next available) are recomputed every run.
  */
 export async function seedHealth(
   ds: DataSource,
@@ -144,6 +162,8 @@ export async function seedHealth(
     locations: 0,
     appointments: 0,
     reviews: 0,
+    banners: 0,
+    portraitsRefreshed: 0,
   };
 
   // ── Patients ──
@@ -213,10 +233,26 @@ export async function seedHealth(
       });
       if (existing) {
         const [d] = await m.query(
-          `SELECT d.id, d.rating_count FROM doctors d JOIN businesses b ON b.id = d.business_id WHERE b.owner_user_id = $1`,
+          `SELECT d.id, d.rating_count, d.photo_url FROM doctors d JOIN businesses b ON b.id = d.business_id WHERE b.owner_user_id = $1`,
           [existing.id],
         );
         if (!d) throw new Error(`${email} exists but has no doctor profile`);
+        // Earlier runs gave initials avatars: swap in the doctor's portrait.
+        const portrait = DEMO_PORTRAITS[demo.key];
+        if (portrait && isGeneratedAvatar(d.photo_url, demo.key)) {
+          const photo = await opts.images.remote({
+            ownerUserId: existing.id,
+            purpose: 'doctor_photo',
+            storeKey: demo.key,
+            name: 'portrait',
+            url: portraitUrl(portrait),
+          });
+          await m.query(
+            `UPDATE doctors SET photo_url = $2, updated_at = now() WHERE id = $1`,
+            [d.id, photo.url],
+          );
+          created.portraitsRefreshed += 1;
+        }
         return {
           key: demo.key,
           email,
@@ -249,6 +285,54 @@ export async function seedHealth(
     log(
       `[seed] ${demo.key} ${demo.name} (${demo.specialty}, ${demo.city}): ${out.reviews} reviews`,
     );
+  }
+
+  // ── Home banners (idempotent by title; re-pointed on every run) ──
+  const bannerOwner: string = (
+    await ds.query(
+      `SELECT b.owner_user_id FROM doctors d JOIN businesses b ON b.id = d.business_id WHERE d.id = $1`,
+      [result[0].doctorId],
+    )
+  )[0].owner_user_id;
+  for (const [i, b] of DEMO_HEALTH_BANNERS.entries()) {
+    const t = b.target;
+    const targetId =
+      t.type === 'specialty'
+        ? specialties.get(t.slug)
+        : t.type === 'condition'
+          ? conditions.get(t.slug)
+          : null;
+    if (t.type !== 'screen' && !targetId)
+      throw new Error(`Banner "${b.title}": no ${t.type} ${t.slug}`);
+    const columns = {
+      targetType: t.type,
+      targetId: targetId ?? null,
+      targetScreen: t.type === 'screen' ? t.screen : null,
+      city: b.city ?? null,
+    };
+    const existing = await ds.manager.findOne(HealthBanner, {
+      where: { title: b.title },
+    });
+    if (existing) {
+      await ds.manager.update(HealthBanner, { id: existing.id }, columns);
+      continue;
+    }
+    const image = await opts.images.remote({
+      ownerUserId: bannerOwner,
+      purpose: 'banner',
+      storeKey: 'health',
+      name: `banner-${i + 1}`,
+      url: bannerUrl(b.photo),
+    });
+    await ds.manager.insert(HealthBanner, {
+      imageUrl: image.url,
+      title: b.title,
+      subtitle: b.subtitle,
+      ...columns,
+      sort: i,
+      isActive: true,
+    });
+    created.banners += 1;
   }
 
   // ── Derived numbers, exactly as the app computes them ──
@@ -320,19 +404,28 @@ async function createDoctor(
       reviewedAt: now,
     }),
   );
-  const photo = await images.image({
-    ownerUserId: owner.id,
-    purpose: 'doctor_photo',
-    storeKey: demo.key,
-    name: 'avatar',
-    title: initials(demo.name),
-    bg: profile.colour,
-    fg: '#FFFFFF',
-    motif: 'dots',
-    width: 400,
-    height: 400,
-    svg: avatarSvg(initials(demo.name), profile.colour),
-  });
+  const portrait = DEMO_PORTRAITS[demo.key];
+  const photo = portrait
+    ? await images.remote({
+        ownerUserId: owner.id,
+        purpose: 'doctor_photo',
+        storeKey: demo.key,
+        name: 'portrait',
+        url: portraitUrl(portrait),
+      })
+    : await images.image({
+        ownerUserId: owner.id,
+        purpose: 'doctor_photo',
+        storeKey: demo.key,
+        name: 'avatar',
+        title: initials(demo.name),
+        bg: profile.colour,
+        fg: '#FFFFFF',
+        motif: 'dots',
+        width: 400,
+        height: 400,
+        svg: avatarSvg(initials(demo.name), profile.colour),
+      });
   const years = new Date(now).getUTCFullYear() - demo.since;
   const doctor = await m.save(
     m.create(Doctor, {

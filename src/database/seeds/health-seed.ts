@@ -10,9 +10,11 @@
  * eight demo patients (demo.patient1…8@metromatrix.test), past completed visits
  * and 0–40 reviews per doctor. Idempotent.
  *
- * Reads SEED_DEMO_PASSWORD for the demo accounts (never printed). Avatars are
- * generated initials (no photos of real people), uploaded to Cloudinary when
- * CLOUDINARY_* are set; otherwise placehold.co URLs, for development only.
+ * Reads SEED_DEMO_PASSWORD for the demo accounts (never printed). Each demo
+ * doctor gets a licensed stock portrait and the Health home five banners
+ * (Unsplash License; seeds/health/CREDITS.md), uploaded to Cloudinary when
+ * CLOUDINARY_* are set; otherwise the Unsplash URLs, for development only.
+ * Every demo profile says the doctor is fictional.
  *
  * Refuses to run with pending migrations, and refuses a production database
  * unless --allow-production is given (and, without Cloudinary keys, also

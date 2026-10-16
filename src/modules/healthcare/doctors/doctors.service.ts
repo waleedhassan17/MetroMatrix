@@ -85,6 +85,17 @@ export class DoctorsService implements OnModuleInit {
   ) {}
 
   onModuleInit(): void {
+    this.businesses.onView(async (business) => {
+      if (business.subType !== 'doctor') return {};
+      const [row] = await this.dataSource.query(
+        `SELECT is_listed, pmdc_verified_at FROM doctors WHERE business_id = $1`,
+        [business.id],
+      );
+      return {
+        isListed: !!row?.is_listed,
+        pmdcVerified: !!row?.pmdc_verified_at,
+      };
+    });
     this.businesses.onSubmitted(async (m, business) => {
       if (business.subType === 'doctor')
         await this.ensureForBusiness(m, business);
@@ -241,14 +252,22 @@ export class DoctorsService implements OnModuleInit {
     ownerUserId: string,
     dto: UpdateDoctorProfileDto,
   ) {
-    if (dto.photoUrl)
-      this.media.assertOwnedAsset(
-        ownerUserId,
-        'doctor_photo',
-        dto.photoUrl,
-        undefined,
-        'photoUrl',
+    if (dto.photoUrl) {
+      const [current] = await this.dataSource.query(
+        `SELECT photo_url FROM doctors WHERE id = $1`,
+        [doctorId],
       );
+      // Re-sending the current photo (the app saves the whole form) is fine;
+      // a new one must be the doctor's own doctor_photo upload.
+      if (dto.photoUrl !== current?.photo_url)
+        this.media.assertOwnedAsset(
+          ownerUserId,
+          'doctor_photo',
+          dto.photoUrl,
+          undefined,
+          'photoUrl',
+        );
+    }
     await this.dataSource.transaction(async (m) => {
       const d = await m.findOne(Doctor, {
         where: { id: doctorId },

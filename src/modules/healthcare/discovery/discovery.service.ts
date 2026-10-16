@@ -12,6 +12,7 @@ import {
   specialtyView,
 } from '../reference/reference.service';
 import { SearchSuggestService } from '../reference/search-suggest.service';
+import { EMERGENCY_NUMBERS } from '../symptom-checker/red-flags';
 import { AvailabilityService } from '../availability/availability.service';
 import {
   availabilityLabel,
@@ -48,6 +49,8 @@ export interface ReviewSummary {
     number | null
   >;
   satisfactionPct: number | null;
+  /** Visible reviews per star: index 0 is one star. */
+  distribution: number[];
   topTags: Array<{ tag: string; count: number }>;
   latest: unknown[];
 }
@@ -56,6 +59,7 @@ const EMPTY_SUMMARY: ReviewSummary = {
   count: 0,
   averages: { overall: null, diagnosis: null, staff: null, environment: null },
   satisfactionPct: null,
+  distribution: [0, 0, 0, 0, 0],
   topTags: [],
   latest: [],
 };
@@ -136,8 +140,16 @@ export class DiscoveryService implements OnModuleInit {
         `(d.primary_specialty_id = ${s} OR EXISTS (SELECT 1 FROM doctor_specialties x WHERE x.doctor_id = d.id AND x.specialty_id = ${s}))`,
       );
     }
-    if (q.conditionId) {
-      const c = params.add(q.conditionId);
+    if (q.specialty) {
+      const s = `(SELECT id FROM specialties WHERE slug = ${params.add(q.specialty)})`;
+      where.push(
+        `(d.primary_specialty_id = ${s} OR EXISTS (SELECT 1 FROM doctor_specialties x WHERE x.doctor_id = d.id AND x.specialty_id = ${s}))`,
+      );
+    }
+    if (q.conditionId || q.condition) {
+      const c = q.conditionId
+        ? params.add(q.conditionId)
+        : `(SELECT id FROM conditions WHERE slug = ${params.add(q.condition)})`;
       where.push(`(EXISTS (SELECT 1 FROM doctor_conditions x WHERE x.doctor_id = d.id AND x.condition_id = ${c})
         OR d.primary_specialty_id IN (SELECT specialty_id FROM condition_specialties WHERE condition_id = ${c}))`);
     }
@@ -231,6 +243,7 @@ export class DiscoveryService implements OnModuleInit {
                 sp.id AS sp_id, sp.name AS sp_name, sp.name_ur AS sp_name_ur, sp.slug AS sp_slug,
                 (SELECT string_agg(q.degree, ', ' ORDER BY q.sort) FROM doctor_qualifications q WHERE q.doctor_id = d.id) AS qualifications,
                 EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'video') AS offers_video,
+                EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic') AS offers_clinic,
                 fee.min_fee, na.next_at, na.next_kind, na.timezone AS next_tz,
                 ${distanceSql} AS distance
            ${from}
@@ -274,6 +287,7 @@ export class DiscoveryService implements OnModuleInit {
       isTopBooked: r.is_top_booked,
       minFee: r.min_fee,
       offersVideo: r.offers_video,
+      offersClinic: r.offers_clinic,
       nextAvailable: r.next_at
         ? {
             at: toZonedIso(r.next_at, r.next_tz),
@@ -436,6 +450,7 @@ export class DiscoveryService implements OnModuleInit {
               sp.id AS sp_id, sp.name AS sp_name, sp.name_ur AS sp_name_ur, sp.slug AS sp_slug,
               (SELECT string_agg(q.degree, ', ' ORDER BY q.sort) FROM doctor_qualifications q WHERE q.doctor_id = d.id) AS qualifications,
               EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'video') AS offers_video,
+                EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic') AS offers_clinic,
               (SELECT min(l.fee) FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active) AS min_fee,
               na.next_at, na.next_kind, na.timezone AS next_tz, NULL AS distance
          ${DOCTOR_FROM_SQL}
@@ -467,6 +482,7 @@ export class DiscoveryService implements OnModuleInit {
               sp.id AS sp_id, sp.name AS sp_name, sp.name_ur AS sp_name_ur, sp.slug AS sp_slug,
               (SELECT string_agg(q.degree, ', ' ORDER BY q.sort) FROM doctor_qualifications q WHERE q.doctor_id = d.id) AS qualifications,
               EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'video') AS offers_video,
+                EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic') AS offers_clinic,
               (SELECT min(l.fee) FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active) AS min_fee,
               na.next_at, na.next_kind, na.timezone AS next_tz, NULL AS distance,
               EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND lower(l.city) = ANY(${params.add(cities.map((c) => c.city))})) AS same_city
@@ -516,44 +532,167 @@ export class DiscoveryService implements OnModuleInit {
     }));
   }
 
+  /**
+   * Cities with listed doctors (an active clinic there), most doctors first.
+   * One spelling per city, whatever case the clinics were saved in.
+   */
+  async cities(): Promise<string[]> {
+    const rows = await this.dataSource.query(
+      `SELECT min(l.city) AS city, count(DISTINCT d.id)::int AS n
+         ${DOCTOR_FROM_SQL}
+         JOIN practice_locations l ON l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic' AND l.city IS NOT NULL
+        WHERE ${LISTED_DOCTOR_SQL}
+        GROUP BY lower(l.city)
+        ORDER BY n DESC, 1`,
+    );
+    return rows.map((r: { city: string }) => r.city);
+  }
+
+  /**
+   * The home's city: the one asked for; else the patient's default address
+   * city when doctors practise there; else the city with the most doctors.
+   */
+  private async homeCity(
+    asked: string | undefined,
+    userId: string | undefined,
+    cities: string[],
+  ): Promise<string | null> {
+    const wanted = asked?.trim();
+    // A city doctors practise in comes back in its usual spelling ("multan" → "Multan").
+    if (wanted)
+      return (
+        cities.find((c) => c.toLowerCase() === wanted.toLowerCase()) ?? wanted
+      );
+    if (userId) {
+      const [row] = await this.dataSource.query(
+        `SELECT city FROM addresses WHERE user_id = $1 AND is_default LIMIT 1`,
+        [userId],
+      );
+      const known = row?.city
+        ? cities.find(
+            (c) => c.toLowerCase() === String(row.city).trim().toLowerCase(),
+          )
+        : undefined;
+      if (known) return known;
+    }
+    return cities[0] ?? null;
+  }
+
+  /**
+   * Banners a patient in `city` can open now: active, inside their window,
+   * for this city or every city, and pointing at something that still
+   * exists (an active specialty or condition, a listed doctor). Each carries
+   * its resolved target, so the app needs no second request.
+   */
+  async liveBanners(city: string | null, now = new Date()) {
+    const rows = await this.dataSource.query(
+      `SELECT * FROM (
+         SELECT bn.id, bn.image_url, bn.title, bn.subtitle, bn.target_type, bn.target_screen, bn.sort, bn.created_at,
+                CASE bn.target_type
+                  WHEN 'specialty' THEN (SELECT json_build_object('id', s.id, 'slug', s.slug, 'name', s.name)
+                                           FROM specialties s WHERE s.id = bn.target_id AND s.is_active)
+                  WHEN 'condition' THEN (SELECT json_build_object('id', c.id, 'slug', c.slug, 'name', c.name)
+                                           FROM conditions c WHERE c.id = bn.target_id AND c.is_active)
+                  WHEN 'doctor' THEN (SELECT json_build_object('id', d.id, 'title', d.title, 'fullName', d.full_name)
+                                        ${DOCTOR_FROM_SQL} WHERE d.id = bn.target_id AND ${LISTED_DOCTOR_SQL})
+                END AS target
+           FROM health_banners bn
+          WHERE bn.is_active
+            AND (bn.starts_at IS NULL OR bn.starts_at <= $1)
+            AND (bn.ends_at IS NULL OR bn.ends_at > $1)
+            AND (bn.city IS NULL OR lower(bn.city) = lower($2::text))
+       ) x
+       WHERE x.target_type IN ('screen', 'none') OR x.target IS NOT NULL
+       ORDER BY x.sort, x.created_at DESC
+       LIMIT 10`,
+      [now, city],
+    );
+    return rows.map((r: any) => ({
+      id: r.id,
+      imageUrl: r.image_url,
+      title: r.title,
+      subtitle: r.subtitle,
+      targetType: r.target_type,
+      targetScreen: r.target_screen,
+      target: !r.target
+        ? null
+        : r.target_type === 'doctor'
+          ? {
+              id: r.target.id,
+              name: `${TITLE_PREFIX[r.target.title] ?? 'Dr.'} ${r.target.fullName}`,
+            }
+          : { id: r.target.id, slug: r.target.slug, name: r.target.name },
+    }));
+  }
+
   async home(
     city: string | undefined,
     userId: string | undefined,
     now = new Date(),
   ) {
-    const [ranking, all, common, featured, nearby, upcoming] =
-      await Promise.all([
-        this.specialtyRanking(12),
-        this.reference.specialties(),
-        this.reference.conditions({ common: 'true' }),
-        this.list(
+    const cities = await this.cities();
+    const chosen = await this.homeCity(city, userId, cities);
+    const [
+      ranking,
+      specialties,
+      common,
+      featuredHere,
+      nearby,
+      upcoming,
+      banners,
+    ] = await Promise.all([
+      this.specialtyRanking(12),
+      this.specialties(chosen ?? undefined),
+      this.reference.conditions({ common: 'true' }),
+      chosen
+        ? this.list(
+            {
+              page: 1,
+              pageSize: 10,
+              city: chosen,
+              sort: 'recommended',
+            } as DoctorQueryDto,
+            now,
+          )
+        : null,
+      chosen
+        ? this.list(
+            {
+              page: 1,
+              pageSize: 10,
+              city: chosen,
+              availableToday: 'true',
+              sort: 'earliest',
+            } as DoctorQueryDto,
+            now,
+          )
+        : null,
+      userId ? this.upcomingFor(userId) : null,
+      this.liveBanners(chosen, now),
+    ]);
+    // Nobody practises in the city yet: the best doctors anywhere (most offer video).
+    const nationwide = !featuredHere?.items.length;
+    const featured = nationwide
+      ? await this.list(
           { page: 1, pageSize: 10, sort: 'recommended' } as DoctorQueryDto,
           now,
-        ),
-        city
-          ? this.list(
-              {
-                page: 1,
-                pageSize: 10,
-                city,
-                availableToday: 'true',
-                sort: 'earliest',
-              } as DoctorQueryDto,
-              now,
-            )
-          : null,
-        userId ? this.upcomingFor(userId) : null,
-      ]);
+        )
+      : featuredHere!;
     const rank = new Map(ranking.map((id, i) => [id, i]));
-    const specialties = [...all]
+    const top = [...specialties]
       .sort((a: any, b: any) => (rank.get(a.id) ?? 99) - (rank.get(b.id) ?? 99))
       .slice(0, 12);
     return {
-      specialties,
+      city: chosen,
+      cities,
+      specialties: top,
       commonConditions: common,
       availableTodayNearby: nearby ? nearby.items : [],
       upcomingAppointment: upcoming,
       featuredDoctors: featured.items,
+      featuredScope: nationwide ? 'nationwide' : 'city',
+      banners,
+      emergencyNumbers: EMERGENCY_NUMBERS,
     };
   }
 }

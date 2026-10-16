@@ -21,6 +21,7 @@ export const conditionView = (r: any) => ({
   nameUr: r.name_ur,
   slug: r.slug,
   isCommon: r.is_common,
+  icon: r.icon ?? null,
   specialties: (r.specialties ?? []) as Array<{
     id: string;
     name: string;
@@ -68,7 +69,7 @@ export class ReferenceService {
     if (q.q) where.push(CONDITION_MATCH);
     if (q.common === 'true') where.push('c.is_common');
     const rows = await this.dataSource.query(
-      `SELECT c.id, c.name, c.name_ur, c.slug, c.is_common,
+      `SELECT c.id, c.name, c.name_ur, c.slug, c.is_common, c.icon,
               coalesce((SELECT json_agg(json_build_object('id', s.id, 'name', s.name, 'nameUr', s.name_ur, 'slug', s.slug) ORDER BY cs.rank)
                           FROM condition_specialties cs JOIN specialties s ON s.id = cs.specialty_id
                          WHERE cs.condition_id = c.id AND s.is_active), '[]') AS specialties

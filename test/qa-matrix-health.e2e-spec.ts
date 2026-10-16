@@ -734,4 +734,88 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
     await all();
     expect(await digest()).toBe(once);
   });
+
+  it('QA #27 the home shows only live banners a patient can open, in their city', async () => {
+    const { d } = await doctor();
+    const image = asset(admin.userId, 'banner').url;
+    const day = 86_400_000;
+    const make = async (body: Record<string, unknown>) =>
+      expectOk(
+        await admin.api.post('/admin/health/banners', {
+          imageUrl: image,
+          sort: 0,
+          ...body,
+        }),
+        201,
+      );
+    const everywhere = await make({
+      title: 'QA27 video',
+      targetType: 'screen',
+      targetScreen: 'video_consultation',
+    });
+    const lahore = await make({
+      title: 'QA27 Lahore',
+      targetType: 'none',
+      city: 'Lahore',
+    });
+    const karachi = await make({
+      title: 'QA27 Karachi',
+      targetType: 'none',
+      city: 'Karachi',
+    });
+    const expired = await make({
+      title: 'QA27 expired',
+      targetType: 'none',
+      startsAt: new Date(Date.now() - 2 * day).toISOString(),
+      endsAt: new Date(Date.now() - day).toISOString(),
+    });
+    const later = await make({
+      title: 'QA27 later',
+      targetType: 'none',
+      startsAt: new Date(Date.now() + day).toISOString(),
+    });
+    const paused = await make({
+      title: 'QA27 paused',
+      targetType: 'none',
+      isActive: false,
+    });
+    const byDoctor = await make({
+      title: 'QA27 doctor',
+      targetType: 'doctor',
+      targetId: d.doctorId,
+    });
+    const shown = async (city: string) =>
+      (
+        await expectOk(await anon().get(`/health/home?city=${city}`))
+      ).banners.map((b: any) => b.id);
+
+    const inLahore = await shown('Lahore');
+    expect(inLahore).toEqual(
+      expect.arrayContaining([everywhere.id, lahore.id, byDoctor.id]),
+    );
+    for (const hidden of [karachi, expired, later, paused])
+      expect(inLahore).not.toContain(hidden.id);
+    const inKarachi = await shown('Karachi');
+    expect(inKarachi).toEqual(
+      expect.arrayContaining([everywhere.id, karachi.id]),
+    );
+    expect(inKarachi).not.toContain(lahore.id);
+
+    // A doctor who leaves the directory takes their banner with them.
+    await admin.api
+      .post(`/admin/health/doctors/${d.doctorId}/unlist`, { reason: 'QA #27' })
+      .expect(200);
+    expect(await shown('Lahore')).not.toContain(byDoctor.id);
+
+    for (const b of [
+      everywhere,
+      lahore,
+      karachi,
+      expired,
+      later,
+      paused,
+      byDoctor,
+    ])
+      await admin.api.delete(`/admin/health/banners/${b.id}`).expect(200);
+  });
 });

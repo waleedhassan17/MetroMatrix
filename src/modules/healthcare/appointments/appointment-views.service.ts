@@ -22,6 +22,7 @@ export const notFound = () =>
 
 export interface DoctorBrief {
   id: string;
+  businessId: string;
   displayName: string;
   photoUrl: string | null;
   specialty: string | null;
@@ -35,6 +36,8 @@ export interface LocationBrief {
   addressLine: string | null;
   area: string | null;
   city: string | null;
+  lat: number | null;
+  lng: number | null;
   phone: string | null;
   instructions: string | null;
   timezone: string;
@@ -73,20 +76,31 @@ export class AppointmentViewsService {
   attachments: (appointmentIds: string[]) => Promise<Map<string, unknown[]>> =
     async () => new Map();
 
+  /** The prescription written for each appointment, if any (the patient's own). */
+  async prescriptionIds(appointmentIds: string[]) {
+    if (!appointmentIds.length) return new Map<string, string>();
+    const rows: Array<{ id: string; appointment_id: string }> =
+      await this.dataSource.query(
+        `SELECT id, appointment_id FROM prescriptions WHERE appointment_id = ANY($1::uuid[])`,
+        [appointmentIds],
+      );
+    return new Map(rows.map((r) => [r.appointment_id, r.id]));
+  }
+
   constructor(private readonly dataSource: DataSource) {}
 
   async briefs(doctorIds: string[], locationIds: string[]) {
     const [doctors, locations] = await Promise.all([
       doctorIds.length
         ? this.dataSource.query(
-            `SELECT d.id, d.title, d.full_name, d.photo_url, d.cancel_cutoff_minutes, s.name AS specialty
+            `SELECT d.id, d.business_id, d.title, d.full_name, d.photo_url, d.cancel_cutoff_minutes, s.name AS specialty
                FROM doctors d LEFT JOIN specialties s ON s.id = d.primary_specialty_id WHERE d.id = ANY($1::uuid[])`,
             [doctorIds],
           )
         : [],
       locationIds.length
         ? this.dataSource.query(
-            `SELECT id, kind, name, address_line, area, city, phone, instructions, timezone
+            `SELECT id, kind, name, address_line, area, city, lat, lng, phone, instructions, timezone
                FROM practice_locations WHERE id = ANY($1::uuid[])`,
             [locationIds],
           )
@@ -98,6 +112,7 @@ export class AppointmentViewsService {
           d.id,
           {
             id: d.id,
+            businessId: d.business_id,
             displayName: `${TITLE_PREFIX[d.title] ?? 'Dr.'} ${d.full_name}`,
             photoUrl: d.photo_url,
             specialty: d.specialty,
@@ -115,6 +130,8 @@ export class AppointmentViewsService {
             addressLine: l.address_line,
             area: l.area,
             city: l.city,
+            lat: l.lat === null ? null : parseFloat(l.lat),
+            lng: l.lng === null ? null : parseFloat(l.lng),
             phone: l.phone,
             instructions: l.instructions,
             timezone: l.timezone,
@@ -191,19 +208,22 @@ export class AppointmentViewsService {
     withEvents = false,
   ) {
     if (!rows.length) return [];
-    const [b, events, reviewed, attachments] = await Promise.all([
-      this.briefs(
-        [...new Set(rows.map((r) => r.doctorId))],
-        [...new Set(rows.map((r) => r.locationId))],
-      ),
-      withEvents
-        ? this.events(rows.map((r) => r.id))
-        : Promise.resolve(new Map<string, AppointmentEvent[]>()),
-      this.reviewed(rows.map((r) => r.id)),
-      withEvents
-        ? this.attachments(rows.map((r) => r.id))
-        : Promise.resolve(new Map<string, unknown[]>()),
-    ]);
+    const [b, events, reviewed, attachments, prescriptions] = await Promise.all(
+      [
+        this.briefs(
+          [...new Set(rows.map((r) => r.doctorId))],
+          [...new Set(rows.map((r) => r.locationId))],
+        ),
+        withEvents
+          ? this.events(rows.map((r) => r.id))
+          : Promise.resolve(new Map<string, AppointmentEvent[]>()),
+        this.reviewed(rows.map((r) => r.id)),
+        withEvents
+          ? this.attachments(rows.map((r) => r.id))
+          : Promise.resolve(new Map<string, unknown[]>()),
+        this.prescriptionIds(rows.map((r) => r.id)),
+      ],
+    );
     return rows.map((a) => {
       const loc = b.location.get(a.locationId)!;
       const doc = b.doctor.get(a.doctorId)!;
@@ -218,6 +238,10 @@ export class AppointmentViewsService {
           specialty: doc.specialty,
         },
         location: loc,
+        // A reschedule is allowed until here (the doctor's notice), a free cancel too.
+        cancelCutoffAt: toZonedIso(new Date(cutoff), loc.timezone),
+        prescriptionId: prescriptions.get(a.id) ?? null,
+        reviewed: reviewed.has(a.id),
         ...(withEvents
           ? {
               events: (events.get(a.id) ?? []).map((e) => ({

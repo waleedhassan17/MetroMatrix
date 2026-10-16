@@ -131,6 +131,14 @@
     {
       "key": "reviewId",
       "value": ""
+    },
+    {
+      "key": "bannerUrl",
+      "value": ""
+    },
+    {
+      "key": "bannerId",
+      "value": ""
     }
   ],
   "item": [
@@ -461,7 +469,10 @@
                   "",
                   "const body = pm.response.json();",
                   "const d = body.data;",
-                  "pm.test('12 specialties, common conditions, featured doctors', () => { pm.expect(d.specialties).to.have.length(12); pm.expect(d.commonConditions.length).to.be.above(5); pm.expect(d.featuredDoctors.length).to.be.above(0); });"
+                  "pm.test('12 specialties, common conditions, featured doctors', () => { pm.expect(d.specialties).to.have.length(12); pm.expect(d.commonConditions.length).to.be.above(5); pm.expect(d.featuredDoctors.length).to.be.above(0); });",
+                  "pm.test('the city, its cities, live banners and emergency numbers', () => { pm.expect(d.city).to.eql('Lahore'); pm.expect(d.cities).to.include('Lahore'); pm.expect(d.featuredScope).to.eql('city'); pm.expect(d.banners.length).to.be.above(0); pm.expect(d.banners[0].targetType).to.be.a('string'); pm.expect(d.emergencyNumbers[0]).to.eql({ label: 'Rescue', number: '1122' }); });",
+                  "pm.test('specialties count the city\\'s doctors; concerns carry icons', () => { pm.expect(d.specialties[0].doctorCount).to.be.a('number'); pm.expect(d.commonConditions.filter((c) => c.icon).length).to.be.above(5); });",
+                  "pm.test('demo doctors have portraits', () => pm.expect(d.featuredDoctors[0].photoUrl).to.match(/^https:/));"
                 ]
               }
             }
@@ -597,6 +608,32 @@
                   "const t = d.items.map((c) => c.nextAvailable && new Date(c.nextAvailable.at).getTime()).filter(Boolean);",
                   "pm.test('ordered by next available', () => pm.expect(t).to.eql([...t].sort((a, b) => a - b)));",
                   "pm.test('labels made by the server in PKT', () => d.items.filter((c) => c.nextAvailable).forEach((c) => pm.expect(c.nextAvailable.at).to.match(/\\+05:00$/)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Dermatologists by slug",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/doctors?specialty=dermatologist&city=Lahore",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Dermatologists by slug → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the slug works like the id; cards say whether a clinic is offered', () => { pm.expect(d.items.length).to.be.above(0); d.items.forEach((c) => { pm.expect(c.specialty.slug).to.eql('dermatologist'); pm.expect(c.offersClinic).to.be.a('boolean'); }); });"
                 ]
               }
             }
@@ -2042,6 +2079,39 @@
           ]
         },
         {
+          "name": "Doctor: recent diagnoses",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/doctor/diagnoses/recent",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{doctorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Doctor: recent diagnoses → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the diagnosis just written comes first', () => pm.expect(d[0]).to.eql('Acne vulgaris (moderate)'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Doctor: complete with payment collected",
           "request": {
             "method": "POST",
@@ -2471,6 +2541,72 @@
               }
             }
           ]
+        },
+        {
+          "name": "Patient: the visit shows its prescription and review",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/appointments/{{code}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Patient: the visit shows its prescription and review → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('prescriptionId and reviewed', () => { pm.expect(d.prescriptionId).to.eql(pm.collectionVariables.get('prescriptionId')); pm.expect(d.reviewed).to.be.true; pm.expect(d.cancelCutoffAt).to.match(/\\+05:00$/); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Doctor: review summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/doctor/reviews/summary",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{doctorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Doctor: review summary → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('five star counts', () => { pm.expect(d.distribution).to.have.length(5); pm.expect(d.distribution[4]).to.be.above(0); });"
+                ]
+              }
+            }
+          ]
         }
       ]
     },
@@ -2771,6 +2907,193 @@
                   "const body = pm.response.json();",
                   "const d = body.data;",
                   "pm.test('doctors and today', () => { pm.expect(d.doctors.listed).to.be.above(0); pm.expect(d.today).to.have.property('newBookings'); pm.expect(d.listedBySpecialty.length).to.be.above(0); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: sign a banner upload",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/media/sign-upload",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"purpose\": \"banner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Postman never uploads a file. It builds a URL inside the signed folder, which is all the API checks."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: sign a banner upload → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('bannerUrl', 'https://res.cloudinary.com/' + d.cloudName + '/image/upload/v1/' + d.folder + '/pm-banner.jpg');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: add a Health banner",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/health/banners",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"imageUrl\": \"{{bannerUrl}}\",\n  \"title\": \"Postman: check your symptoms\",\n  \"subtitle\": \"Find the right specialist.\",\n  \"targetType\": \"screen\",\n  \"targetScreen\": \"symptom_checker\",\n  \"city\": \"Lahore\",\n  \"sort\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: add a Health banner → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('a screen banner for Lahore', () => { pm.expect(d.targetType).to.eql('screen'); pm.expect(d.targetScreen).to.eql('symptom_checker'); pm.expect(d.city).to.eql('Lahore'); });",
+                  "pm.collectionVariables.set('bannerId', d.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: banners in order",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": "{{baseUrl}}/admin/health/banners/order",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"ids\": [\n    \"{{bannerId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: banners in order → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the new banner leads', () => pm.expect(d[0].id).to.eql(pm.collectionVariables.get('bannerId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Home (Lahore) shows the new banner",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health/home?city=Lahore",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Home (Lahore) shows the new banner → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('first, with its screen', () => { pm.expect(d.banners[0].id).to.eql(pm.collectionVariables.get('bannerId')); pm.expect(d.banners[0].target).to.be.null; });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: delete the banner",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/admin/health/banners/{{bannerId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: delete the banner → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('deleted', () => pm.expect(d.deleted).to.be.true);"
                 ]
               }
             }

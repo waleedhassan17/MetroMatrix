@@ -6,6 +6,7 @@ import {
 import { DataSource, EntityManager, In } from 'typeorm';
 import { Appointment } from '../appointments/entities/appointment.entity';
 import { AppointmentTransitionsService } from '../appointments/appointment-transitions.service';
+import { allowedPaymentMoves } from '../appointments/payment-status';
 import {
   AppointmentViewsService,
   notFound,
@@ -139,6 +140,7 @@ export class ConsultationService {
             )
           : null;
       const moves = allowedMoves(a.status, 'doctor', a.kind);
+      const payMoves = allowedPaymentMoves(a.paymentStatus, 'doctor');
       return {
         ...this.views.core(a, loc.timezone),
         patientKey: personKeyOf(a),
@@ -165,6 +167,10 @@ export class ConsultationService {
               !!a.completedAt &&
               now.getTime() - a.completedAt.getTime() <= 24 * 60 * MIN),
           joinVideo: videoJoinState(a, now) === 'ok',
+          confirmPayment:
+            a.paymentMethod === 'transfer' && payMoves.includes('paid'),
+          rejectPayment: a.paymentStatus === 'proof_submitted',
+          refund: payMoves.includes('refunded'),
         },
       };
     });

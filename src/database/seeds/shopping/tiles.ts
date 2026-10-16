@@ -189,4 +189,31 @@ export class SeedImages {
         });
     return { url, publicId: res.public_id };
   }
+
+  /**
+   * A licensed photo fetched from `url` (the demo doctors' portraits, the
+   * Health home's banners): uploaded under `ownerUserId`/`purpose` when
+   * Cloudinary is configured, so the API serves its own copy; otherwise the
+   * remote URL itself, for development.
+   */
+  async remote(opts: {
+    ownerUserId: string;
+    purpose: 'banner' | 'doctor_photo';
+    storeKey: string;
+    name: string;
+    url: string;
+  }): Promise<SeedImage> {
+    const folder = uploadFolder(this.env, opts.ownerUserId, opts.purpose);
+    const id = `seed-${opts.storeKey}-${opts.name}`;
+    if (!this.keys) return { url: opts.url, publicId: `${folder}/${id}` };
+    const res = await cloudinary.uploader.upload(opts.url, {
+      folder,
+      public_id: id,
+      overwrite: true,
+      resource_type: 'image',
+    });
+    this.uploaded += 1;
+    this.photos += 1;
+    return { url: res.secure_url, publicId: res.public_id };
+  }
 }

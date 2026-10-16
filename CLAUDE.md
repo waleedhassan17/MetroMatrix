@@ -203,6 +203,11 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   constraint (`23P01` → `SLOT_TAKEN`). Never write `ON CONFLICT DO NOTHING` without a
   target: it also swallows the exclusion violation.
 - Visibility is one rule: `LISTED_DOCTOR_SQL` (`discovery/listing-sql.ts`).
+- The home (`DiscoveryService.home`) picks its city (asked, else the patient's default
+  address city, else the busiest), and serves only live banners (`health_banners`, staff
+  CRUD at `/admin/health/banners`) whose target still exists, scoped to that city.
+- A doctor's business detail carries `isListed`/`pmdcVerified` through the
+  `BusinessesService.onView` hook (set by `DoctorsService`).
 - Appointment and payment status change only through `AppointmentTransitionsService`
   (`appointment-status.ts`, `payment-status.ts`).
 - PHI:
@@ -233,8 +238,12 @@ write and every auth event worth investigating gets one. Actions are dotted verb
 - Video: `VideoProvider` (`public_jitsi` | `jaas`); see `docs/VIDEO.md`.
 - Jobs (`jobs/health-jobs.service.ts`) are advisory-locked and idempotent. Tests call them
   directly with a fixed `now`.
-- `test/qa-matrix-health.e2e-spec.ts` is Chunk 3's release gate (26 rows). Helpers live in
-  `test/utils/health.ts`.
+- `test/qa-matrix-health.e2e-spec.ts` is Chunk 3's release gate (27 rows). Helpers live in
+  `test/utils/health.ts`. `test/health-home.e2e-spec.ts` covers the home, banners and the
+  app additions (`docs/API_HEALTH.md` §10).
+- Demo doctors wear licensed stock portraits (`seeds/health/doctors-data.ts`
+  `DEMO_PORTRAITS`, credits in `seeds/health/CREDITS.md`); every demo profile says it is
+  fictional. Demo and dev data only.
 
 ## Keep in sync when the API changes
 
@@ -256,7 +265,7 @@ npm run migration:run         apply migrations
 npm run migration:check       entities ↔ migrations drift check
 npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* env
 npm run seed:shopping         demo stores/products (SEED_DEMO_PASSWORD; --placeholder-images = no uploads)
-npm run seed:health           30 demo doctors, patients, visits, reviews (same password and flags)
+npm run seed:health           30 demo doctors (portraits), patients, visits, reviews, home banners (same password and flags)
 npm run lint && npm run build && npm test && npm run test:e2e
 npm run postman:local         newman run of the Auth collection (needs a running server)
 npm run postman:shopping      newman run of the Shopping collection (needs seed:shopping)

@@ -48,8 +48,11 @@ export class AdminHealthService {
     );
     const rows = await this.dataSource.query(
       `SELECT d.id, d.full_name, d.title, d.pmdc_number, d.pmdc_verified_at, d.is_listed, d.unlisted_reason,
-              b.id AS business_id, b.name AS business_name, b.status AS business_status, b.city, b.submitted_at
-         ${from}
+              b.id AS business_id, b.name AS business_name, b.status AS business_status, b.city, b.submitted_at,
+              s.id AS sp_id, s.name AS sp_name, s.slug AS sp_slug,
+              coalesce((SELECT json_agg(json_build_object('id', bd.id, 'kind', bd.kind, 'url', bd.url, 'status', bd.status) ORDER BY bd.created_at)
+                          FROM business_documents bd WHERE bd.business_id = b.id), '[]') AS documents
+         ${from.replace('WHERE', 'LEFT JOIN specialties s ON s.id = d.primary_specialty_id WHERE')}
         ORDER BY (d.pmdc_verified_at IS NULL) DESC, b.submitted_at ASC NULLS LAST, d.id
         LIMIT ${params.add(q.pageSize)} OFFSET ${params.add((q.page - 1) * q.pageSize)}`,
       params.values,
@@ -63,6 +66,11 @@ export class AdminHealthService {
         pmdcVerifiedAt: r.pmdc_verified_at,
         isListed: r.is_listed,
         unlistedReason: r.unlisted_reason,
+        specialty: r.sp_id
+          ? { id: r.sp_id, name: r.sp_name, slug: r.sp_slug }
+          : null,
+        // The registration certificate and anything else the doctor uploaded at sign-up.
+        documents: r.documents,
         business: {
           id: r.business_id,
           name: r.business_name,

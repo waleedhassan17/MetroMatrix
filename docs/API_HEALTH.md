@@ -4,7 +4,7 @@ This file is the contract the Healthcare app chunk is built from. Everything in 
 enforced by the e2e suite:
 
 - `test/health-*.e2e-spec.ts`;
-- the release gate `test/qa-matrix-health.e2e-spec.ts` (26 rows).
+- the release gate `test/qa-matrix-health.e2e-spec.ts` (27 rows).
 
 The live schema is at `GET /api/docs-json`; Swagger UI is at `/api/docs` where it is enabled.
 The conventions in `docs/API_AUTH.md` (envelope, tokens, `X-Request-Id`) all apply. Video is
@@ -64,7 +64,7 @@ are Pakistan days (`Asia/Karachi`).
   "specialty": { "id": "a8d0…", "name": "Dermatologist", "nameUr": "ماہر امراض جلد", "slug": "dermatologist" },
   "qualifications": "MBBS, FCPS (Dermatology)", "yearsExperience": 15,
   "ratingAvg": 4.16, "ratingCount": 37, "satisfactionPct": 76, "avgWaitMinutes": 17,
-  "pmdcVerified": true, "isTopBooked": false, "minFee": 2000, "offersVideo": true,
+  "pmdcVerified": true, "isTopBooked": false, "minFee": 2000, "offersVideo": true, "offersClinic": true,
   "nextAvailable": { "at": "2026-10-16T18:15:00.000+05:00", "locationKind": "clinic", "label": "Available today, 6:15 PM" }
 }
 ```
@@ -82,6 +82,7 @@ are Pakistan days (`Asia/Karachi`).
   - `Next available Thu 15 Oct`
   - `null` when nothing is free inside the booking window.
 - `distanceKm` is added when `lat` and `lng` are sent.
+- `offersVideo` / `offersClinic`: the doctor has an active location of that kind.
 
 ### `DoctorProfile` (`GET /health/doctors/:id`)
 
@@ -107,13 +108,15 @@ It extends `DoctorCard` with:
   }],
   "reviewSummary": {
     "count": 37, "averages": { "overall": 4.2, "diagnosis": 4.1, "staff": 3.9, "environment": 4 },
-    "satisfactionPct": 76, "topTags": [{ "tag": "explained_well", "count": 12 }], "latest": ["Review", "…3"]
+    "satisfactionPct": 76, "distribution": [1, 0, 3, 9, 24],
+    "topTags": [{ "tag": "explained_well", "count": 12 }], "latest": ["Review", "…3"]
   }
 }
 ```
 
 Weekdays are `0` (Sunday) to `6` (Saturday). A video location has no address and
-`city: null`.
+`city: null`. `reviewSummary.distribution` counts visible reviews per star: index 0 is one
+star, index 4 is five.
 
 ### `Slots` (`GET /health/doctors/:id/locations/:locationId/slots?from=YYYY-MM-DD&days=7`)
 
@@ -156,7 +159,8 @@ occurrence; Pakistan has no DST, but other zones work.
   "bookedAt": "…", "checkedInAt": null, "startedAt": null, "completedAt": null, "cancelledAt": null,
   "doctor": { "id": "…", "displayName": "Dr. Sana Iqbal", "photoUrl": "…", "specialty": "Dermatologist" },
   "location": { "id": "…", "kind": "clinic", "name": "…", "addressLine": "…", "area": "…", "city": "Lahore",
-                "phone": "…", "instructions": "…", "timezone": "Asia/Karachi" },
+                "lat": 31.487, "lng": 74.3212, "phone": "…", "instructions": "…", "timezone": "Asia/Karachi" },
+  "cancelCutoffAt": "2026-10-16T18:30:00.000+05:00", "prescriptionId": null, "reviewed": false,
   "events": [{ "kind": "status", "from": null, "to": "booked", "actorRole": "patient", "note": null, "at": "…" }],
   "sharedRecords": [],
   "can": { "cancel": true, "reschedule": true, "joinVideo": false, "shareRecords": true, "submitPaymentProof": false, "review": false }
@@ -168,6 +172,10 @@ occurrence; Pakistan has no DST, but other zones work.
   rewrite it.
 - `payment.accounts` is set for transfer appointments: the doctor's own accounts as they
   were at booking (`kind`, `accountTitle`, `accountNumber`, `bankName`).
+- `cancelCutoffAt` is the start minus the doctor's `cancelCutoffMinutes`: until then a
+  reschedule is allowed and a cancel isn't late.
+- `prescriptionId` is the prescription written for this visit (`GET /health/prescriptions/:id`),
+  or `null`; `reviewed` says whether the patient has reviewed it.
 - Draw buttons from `can.*` only; never re-implement the rules in the app.
 
 ### `DoctorAppointment` (doctor today queue, doctor list, doctor detail)
@@ -180,9 +188,13 @@ It is the same core as `PatientAppointment`, plus:
   "location": { "id": "…", "kind": "clinic", "name": "…", "area": "Model Town", "timezone": "Asia/Karachi" },
   "waitingMinutes": 7,
   "flags": { "firstVisit": false, "lateCancels": 0, "noShows": 1 },
-  "can": { "checkIn": true, "start": false, "complete": false, "noShow": false, "cancel": true, "writePrescription": false, "joinVideo": false }
+  "can": { "checkIn": true, "start": false, "complete": false, "noShow": false, "cancel": true, "writePrescription": false,
+           "joinVideo": false, "confirmPayment": false, "rejectPayment": false, "refund": false }
 }
 ```
+
+- `can.confirmPayment`: a transfer the doctor may mark received (awaiting it, or proof sent).
+  `can.rejectPayment`: proof was sent. `can.refund`: a refund is due.
 
 - `waitingMinutes` runs while the patient is checked in, counted from max(arrival, booked
   time).
@@ -255,7 +267,42 @@ The doctor header holds what the app needs to render a printable or PDF prescrip
 - `tags` come from a fixed set: `no_wait`, `great_experience`, `explained_well`, `friendly`,
   `on_time`, `clean_clinic`, `value_for_money`.
 - `environment` is for clinic visits only; on a video visit it is always `null`.
-- The doctor's list adds `appointmentCode`, `hidden` and `hiddenReason`.
+- The doctor's list adds `appointmentCode`, `hidden` and `hiddenReason`; the staff list adds
+  `doctorId`, `doctorName`, `patientUserId`, `authorName` and `hiddenAt`.
+
+### `HealthHome` (`GET /health/home?city`)
+
+```json
+{
+  "city": "Lahore", "cities": ["Lahore", "Karachi", "Islamabad"],
+  "specialties": [{ "id": "…", "name": "Dermatologist", "nameUr": "…", "slug": "dermatologist", "icon": "skin",
+                    "description": "…", "doctorCount": 4 }],
+  "commonConditions": [{ "id": "…", "name": "Acne", "nameUr": "…", "slug": "acne", "isCommon": true, "icon": "sparkles",
+                         "specialties": [{ "id": "…", "name": "Dermatologist", "nameUr": "…", "slug": "dermatologist" }] }],
+  "availableTodayNearby": ["DoctorCard", "…"], "featuredDoctors": ["DoctorCard", "…"], "featuredScope": "city",
+  "upcomingAppointment": null,
+  "banners": [{ "id": "…", "imageUrl": "https://…", "title": "Skin and hair specialists", "subtitle": "…",
+                "targetType": "specialty", "targetScreen": null,
+                "target": { "id": "…", "slug": "dermatologist", "name": "Dermatologist" } }],
+  "emergencyNumbers": [{ "label": "Rescue", "number": "1122" }, { "label": "Edhi ambulance", "number": "115" }]
+}
+```
+
+- `city`: the one asked for (in its usual spelling when doctors practise there); else the
+  signed-in patient's default address city, when doctors practise there; else the city with
+  the most listed doctors. `cities` are the cities with listed doctors, most first.
+- `specialties`: the top 12 by bookings, each with `doctorCount` **in that city**.
+- `availableTodayNearby`: the first page of the city's earliest-first list.
+- `featuredDoctors`: the city's top 10 by the `recommended` score. When nobody practises in
+  the city, the best doctors anywhere, and `featuredScope` is `nationwide`.
+- `banners`: staff promotions that are live now (active, inside `startsAt`–`endsAt`), for
+  this city or every city, whose target still exists: an active specialty or condition, a
+  listed doctor. At most 10, by `sort`. `target` is resolved (a doctor carries their display
+  name); `targetType` `screen` opens one of the app's Health screens (`targetScreen`:
+  `video_consultation`, `symptom_checker`, `emergency`, `records`, `available_today`);
+  `none` opens nothing.
+- Condition and specialty `icon`s are keys (`skin`, `thermometer` …); the app maps them to
+  its icon set.
 
 ---
 
@@ -322,13 +369,13 @@ cancels the old visit (reason "Rescheduled") and books the new one, which links 
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/health/home?city` | `{ specialties (top 12 by bookings), commonConditions, availableTodayNearby (with city: first page of earliest-first), upcomingAppointment (signed in), featuredDoctors }` |
+| GET | `/health/home?city` | `HealthHome` (§2): city, cities, specialties with `doctorCount`, common conditions, available today, featured doctors, live banners, emergency numbers, and the signed-in patient's `upcomingAppointment`. |
 | GET | `/health/specialties?city` | All active specialties, with `doctorCount` (listed doctors, in `city` when given). |
 | GET | `/health/conditions?q&common=true` | Conditions with their ranked specialties. Matches English names, Urdu names and aliases ("pimples" → Acne); trigram matching for typos. |
 | GET | `/health/search/suggest?q` | `{ doctors (5 cards), specialties (3), conditions (3) }`. "skin", "pimples" and "ماہر امراض جلد" all find Dermatologist. |
-| GET | `/health/doctors` | Filters: `q`, `specialtyId`, `conditionId`, `city`, `area`, `kind=clinic\|video`, `availableToday`, `gender`, `minFee`, `maxFee`, `minExperience`, `minRating`, `language`, `lat`, `lng`. Sorts: `sort=recommended\|earliest\|fee_asc\|fee_desc\|reviews\|experience`. `city` is ignored for `kind=video`. Fee filters and fee sorts use the cheapest active location of the requested `kind` (any kind when it isn't given). |
+| GET | `/health/doctors` | Filters: `q`, `specialtyId` or `specialty` (slug), `conditionId` or `condition` (slug), `city`, `area`, `kind=clinic\|video`, `availableToday`, `gender`, `minFee`, `maxFee`, `minExperience`, `minRating`, `language`, `lat`, `lng`. Sorts: `sort=recommended\|earliest\|fee_asc\|fee_desc\|reviews\|experience`. `city` is ignored for `kind=video`. Fee filters and fee sorts use the cheapest active location of the requested `kind` (any kind when it isn't given). |
 | GET | `/health/doctors/:id` | `DoctorProfile`. An unlisted or unknown doctor: `404 DOCTOR_NOT_LISTED`. |
-| GET | `/health/doctors/:id/reviews?sort=latest\|highest\|lowest&kind&page` | Visible reviews (`Review`). |
+| GET | `/health/doctors/:id/reviews?sort=latest\|highest\|lowest&kind&rating&page` | Visible reviews (`Review`); `rating` (1–5) keeps one star count. |
 | GET | `/health/doctors/:id/similar` | Up to 10 cards: same specialty, same city first, then most reviewed. |
 | GET | `/health/doctors/:id/locations/:locationId/slots?from&days` | `Slots`. |
 
@@ -415,7 +462,7 @@ days, then erased by the nightly job.
 
 | Method | Path | Body / notes |
 |---|---|---|
-| GET PATCH | `/profile` | `{ title, fullName, gender, photoUrl (purpose doctor_photo), primarySpecialtyId, secondarySpecialtyIds, practicingSince, about, languages, qualifications[], experiences[], services[], conditionIds, bookingWindowDays (≤30), minNoticeMinutes, cancelCutoffMinutes, videoPrepayRequired, isAccepting }`. Arrays **replace** the stored lists. `videoPrepayRequired: true` needs an active payment account. |
+| GET PATCH | `/profile` | `{ title, fullName, gender, photoUrl (purpose doctor_photo; checked only when it changes, so the current photo may be re-sent), primarySpecialtyId, secondarySpecialtyIds, practicingSince, about, languages, qualifications[], experiences[], services[], conditionIds, bookingWindowDays (≤30), minNoticeMinutes, cancelCutoffMinutes, videoPrepayRequired, isAccepting }`. Arrays **replace** the stored lists. `videoPrepayRequired: true` needs an active payment account. |
 | GET | `/profile/completeness` | `{ percent, missing: [...], isListed }`. Checks: PMDC verified, name, gender, photo, primary specialty, practising since, about (40+ characters), languages, qualifications, an active location, a weekly schedule. |
 | POST | `/listing/publish` · `/listing/unpublish` | Publishing below 100%: `422 PROFILE_INCOMPLETE` (`details.missing`). Unlisted by an admin: `403`. |
 | GET POST | `/locations` | `{ kind: clinic\|video, name, addressLine?, area?, city?, lat?, lng?, phone?, timezone? (IANA, default Asia/Karachi), fee, slotMinutes (10–60), instructions? }`. At most one active video location. |
@@ -436,12 +483,14 @@ days, then erased by the nightly job.
 | GET | `/appointments/:code/prescription` | `{ prescription: Prescription \| null, locked }`. |
 | POST | `/appointments/:code/prescription` | `{ diagnosis, advice?, followUpInDays?, medicines: [{ name, strength?, form, dosePattern, timing, durationDays?, instructions? }], tests?: [{ name, instructions? }] }`. Writes or replaces, from `in_consultation` until 24 h after completion. Otherwise `409 PRESCRIPTION_LOCKED` (`details.reason`: `not_in_consultation` or `window_closed`). Your medicine favourites update as you write. |
 | GET | `/prescriptions/:id` | The prescribing doctor only; any other doctor gets `404`. Audited. |
+| GET | `/diagnoses/recent` | Your last 10 distinct diagnoses, newest first (`string[]`), for one-tap reuse. No patient details. |
 | GET | `/medicines/suggest?q` | `{ medicines: [{ source: favourite\|reference, name, strength, form, dosePattern, timing, useCount }] }`. Your favourites come first (with your usual dose), then about 400 common generics; typos are tolerated. |
 | GET | `/appointments/:code/records/:recordId` | A shared record, **only while attached**; otherwise `404`. Returns a 10-minute download link. Audited. |
 | POST | `/appointments/:code/video/join` | Joins as moderator. A `booked` appointment moves to `in_consultation`. |
 | GET | `/patients?q&page` | People with an appointment with you. `q` matches name or phone. |
 | GET | `/patients/:patientKey` | The history with **you only**. No appointment between you: `404`. Audited. |
-| GET | `/reviews?sort&kind&unreplied=true&page` | Your reviews; hidden ones are flagged. |
+| GET | `/reviews?sort&kind&rating&unreplied=true&page` | Your reviews; hidden ones are flagged. |
+| GET | `/reviews/summary` | Your review summary as patients see it (`count`, `averages`, `satisfactionPct`, `distribution`, `topTags`, `latest`). |
 | POST | `/reviews/:id/reply` | `{ text }`. Public; replaces an earlier reply. |
 | GET | `/insights?range=7d\|30d\|90d` | See below. |
 
@@ -465,20 +514,23 @@ days, then erased by the nightly job.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/doctors?pmdc=verified\|unverified&businessId&q&page` | The PMDC verification queue and doctor lookup. |
+| GET | `/doctors?pmdc=verified\|unverified&businessId&q&page` | The PMDC verification queue and doctor lookup. Each row has the doctor's `specialty` and the business `documents` (`id`, `kind`, `url`, `status`), e.g. the PMDC certificate to check. |
 | POST | `/doctors/:id/pmdc-verify` | `{ note? }`. Approving a doctor's business (`POST /admin/businesses/:id/approve`) needs this first, otherwise `422 PMDC_NOT_VERIFIED`. |
 | POST | `/doctors/:id/pmdc-unverify` | `{ reason }`. Also unlists the doctor. |
 | POST | `/doctors/:id/unlist` · `/clear-unlist` | `{ reason }`. The doctor can't republish until cleared. |
 | GET POST | `/specialties` | `{ name, nameUr, slug, icon?, description?, keywords[], sort? }`. A slug already in use: `409`. |
 | PATCH | `/specialties/:id` | Edit, or deactivate with `isActive: false`. Nothing is ever deleted. Affected doctors' search is refreshed at once. |
-| GET POST | `/conditions?q&page` | `{ name, nameUr?, slug, aliases[], isCommon? }`. |
+| GET POST | `/conditions?q&page` | `{ name, nameUr?, slug, aliases[], isCommon?, icon? }`. `icon` is a key for the home's concern chips. |
 | PATCH | `/conditions/:id` | |
 | PUT | `/conditions/:id/specialties` | `[{ specialtyId, rank }]` replaces the mapping; rank 1 is the first choice. |
 | GET | `/reviews?doctorId&hidden=true\|false&page` | |
 | POST | `/reviews/:id/hide` · `/unhide` | hide: `{ reason }`. The review leaves public lists and the rating at once. |
-| GET | `/appointments?code&doctorId&patientUserId&status&date&page` | Lookup: booking facts and the payment trail, **never** notes, prescriptions or records. |
+| GET | `/appointments?code&doctorId&patientUserId&status&date&page` | Lookup: booking facts and the payment trail, **never** notes, prescriptions or records. `doctor` carries the `businessId`; `hasPrescription` says only whether one was written. |
 | GET | `/appointments/:code` | The same, with the timeline. Audited. |
 | POST | `/appointments/:code/cancel` | `{ reason }`: cancel on someone's behalf; both sides are told. |
+| GET POST | `/banners` | The Health home's banners (all, in order). POST `{ imageUrl (your own upload, purpose banner), title (≤80), subtitle? (≤140), targetType: specialty\|condition\|doctor\|screen\|none, targetId? (specialty, condition, doctor), targetScreen? (screen), city? (null = every city), startsAt?, endsAt?, sort?, isActive? }`. A missing target or one that doesn't exist: `400` on that field. |
+| PATCH DELETE | `/banners/:id` | Edit or delete. A new image must be your own upload; the current one may be re-sent. |
+| PUT | `/banners/order` | `{ ids }`: these first, in this order; the others follow. Every banner's `sort` is rewritten. |
 | GET | `/overview` | `{ date, doctors: { total, listed, awaitingPmdc, unlistedByAdmin }, listedBySpecialty, today: { newBookings, cancellations, noShows, appointmentsByStatus }, last7Days, reviews, symptomChecks, topSpecialties30d }` |
 
 ---
@@ -557,6 +609,9 @@ Running any job twice leaves the same state (QA #26).
 | PHI files | Health records and note files are private (`authenticated`) Cloudinary assets with expiring download links. |
 | Admin extras | The admin cancel and the doctor availability preview are additions. |
 | Action flags | Appointment action flags are nested (`can.cancel`, `can.reschedule`, `can.joinVideo`, `can.review`, …). |
+| Home banners | `health_banners`, like Shopping's, plus a city and app-screen targets. The home drops a banner whose target has gone (inactive specialty or condition, unlisted doctor) rather than lead to a 404. |
+| Featured doctors | The city's top 10 by the `recommended` score; nationwide only when nobody practises in the city (`featuredScope`). |
+| Staff and prescriptions | Staff see `hasPrescription` on an appointment, never an id they could follow. |
 
 ---
 
@@ -570,7 +625,13 @@ The seed is idempotent and refuses to run with pending migrations.
 - Their PMDC numbers are `DEMO-00001-P` and up.
 - Each has 1–3 clinics with realistic weekly hours, and half also offer video in the late
   evening (21:30–23:00).
-- Avatars are generated initials; there are no photos of real people.
+- Each has a licensed stock portrait (Unsplash License, one person per doctor, matched to
+  the doctor's gender; photographers in `src/database/seeds/health/CREDITS.md`). Every
+  profile's `about` ends with "(Demo profile: this doctor is fictional.)". Demo and
+  development data only; a real doctor's own upload replaces it. An initials avatar from an
+  earlier run is swapped for the portrait.
+- Five home banners (video consultation, skin specialists, the symptom checker,
+  paediatricians in Lahore, family records), idempotent by title.
 - Qualifications, services, conditions and payment accounts are filled in.
 
 **Patients:** 8 demo patients, `demo.patient1@metromatrix.test` … `demo.patient8@metromatrix.test`.
@@ -580,3 +641,24 @@ Patient 1 has two family members.
 times (so the wait and consult stats exist), and 0–40 reviews per doctor.
 
 All demo accounts use `SEED_DEMO_PASSWORD`. The seed never prints it.
+
+---
+
+## 10. Additions for the app (Chunk 3 P8)
+
+What the Healthcare app reads beyond the first contract, each covered by
+`test/health-home.e2e-spec.ts`:
+
+| # | Addition |
+|---|---|
+| A1 | A doctor's business (`GET /businesses/me`, `GET /admin/businesses/:id`) carries `isListed` and `pmdcVerified`. Other businesses don't have the keys. |
+| A2 | `GET /health/doctors` takes `specialty` and `condition` slugs as well as ids. |
+| A3 | `DoctorCard.offersClinic`. |
+| A4 | `reviewSummary.distribution`, `GET /health/doctor/reviews/summary`, and `rating` on review lists. |
+| A5 | `PatientAppointment.cancelCutoffAt`, `prescriptionId`, `reviewed`, and the location's `lat`/`lng`. |
+| A6 | Staff doctor rows carry `specialty` and `documents`; staff appointments carry `doctor.businessId` and `hasPrescription`. |
+| A7 | Staff review rows carry `doctorName`. |
+| A9 | `PATCH /health/doctor/profile` checks `photoUrl` ownership only when it changes. |
+| A11 | `DoctorAppointment.can.confirmPayment`, `can.rejectPayment`, `can.refund`. |
+| A12 | `GET /health/doctor/diagnoses/recent`. |
+| Home | `HealthHome.city`, `cities`, `featuredScope`, `banners`, `emergencyNumbers`; `doctorCount` on its specialties; `icon` on conditions. Staff manage banners at `/admin/health/banners`. |

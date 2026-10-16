@@ -398,6 +398,25 @@ export class PrescriptionsService {
     return { prescription: view, locked: view.locked };
   }
 
+  /**
+   * The diagnoses this doctor wrote most recently (each once, newest first),
+   * for one-tap reuse in the prescription writer. No patient details.
+   */
+  async recentDiagnoses(doctorId: string, limit = 10): Promise<string[]> {
+    const rows: Array<{ diagnosis: string }> = await this.dataSource.query(
+      `SELECT diagnosis FROM (
+         SELECT DISTINCT ON (lower(diagnosis)) diagnosis, issued_at
+           FROM prescriptions
+          WHERE doctor_id = $1 AND btrim(diagnosis) <> ''
+          ORDER BY lower(diagnosis), issued_at DESC
+       ) x
+       ORDER BY issued_at DESC
+       LIMIT $2`,
+      [doctorId, limit],
+    );
+    return rows.map((r) => r.diagnosis);
+  }
+
   /** The doctor's favourites first, then the reference list. */
   async suggest(doctorId: string, q: string) {
     const contains = `%${likeEscape(q)}%`;

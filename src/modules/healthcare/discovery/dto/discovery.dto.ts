@@ -15,6 +15,8 @@ import {
 import { Trim } from '../../../../common/validation/transforms';
 import { PaginationQueryDto } from '../../../../common/pagination/pagination';
 
+const SLUG_QUERY = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 export const DOCTOR_SORTS = [
   'recommended',
   'earliest',
@@ -43,6 +45,24 @@ export class DoctorQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   conditionId?: string;
+
+  @ApiPropertyOptional({
+    example: 'dermatologist',
+    description: 'A specialty by slug (the same as specialtyId).',
+  })
+  @IsOptional()
+  @Matches(SLUG_QUERY, { message: 'specialty is a slug' })
+  @MaxLength(80)
+  specialty?: string;
+
+  @ApiPropertyOptional({
+    example: 'acne',
+    description: 'A condition by slug (the same as conditionId).',
+  })
+  @IsOptional()
+  @Matches(SLUG_QUERY, { message: 'condition is a slug' })
+  @MaxLength(80)
+  condition?: string;
 
   @ApiPropertyOptional({
     description: 'Doctors with a clinic in this city (ignored for kind=video).',
@@ -154,7 +174,8 @@ export class SlotsQueryDto {
 export class HomeQueryDto {
   @ApiPropertyOptional({
     example: 'Lahore',
-    description: 'Needed for "available today near you".',
+    description:
+      'Defaults to the patient’s default address city (when doctors practise there), else the city with the most doctors.',
   })
   @IsOptional()
   @Trim()

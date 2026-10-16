@@ -62,6 +62,15 @@ export class DoctorPrescriptionsController {
     return this.prescriptions.forDoctor(d.id, d.ownerUserId, id);
   }
 
+  @Get('diagnoses/recent')
+  @ApiOperation({
+    summary:
+      'Your last 10 distinct diagnoses, newest first (strings), for quick reuse.',
+  })
+  recentDiagnoses(@CurrentDoctor() d: CurrentDoctorRef) {
+    return this.prescriptions.recentDiagnoses(d.id);
+  }
+
   @Get('medicines/suggest')
   @ApiOperation({
     summary:

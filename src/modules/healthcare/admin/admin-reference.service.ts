@@ -168,6 +168,7 @@ export class AdminReferenceService {
       slug: c.slug,
       aliases: c.aliases,
       isCommon: c.isCommon,
+      icon: c.icon,
       isActive: c.isActive,
       specialties: maps
         .filter((x: any) => x.condition_id === c.id)
@@ -206,6 +207,7 @@ export class AdminReferenceService {
           slug: dto.slug,
           aliases: words(dto.aliases),
           isCommon: dto.isCommon ?? false,
+          icon: dto.icon ?? null,
           isActive: true,
         }),
       );

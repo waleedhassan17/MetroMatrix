@@ -38,10 +38,13 @@ export class AdminAppointmentsService {
 
   private async adminViews(rows: Appointment[]) {
     if (!rows.length) return [];
-    const b = await this.views.briefs(
-      [...new Set(rows.map((r) => r.doctorId))],
-      [...new Set(rows.map((r) => r.locationId))],
-    );
+    const [b, prescriptions] = await Promise.all([
+      this.views.briefs(
+        [...new Set(rows.map((r) => r.doctorId))],
+        [...new Set(rows.map((r) => r.locationId))],
+      ),
+      this.views.prescriptionIds(rows.map((r) => r.id)),
+    ]);
     return rows.map((a) => {
       const loc = b.location.get(a.locationId)!;
       const doc = b.doctor.get(a.doctorId)!;
@@ -50,9 +53,12 @@ export class AdminAppointmentsService {
         patientUserId: a.patientUserId,
         doctor: {
           id: doc.id,
+          businessId: doc.businessId,
           displayName: doc.displayName,
           specialty: doc.specialty,
         },
+        // Whether one was written — staff never see what it says.
+        hasPrescription: prescriptions.has(a.id),
         location: {
           id: loc.id,
           kind: loc.kind,

@@ -26,6 +26,7 @@ import {
   DiscoveryService,
   notListed,
   ReviewSummary,
+  TITLE_PREFIX,
 } from '../discovery/discovery.service';
 import { DoctorInsightsService } from '../insights/doctor-insights.service';
 import { DOCTOR_FROM_SQL, LISTED_DOCTOR_SQL } from '../discovery/listing-sql';
@@ -238,6 +239,7 @@ export class ReviewsService implements OnModuleInit {
       .where('r.doctorId = :doctorId', { doctorId })
       .andWhere('r.hiddenAt IS NULL');
     if (q.kind) qb.andWhere('r.kind = :kind', { kind: q.kind });
+    if (q.rating) qb.andWhere('r.overall = :rating', { rating: q.rating });
     const sort = q.sort ?? 'latest';
     if (sort === 'highest') qb.orderBy('r.overall', 'DESC');
     else if (sort === 'lowest') qb.orderBy('r.overall', 'ASC');
@@ -254,7 +256,7 @@ export class ReviewsService implements OnModuleInit {
   }
 
   async summary(doctorId: string): Promise<ReviewSummary> {
-    const [[agg], tags, latest] = await Promise.all([
+    const [[agg], stars, tags, latest] = await Promise.all([
       this.dataSource.query(
         `SELECT count(*)::int AS n,
                 round(avg(overall)::numeric, 1)::float AS overall,
@@ -263,6 +265,11 @@ export class ReviewsService implements OnModuleInit {
                 round(avg(environment)::numeric, 1)::float AS environment,
                 round(100.0 * avg(recommend::int))::int AS pct
            FROM doctor_reviews WHERE doctor_id = $1 AND hidden_at IS NULL`,
+        [doctorId],
+      ),
+      this.dataSource.query(
+        `SELECT overall, count(*)::int AS n FROM doctor_reviews
+          WHERE doctor_id = $1 AND hidden_at IS NULL GROUP BY overall`,
         [doctorId],
       ),
       this.dataSource.query(
@@ -289,6 +296,11 @@ export class ReviewsService implements OnModuleInit {
         environment: num(agg.environment),
       },
       satisfactionPct: agg.n >= MIN_SAMPLES ? agg.pct : null,
+      distribution: [1, 2, 3, 4, 5].map(
+        (star) =>
+          stars.find((x: { overall: number }) => Number(x.overall) === star)
+            ?.n ?? 0,
+      ),
       topTags: tags,
       latest: latest.map((r) => this.publicView(r)),
     };
@@ -303,6 +315,7 @@ export class ReviewsService implements OnModuleInit {
       .leftJoinAndSelect('r.appointment', 'a')
       .where('r.doctorId = :doctorId', { doctorId });
     if (q.kind) qb.andWhere('r.kind = :kind', { kind: q.kind });
+    if (q.rating) qb.andWhere('r.overall = :rating', { rating: q.rating });
     if (q.unreplied === 'true') qb.andWhere('r.doctorReply IS NULL');
     const sort = q.sort ?? 'latest';
     if (sort === 'highest') qb.orderBy('r.overall', 'DESC');
@@ -356,10 +369,24 @@ export class ReviewsService implements OnModuleInit {
       .skip((q.page - 1) * q.pageSize)
       .take(q.pageSize)
       .getManyAndCount();
+    const names = new Map<string, string>(
+      rows.length
+        ? (
+            await this.dataSource.query(
+              `SELECT id, title, full_name FROM doctors WHERE id = ANY($1::uuid[])`,
+              [[...new Set(rows.map((r) => r.doctorId))]],
+            )
+          ).map((d: { id: string; title: string; full_name: string }) => [
+            d.id,
+            `${TITLE_PREFIX[d.title] ?? 'Dr.'} ${d.full_name}`,
+          ])
+        : [],
+    );
     return paged(
       rows.map((r) => ({
         ...this.doctorView(r, r.appointment?.code),
         doctorId: r.doctorId,
+        doctorName: names.get(r.doctorId) ?? null,
         patientUserId: r.patientUserId,
         authorName: r.authorName,
         hiddenAt: r.hiddenAt,

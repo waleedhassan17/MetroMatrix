@@ -108,6 +108,9 @@ import {
 } from './symptom-checker/symptom-model';
 import { SymptomCheckerService } from './symptom-checker/symptom-checker.service';
 import { SymptomCheckerController } from './symptom-checker/symptom-checker.controller';
+import { HealthBanner } from './discovery/entities/health-banner.entity';
+import { AdminBannersService } from './admin/admin-banners.service';
+import { AdminHealthBannersController } from './admin/admin-banners.controller';
 
 /**
  * MetroMatrix Healthcare. Sub-domains live in their own folders (reference,
@@ -147,6 +150,7 @@ import { SymptomCheckerController } from './symptom-checker/symptom-checker.cont
       AppointmentAttachment,
       DoctorReview,
       SymptomCheck,
+      HealthBanner,
     ]),
     BusinessesModule,
     MediaModule,
@@ -177,6 +181,7 @@ import { SymptomCheckerController } from './symptom-checker/symptom-checker.cont
     SymptomCheckerController,
     AdminReferenceController,
     AdminAppointmentsController,
+    AdminHealthBannersController,
   ],
   providers: [
     HealthEvents,
@@ -223,6 +228,7 @@ import { SymptomCheckerController } from './symptom-checker/symptom-checker.cont
     SymptomCheckerService,
     AdminReferenceService,
     AdminAppointmentsService,
+    AdminBannersService,
   ],
 })
 export class HealthcareModule {}

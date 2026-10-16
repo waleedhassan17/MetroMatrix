@@ -71,6 +71,9 @@ export interface DocumentView {
 }
 
 export interface BusinessDetail extends BusinessView {
+  /** Doctors only (Healthcare): published on the patient side, and PMDC checked by staff. */
+  isListed?: boolean;
+  pmdcVerified?: boolean;
   documents: DocumentView[];
   requiredDocuments: RequirementStatus[];
   missingDocuments: string[];
@@ -150,10 +153,19 @@ export type BusinessApprovedHook = (
  */
 export type BusinessSubmittedHook = BusinessApprovedHook;
 
+/**
+ * Extra fields a service adds to its own businesses' detail — e.g.
+ * Healthcare's `isListed` and `pmdcVerified` for a doctor.
+ */
+export type BusinessViewExtras = (
+  business: Business,
+) => Promise<Record<string, unknown>>;
+
 @Injectable()
 export class BusinessesService implements OnModuleInit {
   private readonly approvedHooks: BusinessApprovedHook[] = [];
   private readonly submittedHooks: BusinessSubmittedHook[] = [];
+  private readonly viewExtras: BusinessViewExtras[] = [];
 
   constructor(
     @InjectRepository(Business)
@@ -176,6 +188,10 @@ export class BusinessesService implements OnModuleInit {
 
   onSubmitted(hook: BusinessSubmittedHook): void {
     this.submittedHooks.push(hook);
+  }
+
+  onView(extras: BusinessViewExtras): void {
+    this.viewExtras.push(extras);
   }
 
   /** Called by the admin approval, inside its transaction. */
@@ -512,8 +528,10 @@ export class BusinessesService implements OnModuleInit {
         order: { createdAt: 'ASC' },
       }));
     const { requirements, missing } = evaluateDocuments(business.subType, docs);
+    const extras = await Promise.all(this.viewExtras.map((x) => x(business)));
     return {
       ...toBusinessView(business),
+      ...Object.assign({}, ...extras),
       documents: docs.map(toDocumentView),
       requiredDocuments: requirements,
       missingDocuments: missing,

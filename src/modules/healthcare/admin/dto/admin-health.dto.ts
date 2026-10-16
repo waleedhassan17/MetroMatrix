@@ -14,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import {
   APPOINTMENT_STATUSES,
@@ -138,6 +139,17 @@ export class ConditionDto {
   @IsOptional()
   @IsBoolean()
   isCommon?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description: "Icon key for the home chips (the specialties' vocabulary).",
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(40)
+  icon?: string | null;
 }
 
 export class UpdateConditionDto extends PartialType(ConditionDto) {
