@@ -64,19 +64,30 @@ export const UPLOAD_PURPOSES = {
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
     maxBytes: 5_000_000,
   },
-  /** A patient's lab report, scan or old prescription (photo or PDF). */
+  /** A patient's lab report, scan or old prescription (photo or PDF). PHI: private. */
   health_record: {
     resourceType: 'auto',
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'],
     maxBytes: 15_000_000,
+    delivery: 'authenticated',
   },
-  /** Files on a doctor's private visit notes. */
+  /** Files on a doctor's private visit notes. PHI: private. */
   medical_note: {
     resourceType: 'auto',
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic', 'pdf'],
     maxBytes: 15_000_000,
+    delivery: 'authenticated',
   },
 } as const;
+
+/**
+ * `authenticated` uploads are not on the public CDN: only a URL carrying
+ * Cloudinary's signature serves them, and the API hands other people only
+ * short-lived download links (MediaService.privateDownload).
+ */
+export type Delivery = 'upload' | 'authenticated';
+export const deliveryOf = (purpose: UploadPurpose): Delivery =>
+  (UPLOAD_PURPOSES[purpose] as { delivery?: Delivery }).delivery ?? 'upload';
 
 export type UploadPurpose = keyof typeof UPLOAD_PURPOSES;
 export const UPLOAD_PURPOSE_NAMES = Object.keys(
@@ -103,6 +114,7 @@ export function ownedAssetProblem(opts: {
   publicId?: string;
   cloudName: string;
   folder: string;
+  delivery?: Delivery;
 }): string | null {
   const value = opts.url.trim();
   if (/^(file|content|ph|assets-library):/i.test(value)) {
@@ -123,8 +135,13 @@ export function ownedAssetProblem(opts: {
   if (parsed.search || parsed.hash) return 'That is not a valid file URL.';
 
   // /<cloud>/<image|raw|video>/upload/[v123/]<folder>/<file>
+  // /<cloud>/<image|raw|video>/authenticated/[s--sig--/][v123/]<folder>/<file>
+  const delivery =
+    (opts.delivery ?? 'upload') === 'authenticated'
+      ? 'authenticated/(?:s--[A-Za-z0-9_-]{8,32}--/)?'
+      : 'upload/';
   const re = new RegExp(
-    `^/${escapeRe(opts.cloudName)}/(?:image|raw|video)/upload/(?:v\\d+/)?(${escapeRe(opts.folder)}/[^/]+)$`,
+    `^/${escapeRe(opts.cloudName)}/(?:image|raw|video)/${delivery}(?:v\\d+/)?(${escapeRe(opts.folder)}/[^/]+)$`,
   );
   const match = re.exec(parsed.pathname);
   if (!opts.cloudName || !match) return "That file isn't one of your uploads.";
@@ -139,4 +156,34 @@ export function ownedAssetProblem(opts: {
     if (!sameAsset) return "That file's public id does not match its URL.";
   }
   return null;
+}
+
+/** The pieces of a Cloudinary delivery URL needed to sign a private download. */
+export function assetParts(
+  url: string,
+): { resourceType: string; publicId: string; format: string } | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  const m =
+    /^\/[^/]+\/(image|raw|video)\/(?:upload|authenticated)\/(?:s--[A-Za-z0-9_-]{8,32}--\/)?(?:v\d+\/)?(.+)$/.exec(
+      parsed.pathname,
+    );
+  if (!m) return null;
+  const [, resourceType, path] = m;
+  const file = decodeURIComponent(path);
+  // Raw assets keep their extension in the public id; images and videos don't.
+  if (resourceType === 'raw')
+    return { resourceType, publicId: file, format: '' };
+  const dot = file.lastIndexOf('.');
+  return dot > file.lastIndexOf('/')
+    ? {
+        resourceType,
+        publicId: file.slice(0, dot),
+        format: file.slice(dot + 1),
+      }
+    : { resourceType, publicId: file, format: '' };
 }

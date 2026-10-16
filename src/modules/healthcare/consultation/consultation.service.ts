@@ -428,7 +428,11 @@ export class ConsultationService {
     return {
       appointmentCode: a.code,
       text: note?.text ?? '',
-      files: note?.files ?? [],
+      // The doctor uploaded these, so they get the URL; plus a short-lived download link.
+      files: (note?.files ?? []).map((f) => ({
+        ...f,
+        ...this.media.privateDownload(f.url),
+      })),
       updatedAt: note?.updatedAt ?? null,
     };
   }

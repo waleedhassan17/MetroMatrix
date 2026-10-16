@@ -1,4 +1,9 @@
-import { ownedAssetProblem, uploadFolder } from './asset-url';
+import {
+  assetParts,
+  deliveryOf,
+  ownedAssetProblem,
+  uploadFolder,
+} from './asset-url';
 
 describe('ownedAssetProblem', () => {
   const cloudName = 'metromatrix-test';
@@ -79,5 +84,56 @@ describe('ownedAssetProblem', () => {
         folder,
       }),
     ).toMatch(/public id/);
+  });
+});
+
+describe('authenticated (PHI) delivery', () => {
+  const cloudName = 'metromatrix-test';
+  const folder = uploadFolder('test', 'user-1', 'health_record');
+  const signed = `https://res.cloudinary.com/${cloudName}/image/authenticated/s--Ab3_x-9Z--/v1712345678/${folder}/cbc.pdf`;
+
+  it('accepts only authenticated URLs for a private purpose', () => {
+    expect(deliveryOf('health_record')).toBe('authenticated');
+    expect(deliveryOf('medical_note')).toBe('authenticated');
+    expect(deliveryOf('avatar')).toBe('upload');
+    const opts = { cloudName, folder, delivery: 'authenticated' as const };
+    expect(
+      ownedAssetProblem({ ...opts, url: signed, publicId: `${folder}/cbc` }),
+    ).toBeNull();
+    expect(
+      ownedAssetProblem({
+        ...opts,
+        url: signed.replace('s--Ab3_x-9Z--/', ''),
+      }),
+    ).toBeNull();
+    // A public upload of PHI is refused…
+    expect(
+      ownedAssetProblem({
+        ...opts,
+        url: `https://res.cloudinary.com/${cloudName}/image/upload/v1/${folder}/cbc.pdf`,
+      }),
+    ).toMatch(/isn't one of your uploads/);
+    // …and a public purpose doesn't accept authenticated URLs.
+    expect(ownedAssetProblem({ cloudName, folder, url: signed })).toMatch(
+      /isn't one of your uploads/,
+    );
+  });
+
+  it('splits a URL into what a private download is signed for', () => {
+    expect(assetParts(signed)).toEqual({
+      resourceType: 'image',
+      publicId: `${folder}/cbc`,
+      format: 'pdf',
+    });
+    expect(
+      assetParts(
+        `https://res.cloudinary.com/${cloudName}/raw/authenticated/v1/${folder}/notes.docx`,
+      ),
+    ).toEqual({
+      resourceType: 'raw',
+      publicId: `${folder}/notes.docx`,
+      format: '',
+    });
+    expect(assetParts('not a url')).toBeNull();
   });
 });

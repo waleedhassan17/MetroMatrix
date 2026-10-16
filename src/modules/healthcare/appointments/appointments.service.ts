@@ -77,6 +77,20 @@ const isExclusionViolation = (err: unknown) =>
 export class AppointmentsService implements OnModuleInit {
   private readonly logger = new Logger(AppointmentsService.name);
 
+  /** Filled in by records (P5): share records with a new booking, in its transaction. */
+  attachRecords: (
+    m: EntityManager,
+    a: Appointment,
+    recordIds: string[],
+    userId: string,
+  ) => Promise<void> = async () => {};
+  /** Filled in by records (P5): a rescheduled visit keeps what was shared. */
+  carryRecords: (
+    m: EntityManager,
+    fromId: string,
+    toId: string,
+  ) => Promise<void> = async () => {};
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly transitions: AppointmentTransitionsService,
@@ -201,9 +215,12 @@ export class AppointmentsService implements OnModuleInit {
     const startsAt = new Date(dto.startsAt);
     let booked: Appointment;
     try {
-      booked = await this.dataSource.transaction((m) =>
-        this.insertBooking(m, userId, dto, startsAt, now, null),
-      );
+      booked = await this.dataSource.transaction(async (m) => {
+        const a = await this.insertBooking(m, userId, dto, startsAt, now, null);
+        if (dto.attachmentRecordIds?.length)
+          await this.attachRecords(m, a, dto.attachmentRecordIds, userId);
+        return a;
+      });
     } catch (err) {
       if (isExclusionViolation(err))
         throw await this.slotTaken(dto.doctorId, dto.locationId, startsAt);
@@ -617,6 +634,7 @@ export class AppointmentsService implements OnModuleInit {
               : {}),
           },
         );
+        await this.carryRecords(m, old.id, fresh.id);
         if (carried) {
           await this.transitions.movePayment(m, old, 'void', SYSTEM, {
             note: `Payment moved to ${fresh.code}`,

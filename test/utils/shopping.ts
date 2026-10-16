@@ -92,11 +92,17 @@ export async function shopper(t: TestApp): Promise<SignedUp> {
 
 /** Shape-correct Cloudinary URL for an upload signed for this user + purpose. */
 let assetSeq = 0;
-export function asset(userId: string, purpose: string) {
+/** PHI purposes upload as `authenticated` (private) assets. */
+const PRIVATE_PURPOSES = new Set(['health_record', 'medical_note']);
+
+export function asset(userId: string, purpose: string, ext = 'jpg') {
   assetSeq += 1;
   const publicId = `metromatrix/test/${userId}/${purpose}/a${assetSeq}`;
+  const delivery = PRIVATE_PURPOSES.has(purpose)
+    ? 'authenticated/s--Xy12_ab-9--'
+    : 'upload';
   return {
-    url: `https://res.cloudinary.com/metromatrix-test/image/upload/v1712345678/${publicId}.jpg`,
+    url: `https://res.cloudinary.com/metromatrix-test/image/${delivery}/v1712345678/${publicId}.${ext}`,
     publicId,
   };
 }

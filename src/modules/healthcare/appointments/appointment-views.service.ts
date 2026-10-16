@@ -69,6 +69,9 @@ export class AppointmentViewsService {
   /** Filled in by reviews (P5): has this appointment been reviewed? */
   reviewed: (appointmentIds: string[]) => Promise<Set<string>> = async () =>
     new Set();
+  /** Filled in by records (P5): records shared with each appointment. */
+  attachments: (appointmentIds: string[]) => Promise<Map<string, unknown[]>> =
+    async () => new Map();
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -188,7 +191,7 @@ export class AppointmentViewsService {
     withEvents = false,
   ) {
     if (!rows.length) return [];
-    const [b, events, reviewed] = await Promise.all([
+    const [b, events, reviewed, attachments] = await Promise.all([
       this.briefs(
         [...new Set(rows.map((r) => r.doctorId))],
         [...new Set(rows.map((r) => r.locationId))],
@@ -197,6 +200,9 @@ export class AppointmentViewsService {
         ? this.events(rows.map((r) => r.id))
         : Promise.resolve(new Map<string, AppointmentEvent[]>()),
       this.reviewed(rows.map((r) => r.id)),
+      withEvents
+        ? this.attachments(rows.map((r) => r.id))
+        : Promise.resolve(new Map<string, unknown[]>()),
     ]);
     return rows.map((a) => {
       const loc = b.location.get(a.locationId)!;
@@ -222,6 +228,7 @@ export class AppointmentViewsService {
                 note: e.note,
                 at: toZonedIso(e.at, loc.timezone),
               })),
+              sharedRecords: attachments.get(a.id) ?? [],
             }
           : {}),
         can: {
@@ -229,6 +236,9 @@ export class AppointmentViewsService {
           reschedule:
             a.status === 'booked' && !a.rescheduledFromId && t < cutoff,
           joinVideo: videoJoinState(a, now) === 'ok',
+          shareRecords: (ACTIVE_STATUSES as readonly string[]).includes(
+            a.status,
+          ),
           submitPaymentProof:
             a.paymentMethod === 'transfer' &&
             a.paymentStatus === 'awaiting_transfer' &&

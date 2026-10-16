@@ -66,6 +66,23 @@ import {
   PatientPrescriptionsController,
 } from './prescriptions/prescriptions.controller';
 import { DoctorInsightsService } from './insights/doctor-insights.service';
+import { HealthRecord } from './records/entities/health-record.entity';
+import { AppointmentAttachment } from './records/entities/appointment-attachment.entity';
+import { RecordsService } from './records/records.service';
+import {
+  AppointmentAttachmentsController,
+  DoctorRecordsController,
+  RecordsController,
+} from './records/records.controller';
+import { DoctorReview } from './reviews/entities/doctor-review.entity';
+import { ReviewsService } from './reviews/reviews.service';
+import { DoctorAggregatesService } from './reviews/doctor-aggregates.service';
+import {
+  AdminReviewsController,
+  DoctorReviewsController,
+  PatientReviewsController,
+  PublicReviewsController,
+} from './reviews/reviews.controller';
 
 /**
  * MetroMatrix Healthcare. Sub-domains live in their own folders (reference,
@@ -101,6 +118,9 @@ import { DoctorInsightsService } from './insights/doctor-insights.service';
       PrescriptionTest,
       DoctorMedicineFavourite,
       MedicalNote,
+      HealthRecord,
+      AppointmentAttachment,
+      DoctorReview,
     ]),
     BusinessesModule,
     MediaModule,
@@ -119,6 +139,13 @@ import { DoctorInsightsService } from './insights/doctor-insights.service';
     ConsultationController,
     DoctorPrescriptionsController,
     PatientPrescriptionsController,
+    RecordsController,
+    AppointmentAttachmentsController,
+    DoctorRecordsController,
+    PublicReviewsController,
+    PatientReviewsController,
+    DoctorReviewsController,
+    AdminReviewsController,
   ],
   providers: [
     HealthEvents,
@@ -139,6 +166,9 @@ import { DoctorInsightsService } from './insights/doctor-insights.service';
     ConsultationService,
     PrescriptionsService,
     DoctorInsightsService,
+    RecordsService,
+    DoctorAggregatesService,
+    ReviewsService,
   ],
 })
 export class HealthcareModule {}

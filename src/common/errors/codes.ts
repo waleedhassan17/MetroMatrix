@@ -99,6 +99,10 @@ export const ErrorCode = {
   PROFILE_INCOMPLETE: 'PROFILE_INCOMPLETE',
   /** A doctor business can't be approved before its PMDC number is verified. */
   PMDC_NOT_VERIFIED: 'PMDC_NOT_VERIFIED',
+  /** Records can be shared with a visit only until it is completed or cancelled. */
+  ATTACHMENTS_CLOSED: 'ATTACHMENTS_CLOSED',
+  /** The symptom checker's per-user hourly limit (details.retryAfterSeconds). */
+  SYMPTOM_CHECK_LIMIT: 'SYMPTOM_CHECK_LIMIT',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

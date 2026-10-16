@@ -7,6 +7,8 @@ import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 import { ErrorCode } from '../../common/errors/codes';
 import {
+  assetParts,
+  deliveryOf,
   ownedAssetProblem,
   UPLOAD_PURPOSES,
   UploadPurpose,
@@ -25,7 +27,17 @@ export interface SignedUpload {
   /** Signed too: send it as `allowed_formats`. */
   allowedFormats: string;
   maxBytes: number;
+  /** Signed too when present: send it as `type` (PHI purposes are `authenticated`). */
+  type?: 'authenticated';
 }
+
+export interface PrivateDownload {
+  downloadUrl: string;
+  expiresAt: string;
+}
+
+/** How long a private download link works. */
+export const PRIVATE_DOWNLOAD_TTL_SECONDS = 600;
 
 /**
  * Cloudinary direct uploads. The API signs; the phone uploads; the API then
@@ -69,8 +81,14 @@ export class MediaService {
     const timestamp = Math.round(Date.now() / 1000);
     const folder = this.folderFor(userId, purpose);
     const allowedFormats = spec.formats.join(',');
+    const authenticated = deliveryOf(purpose) === 'authenticated';
     const signature = cloudinary.utils.api_sign_request(
-      { allowed_formats: allowedFormats, folder, timestamp },
+      {
+        allowed_formats: allowedFormats,
+        folder,
+        timestamp,
+        ...(authenticated ? { type: 'authenticated' } : {}),
+      },
       this.apiSecret,
     );
     return {
@@ -83,6 +101,7 @@ export class MediaService {
       uploadUrl: `https://api.cloudinary.com/v1_1/${this.cloudName}/${spec.resourceType}/upload`,
       allowedFormats,
       maxBytes: spec.maxBytes,
+      ...(authenticated ? { type: 'authenticated' as const } : {}),
     };
   }
 
@@ -99,6 +118,7 @@ export class MediaService {
       publicId,
       cloudName: this.cloudName,
       folder: this.folderFor(userId, purpose),
+      delivery: deliveryOf(purpose),
     });
     if (problem) {
       throw new BadRequestException({
@@ -107,5 +127,36 @@ export class MediaService {
         details: { fields: { [field]: [problem] } },
       });
     }
+  }
+
+  /**
+   * A signed, expiring download link for a private (authenticated) asset —
+   * what the API gives anyone but the uploader. Null when Cloudinary isn't
+   * configured or the URL isn't a Cloudinary asset.
+   */
+  privateDownload(
+    url: string,
+    ttlSeconds = PRIVATE_DOWNLOAD_TTL_SECONDS,
+    now = new Date(),
+  ): PrivateDownload | null {
+    const parts = assetParts(url);
+    if (!parts || !this.cloudName || !this.apiKey || !this.apiSecret)
+      return null;
+    const expiresAt = Math.floor(now.getTime() / 1000) + ttlSeconds;
+    // The SDK's typings omit the credential options its runtime accepts.
+    const options = {
+      resource_type: parts.resourceType,
+      type: 'authenticated',
+      expires_at: expiresAt,
+      cloud_name: this.cloudName,
+      api_key: this.apiKey,
+      api_secret: this.apiSecret,
+    } as unknown as Parameters<typeof cloudinary.utils.private_download_url>[2];
+    const downloadUrl = cloudinary.utils.private_download_url(
+      parts.publicId,
+      parts.format,
+      options,
+    );
+    return { downloadUrl, expiresAt: new Date(expiresAt * 1000).toISOString() };
   }
 }
