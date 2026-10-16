@@ -21,7 +21,7 @@ export class PatientVideoController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      '{ provider, domain, roomName, joinUrl, jwt, expiresAt, window } — 409 VIDEO_NOT_JOINABLE outside starts−10 min … ends+30 min; 402 PAYMENT_REQUIRED for unconfirmed prepayment.',
+      '{ provider, domain, roomName, roomUrl, jwt, expiresAt, window } — 409 VIDEO_NOT_JOINABLE outside starts−10 min … ends+30 min; 402 PAYMENT_REQUIRED for unconfirmed prepayment.',
   })
   join(@CurrentUser() me: AuthenticatedUser, @Param('code') code: string) {
     return this.video.patientJoin(me.id, code);

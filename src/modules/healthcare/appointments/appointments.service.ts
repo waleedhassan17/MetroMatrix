@@ -911,6 +911,26 @@ export class AppointmentsService implements OnModuleInit {
     return this.toDoctor(o.owner_user_id, a, type, title, body);
   }
 
+  /** After a support (admin) cancel: tell both sides. */
+  async notifyAdminCancel(a: Appointment, reason: string) {
+    const body = `MetroMatrix support cancelled this appointment: ${reason}`;
+    await this.send([
+      this.toPatient(
+        a,
+        'health.appointment.cancelled',
+        `${a.code} cancelled`,
+        body,
+      ),
+      await this.doctorNotice(
+        this.dataSource.manager,
+        a,
+        'health.appointment.cancelled',
+        `${a.code} cancelled`,
+        body,
+      ),
+    ]);
+  }
+
   async send(notices: Notice[]) {
     for (const n of notices) {
       try {

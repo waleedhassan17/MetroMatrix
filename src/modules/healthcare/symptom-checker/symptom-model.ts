@@ -1,4 +1,15 @@
 import { Logger } from '@nestjs/common';
+import { plainToInstance, Type } from 'class-transformer';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsIn,
+  IsOptional,
+  IsString,
+  Length,
+  ValidateNested,
+  validateSync,
+} from 'class-validator';
 
 export const URGENCIES = ['routine', 'soon', 'urgent'] as const;
 export type Urgency = (typeof URGENCIES)[number];
@@ -9,11 +20,55 @@ export interface SymptomInput {
   gender: string | null;
 }
 
+export interface AreaToDiscuss {
+  title: string;
+  explanation: string;
+}
+
 export interface ModelSuggestion {
   specialtySlug: string;
   alternativeSlugs: string[];
   urgency: Urgency;
   advice: string;
+  /** Up to 3 plain-language topics to raise with the doctor — never a diagnosis. */
+  areasToDiscuss: AreaToDiscuss[];
+}
+
+class AreaDto {
+  @IsString()
+  @Length(2, 80)
+  title!: string;
+
+  @IsString()
+  @Length(2, 300)
+  explanation!: string;
+}
+
+/** The model's JSON, checked with class-validator before anything is used. */
+class ModelAnswerDto {
+  @IsString()
+  @Length(2, 60)
+  specialtySlug!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @IsString({ each: true })
+  alternativeSlugs?: string[];
+
+  @IsIn(URGENCIES)
+  urgency!: Urgency;
+
+  @IsString()
+  @Length(2, 400)
+  advice!: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => AreaDto)
+  areasToDiscuss?: AreaDto[];
 }
 
 /**
@@ -35,25 +90,25 @@ export function parseSuggestion(
   raw: unknown,
   slugs: Set<string>,
 ): ModelSuggestion | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const r = raw as Record<string, unknown>;
-  if (typeof r.specialtySlug !== 'string' || !slugs.has(r.specialtySlug))
-    return null;
-  if (!URGENCIES.includes(r.urgency as Urgency)) return null;
-  if (typeof r.advice !== 'string' || !r.advice.trim()) return null;
-  const alts = Array.isArray(r.alternativeSlugs) ? r.alternativeSlugs : [];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const dto = plainToInstance(ModelAnswerDto, raw);
+  if (validateSync(dto).length) return null;
+  if (!slugs.has(dto.specialtySlug)) return null;
   return {
-    specialtySlug: r.specialtySlug,
+    specialtySlug: dto.specialtySlug,
     alternativeSlugs: [
       ...new Set(
-        alts.filter(
-          (s): s is string =>
-            typeof s === 'string' && slugs.has(s) && s !== r.specialtySlug,
+        (dto.alternativeSlugs ?? []).filter(
+          (s) => slugs.has(s) && s !== dto.specialtySlug,
         ),
       ),
     ].slice(0, 2),
-    urgency: r.urgency as Urgency,
-    advice: r.advice.trim().slice(0, 400),
+    urgency: dto.urgency,
+    advice: dto.advice.trim(),
+    areasToDiscuss: (dto.areasToDiscuss ?? []).map((a) => ({
+      title: a.title.trim(),
+      explanation: a.explanation.trim(),
+    })),
   };
 }
 
@@ -61,8 +116,10 @@ const SYSTEM_PROMPT = `You help patients in Pakistan choose which kind of doctor
 You are not diagnosing. Never name a medicine or a dose. Never say a condition is certain.
 Pick exactly one specialty slug from the list for the person's symptoms, up to two alternatives,
 and an urgency: "routine" (book in the coming days), "soon" (see a doctor within 24 hours)
-or "urgent" (seek care today). Advice: one or two plain sentences on what to do next,
-in the same language the person wrote in (English or Roman Urdu).
+or "urgent" (seek care today). Advice: one or two plain sentences on what to do next.
+areasToDiscuss: up to 3 topics the person could raise with the doctor, each a short title and a
+plain-language explanation of why it is worth mentioning — not a diagnosis.
+Write in the same language the person wrote in (English or Roman Urdu).
 Answer only with JSON matching the schema.`;
 
 /**
@@ -110,7 +167,7 @@ export class GeminiSymptomModel extends SymptomModel {
       ],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 400,
+        maxOutputTokens: 800,
         responseMimeType: 'application/json',
         responseSchema: {
           type: 'OBJECT',
@@ -122,6 +179,17 @@ export class GeminiSymptomModel extends SymptomModel {
             },
             urgency: { type: 'STRING', enum: [...URGENCIES] },
             advice: { type: 'STRING' },
+            areasToDiscuss: {
+              type: 'ARRAY',
+              items: {
+                type: 'OBJECT',
+                properties: {
+                  title: { type: 'STRING' },
+                  explanation: { type: 'STRING' },
+                },
+                required: ['title', 'explanation'],
+              },
+            },
           },
           required: ['specialtySlug', 'urgency', 'advice'],
         },

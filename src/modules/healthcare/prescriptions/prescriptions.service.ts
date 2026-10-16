@@ -168,7 +168,9 @@ export class PrescriptionsService {
     );
     await this.audit.record({
       actorUserId: doctorUserId,
-      action: created ? 'prescription.issue' : 'prescription.update',
+      action: created
+        ? 'health.prescription.issue'
+        : 'health.prescription.update',
       targetType: 'prescription',
       targetId: id,
       details: { code },

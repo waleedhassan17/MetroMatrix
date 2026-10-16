@@ -25,7 +25,7 @@ describe('video providers', () => {
       roomName: `mm-${room}`,
       jwt: null,
     });
-    expect(j.joinUrl).toBe(
+    expect(j.roomUrl).toBe(
       `https://meet.jit.si/mm-${room}#userInfo.displayName=%22Ali%20Raza%22`,
     );
   });
@@ -77,7 +77,7 @@ describe('video providers', () => {
         moderator: true,
         expiresAt: until.toISOString(),
       });
-      expect(j.joinUrl).toBe(`https://8x8.vc/${appId}/mm-${room}?jwt=${j.jwt}`);
+      expect(j.roomUrl).toBe(`https://8x8.vc/${appId}/mm-${room}?jwt=${j.jwt}`);
     });
 
     it('patients are not moderators; tokens never outlive two hours', () => {

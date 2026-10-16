@@ -6,7 +6,7 @@ import {
   OnModuleInit,
 } from '@nestjs/common';
 import { DataSource, EntityManager, In } from 'typeorm';
-import { HealthRecord } from './entities/health-record.entity';
+import { HealthRecord, RecordFile } from './entities/health-record.entity';
 import { AppointmentAttachment } from './entities/appointment-attachment.entity';
 import {
   AttachRecordsDto,
@@ -43,10 +43,11 @@ const appointmentNotFound = () =>
 const sharedView = (r: HealthRecord, attachedAt: Date) => ({
   id: r.id,
   title: r.title,
-  kind: r.kind,
+  type: r.type,
   recordDate: r.recordDate,
   notes: r.notes,
-  mime: r.mime,
+  fileCount: r.files.length,
+  mimes: r.files.map((f) => f.mime),
   sharedAt: attachedAt,
 });
 
@@ -90,24 +91,40 @@ export class RecordsService implements OnModuleInit {
     });
   }
 
+  /** The uploader gets the URLs back, plus short-lived download links. */
+  private ownerFiles(files: RecordFile[]) {
+    return files.map((f) => ({ ...f, ...this.media.privateDownload(f.url) }));
+  }
+
   private ownerView(r: HealthRecord, attachedTo: string[] = []) {
     return {
       id: r.id,
       title: r.title,
-      kind: r.kind,
+      type: r.type,
       recordDate: r.recordDate,
       notes: r.notes,
       familyMemberId: r.familyMemberId,
-      file: {
-        url: r.fileUrl,
-        publicId: r.filePublicId,
-        mime: r.mime,
-        ...this.media.privateDownload(r.fileUrl),
-      },
+      files: this.ownerFiles(r.files),
       sharedWith: attachedTo,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     };
+  }
+
+  private assertFiles(
+    userId: string,
+    files: Array<{ url: string; publicId: string; mime?: string }>,
+  ): RecordFile[] {
+    return files.map((f, i) => {
+      this.media.assertOwnedAsset(
+        userId,
+        'health_record',
+        f.url,
+        f.publicId,
+        `files.${i}.url`,
+      );
+      return { url: f.url, publicId: f.publicId, mime: f.mime ?? null };
+    });
   }
 
   private async sharedFor(appointmentIds: string[]) {
@@ -146,13 +163,7 @@ export class RecordsService implements OnModuleInit {
   // ── The patient's own records ────────────────────────────────────────────
 
   async create(userId: string, dto: CreateRecordDto) {
-    this.media.assertOwnedAsset(
-      userId,
-      'health_record',
-      dto.fileUrl,
-      dto.filePublicId,
-      'fileUrl',
-    );
+    const files = this.assertFiles(userId, dto.files);
     if (dto.familyMemberId) await this.family.owned(userId, dto.familyMemberId);
     const saved = await this.dataSource.transaction(async (m) => {
       await m.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
@@ -170,12 +181,10 @@ export class RecordsService implements OnModuleInit {
           userId,
           familyMemberId: dto.familyMemberId ?? null,
           title: dto.title,
-          kind: dto.kind,
+          type: dto.type,
           recordDate: dto.recordDate?.slice(0, 10) ?? null,
           notes: dto.notes ?? null,
-          fileUrl: dto.fileUrl,
-          filePublicId: dto.filePublicId,
-          mime: dto.mime ?? null,
+          files,
         }),
       );
     });
@@ -189,7 +198,7 @@ export class RecordsService implements OnModuleInit {
       .where('r.userId = :userId', { userId });
     if (q.person === 'self') qb.andWhere('r.familyMemberId IS NULL');
     else if (q.person) qb.andWhere('r.familyMemberId = :fm', { fm: q.person });
-    if (q.kind) qb.andWhere('r.kind = :kind', { kind: q.kind });
+    if (q.type) qb.andWhere('r.type = :type', { type: q.type });
     const [rows, total] = await qb
       .orderBy('r.recordDate', 'DESC', 'NULLS LAST')
       .addOrderBy('r.createdAt', 'DESC')
@@ -222,7 +231,8 @@ export class RecordsService implements OnModuleInit {
     const r = await this.owned(userId, id);
     Object.assign(r, {
       title: dto.title ?? r.title,
-      kind: dto.kind ?? r.kind,
+      type: dto.type ?? r.type,
+      files: dto.files ? this.assertFiles(userId, dto.files) : r.files,
       recordDate:
         dto.recordDate !== undefined
           ? (dto.recordDate?.slice(0, 10) ?? null)
@@ -366,9 +376,13 @@ export class RecordsService implements OnModuleInit {
         code: code.toUpperCase(),
       },
     );
+    // Doctors never get the stored URLs, only expiring download links.
     return {
       ...sharedView(r, link.created_at),
-      file: { mime: r.mime, ...this.media.privateDownload(r.fileUrl) },
+      files: r.files.map((f) => ({
+        mime: f.mime,
+        ...this.media.privateDownload(f.url),
+      })),
     };
   }
 }

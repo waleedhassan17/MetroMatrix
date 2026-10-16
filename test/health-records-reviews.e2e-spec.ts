@@ -84,11 +84,9 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
     return expectOk(
       await p.api.post('/health/records', {
         title: 'CBC — March',
-        kind: 'lab_report',
+        type: 'lab_report',
         recordDate: '2026-03-14',
-        fileUrl: file.url,
-        filePublicId: file.publicId,
-        mime: 'application/pdf',
+        files: [{ ...file, mime: 'application/pdf' }],
         ...over,
       }),
       201,
@@ -140,21 +138,23 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
     const mine = await newRecord(p);
     expect(mine).toMatchObject({
       title: 'CBC — March',
-      kind: 'lab_report',
+      type: 'lab_report',
       recordDate: '2026-03-14',
       familyMemberId: null,
       sharedWith: [],
-      file: { mime: 'application/pdf' },
+      files: [{ mime: 'application/pdf' }],
     });
-    expect(mine.file.downloadUrl).toMatch(
+    expect(mine.files[0].downloadUrl).toMatch(
       /^https:\/\/api\.cloudinary\.com\/v1_1\/metromatrix-test\/image\/download\?/,
     );
-    expect(mine.file.downloadUrl).toContain('type=authenticated');
-    expect(mine.file.downloadUrl).toContain('expires_at=');
-    expect(new Date(mine.file.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(mine.files[0].downloadUrl).toContain('type=authenticated');
+    expect(mine.files[0].downloadUrl).toContain('expires_at=');
+    expect(new Date(mine.files[0].expiresAt).getTime()).toBeGreaterThan(
+      Date.now(),
+    );
     const kid = await newRecord(p, {
       title: 'Vaccination card',
-      kind: 'vaccination',
+      type: 'other',
       familyMemberId: child.id,
     });
 
@@ -164,9 +164,13 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       (
         await p.api.post('/health/records', {
           title: 'x1',
-          kind: 'other',
-          fileUrl: pub.url.replace('/avatar/', '/health_record/'),
-          filePublicId: pub.publicId.replace('/avatar/', '/health_record/'),
+          type: 'other',
+          files: [
+            {
+              url: pub.url.replace('/avatar/', '/health_record/'),
+              publicId: pub.publicId.replace('/avatar/', '/health_record/'),
+            },
+          ],
         })
       ).status,
     ).toBe(400);
@@ -175,9 +179,8 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       (
         await p.api.post('/health/records', {
           title: 'x2',
-          kind: 'other',
-          fileUrl: theirs.url,
-          filePublicId: theirs.publicId,
+          type: 'other',
+          files: [theirs],
         })
       ).status,
     ).toBe(400);
@@ -186,9 +189,8 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       (
         await other.api.post('/health/records', {
           title: 'x3',
-          kind: 'other',
-          fileUrl: mineFile.url,
-          filePublicId: mineFile.publicId,
+          type: 'other',
+          files: [mineFile],
           familyMemberId: child.id,
         })
       ).status,
@@ -228,7 +230,7 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       201,
     );
     const cbc = await newRecord(p);
-    const xray = await newRecord(p, { title: 'Chest X-ray', kind: 'imaging' });
+    const xray = await newRecord(p, { title: 'Chest X-ray', type: 'scan' });
     const kidRecord = await newRecord(p, { familyMemberId: child.id });
 
     // Booking with someone else's record id fails and books nothing.
@@ -283,8 +285,8 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
         `/health/doctor/appointments/${a.code}/records/${cbc.id}`,
       ),
     );
-    expect(opened.file.downloadUrl).toContain('api.cloudinary.com');
-    expect(JSON.stringify(opened)).not.toContain(cbc.file.url);
+    expect(opened.files[0].downloadUrl).toContain('api.cloudinary.com');
+    expect(JSON.stringify(opened)).not.toContain(cbc.files[0].url);
     expect(await phiReads(d.userId)).toEqual([
       'appointment:appointment',
       'health_record:record',
@@ -389,9 +391,9 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       diagnosis: 5,
       staff: 4,
       environment: 4,
-      wouldRecommend: true,
-      tags: ['explains_well', 'on_time'],
-      comment: 'Listened carefully and explained the treatment.',
+      recommend: true,
+      tags: ['explained_well', 'on_time'],
+      text: 'Listened carefully and explained the treatment.',
     };
     const early = await p.api.post(
       `/health/appointments/${a.code}/review`,
@@ -425,7 +427,7 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       kind: 'clinic',
       environment: 4,
       verifiedVisit: true,
-      tags: ['explains_well', 'on_time'],
+      tags: ['explained_well', 'on_time'],
       reply: null,
     });
     expect(review.author).toMatch(/^\S+( [A-Z]\.)?$/);
@@ -447,7 +449,7 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       averages: { overall: 5, diagnosis: 5, staff: 4, environment: 4 },
       satisfactionPct: null, // fewer than 5 reviews
       topTags: [
-        { tag: 'explains_well', count: 1 },
+        { tag: 'explained_well', count: 1 },
         { tag: 'on_time', count: 1 },
       ],
     });
@@ -468,7 +470,7 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
     expect(late.body.error.details.reason).toBe('window_closed');
   });
 
-  it('video reviews have no environment score; anonymous reviews hide the author', async () => {
+  it('video reviews have no environment score; anonymous reviews show initials only', async () => {
     const { d, location } = await openDoctor('video');
     const p = await shopper(t);
     const a = await book(p, d, location.id);
@@ -476,22 +478,25 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
     const r = await expectOk(
       await p.api.post(`/health/appointments/${a.code}/review`, {
         overall: 3,
+        diagnosis: 3,
         environment: 5,
-        wouldRecommend: false,
-        anonymous: true,
+        recommend: false,
+        isAnonymous: true,
       }),
       201,
     );
     expect(r).toMatchObject({
       kind: 'video',
       environment: null,
-      author: 'Anonymous patient',
+      isAnonymous: true,
     });
+    // Initials only, e.g. "A. K.".
+    expect(r.author).toMatch(/^[A-Z]\.( [A-Z]\.)?$/);
     const list = await expectOk(
       await anon().get(`/health/doctors/${d.doctorId}/reviews?kind=video`),
     );
     expect(list).toMatchObject({ total: 1, page: 1 });
-    expect(list.items[0].author).toBe('Anonymous patient');
+    expect(list.items[0].author).toBe(r.author);
   });
 
   it('public list sorts and filters; doctor replies; admin hide/unhide is audited and moves the rating', async () => {
@@ -505,8 +510,9 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       await expectOk(
         await p.api.post(`/health/appointments/${a.code}/review`, {
           overall,
-          wouldRecommend: overall >= 4,
-          comment: `score ${overall}`,
+          diagnosis: overall,
+          recommend: overall >= 4,
+          text: `score ${overall}`,
         }),
         201,
       );
@@ -520,7 +526,7 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       ).items.map((r: any) => r.overall);
     expect(await ids('sort=highest')).toEqual([5, 4, 2]);
     expect(await ids('sort=lowest')).toEqual([2, 4, 5]);
-    expect(await ids('sort=recent')).toEqual([4, 2, 5]);
+    expect(await ids('sort=latest')).toEqual([4, 2, 5]);
 
     const doctorList = await expectOk(
       await d.api.get('/health/doctor/reviews'),
@@ -533,6 +539,10 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       }),
     );
     expect(replied.reply.text).toMatch(/second receptionist/);
+    const unreplied = await expectOk(
+      await d.api.get('/health/doctor/reviews?unreplied=true'),
+    );
+    expect(unreplied.items.map((r: any) => r.overall).sort()).toEqual([4, 5]);
     const { d: otherDoctor } = await openDoctor();
     expect(
       (
@@ -578,8 +588,8 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
       [low.id],
     );
     expect(audit.map((r: any) => r.action)).toEqual([
-      'review.hide',
-      'review.unhide',
+      'health.review.hide',
+      'health.review.unhide',
     ]);
     // Patients can't moderate.
     const p = await shopper(t);

@@ -180,7 +180,7 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
         moderator: false,
         jwt: null,
       });
-      expect(pj.joinUrl).toContain(`https://meet.jit.si/mm-${video_room}`);
+      expect(pj.roomUrl).toContain(`https://meet.jit.si/mm-${video_room}`);
       const view = await expectOk(
         await p.api.get(`/health/appointments/${a.code}`),
       );
@@ -299,7 +299,7 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
           [a.code],
         );
         expect(dc.exp).toBeLessThanOrEqual(closes);
-        expect(pj.joinUrl).toBe(`https://8x8.vc/${pj.roomName}?jwt=${pj.jwt}`);
+        expect(pj.roomUrl).toBe(`https://8x8.vc/${pj.roomName}?jwt=${pj.jwt}`);
       } finally {
         video.current = new PublicJitsiProvider();
       }
@@ -308,7 +308,7 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
 
   describe('symptom checker', () => {
     const check = (p: SignedUp, body: object) =>
-      p.api.post('/health/symptom-check', body);
+      p.api.post('/health/symptom-checker', body);
 
     it('red flags answer with an emergency and never call the model', async () => {
       const p = await shopper(t);
@@ -319,7 +319,10 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
       ]) {
         const r = await expectOk(await check(p, { text }));
         expect(r).toMatchObject({ emergency: true, source: 'red_flag' });
-        expect(r.contacts.map((c: any) => c.number)).toEqual(['1122', '115']);
+        expect(r.numbers).toEqual([
+          { label: 'Rescue', number: '1122' },
+          { label: 'Edhi ambulance', number: '115' },
+        ]);
         expect(r.disclaimer).toMatch(/not a diagnosis/);
       }
       expect(model.calls).toBe(0);
@@ -338,6 +341,12 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
         alternativeSlugs: ['general-physician'],
         urgency: 'routine',
         advice: 'A dermatologist can help with this.',
+        areasToDiscuss: [
+          {
+            title: 'How long it has lasted',
+            explanation: 'Six months matters.',
+          },
+        ],
       };
       const viaModel = await expectOk(
         await check(p, {
@@ -352,6 +361,7 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
         specialty: { slug: 'dermatologist' },
         alternatives: [{ slug: 'general-physician' }],
         advice: 'A dermatologist can help with this.',
+        areasToDiscuss: [{ title: 'How long it has lasted' }],
       });
 
       model.next = null; // timeout, bad JSON, unknown slug… all look like this
@@ -363,7 +373,7 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
         source: 'fallback',
         specialty: { slug: 'dermatologist' },
       });
-      expect(fallback.possibleConditions.map((c: any) => c.name)).toContain(
+      expect(fallback.areasToDiscuss.map((c: any) => c.title)).toContain(
         'Acne',
       );
       expect(fallback.disclaimer).toBeDefined();
@@ -458,7 +468,7 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
       );
       expect(
         (
-          await new ApiClient(t.http).post('/health/symptom-check', {
+          await new ApiClient(t.http).post('/health/symptom-checker', {
             text: 'mild rash on my arm',
           })
         ).status,

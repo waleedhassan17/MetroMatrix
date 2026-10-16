@@ -43,14 +43,15 @@ export class DoctorAggregatesService implements OnModuleInit {
          SELECT id FROM doctors WHERE $1::uuid[] IS NULL OR id = ANY($1::uuid[])
        ), r AS (
          SELECT doctor_id, count(*)::int AS n, round(avg(overall)::numeric, 2) AS avg,
-                round(100.0 * avg(would_recommend::int))::int AS pct
+                round(100.0 * avg(recommend::int))::int AS pct
            FROM doctor_reviews WHERE hidden_at IS NULL AND doctor_id IN (SELECT id FROM target)
           GROUP BY 1
        ), v AS (
          SELECT doctor_id,
-                count(*) FILTER (WHERE kind = 'clinic' AND checked_in_at IS NOT NULL AND started_at IS NOT NULL) AS wait_n,
-                avg(greatest(0, extract(epoch FROM started_at - greatest(checked_in_at, starts_at)) / 60))
-                  FILTER (WHERE kind = 'clinic' AND checked_in_at IS NOT NULL AND started_at IS NOT NULL) AS wait,
+                count(*) FILTER (WHERE started_at IS NOT NULL AND (kind = 'video' OR checked_in_at IS NOT NULL)) AS wait_n,
+                -- clinic: from arrival or the booked time, whichever is later; video: from the booked time.
+                avg(greatest(0, extract(epoch FROM started_at - CASE WHEN kind = 'clinic' THEN greatest(checked_in_at, starts_at) ELSE starts_at END) / 60))
+                  FILTER (WHERE started_at IS NOT NULL AND (kind = 'video' OR checked_in_at IS NOT NULL)) AS wait,
                 count(*) FILTER (WHERE started_at IS NOT NULL) AS consult_n,
                 avg(greatest(0, extract(epoch FROM completed_at - started_at) / 60))
                   FILTER (WHERE started_at IS NOT NULL) AS consult

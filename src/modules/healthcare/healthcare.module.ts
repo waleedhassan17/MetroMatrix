@@ -52,6 +52,12 @@ import { HealthJobsService } from './jobs/health-jobs.service';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminHealthController } from './admin/admin-health.controller';
+import { AdminReferenceService } from './admin/admin-reference.service';
+import { AdminAppointmentsService } from './admin/admin-appointments.service';
+import {
+  AdminAppointmentsController,
+  AdminReferenceController,
+} from './admin/admin-reference.controller';
 import {
   DoctorMedicineFavourite,
   Prescription,
@@ -169,6 +175,8 @@ import { SymptomCheckerController } from './symptom-checker/symptom-checker.cont
     PatientVideoController,
     DoctorVideoController,
     SymptomCheckerController,
+    AdminReferenceController,
+    AdminAppointmentsController,
   ],
   providers: [
     HealthEvents,
@@ -213,6 +221,8 @@ import { SymptomCheckerController } from './symptom-checker/symptom-checker.cont
         ),
     },
     SymptomCheckerService,
+    AdminReferenceService,
+    AdminAppointmentsService,
   ],
 })
 export class HealthcareModule {}

@@ -3,20 +3,25 @@ import { BaseEntity } from '../../../../common/base/base.entity';
 import { User } from '../../../users/entities/user.entity';
 import { FamilyMember } from '../../family/entities/family-member.entity';
 
-export const RECORD_KINDS = [
+export const RECORD_TYPES = [
   'lab_report',
-  'imaging',
   'prescription',
+  'scan',
   'discharge_summary',
-  'vaccination',
   'other',
 ] as const;
-export type RecordKind = (typeof RECORD_KINDS)[number];
+export type RecordType = (typeof RECORD_TYPES)[number];
+
+export interface RecordFile {
+  url: string;
+  publicId: string;
+  mime: string | null;
+}
 
 /**
  * A patient's own medical document (lab report, scan, old prescription),
  * about them or one of their family members. The file is a private
- * (authenticated) Cloudinary asset. A doctor sees a record only while it is
+ * (authenticated) Cloudinary asset per file. A doctor sees a record only while it is
  * attached to one of that doctor's appointments.
  */
 @Entity('health_records')
@@ -41,8 +46,8 @@ export class HealthRecord extends BaseEntity {
   @Column({ type: 'varchar', length: 120 })
   title!: string;
 
-  @Column({ type: 'enum', enum: RECORD_KINDS, enumName: 'health_record_kind' })
-  kind!: RecordKind;
+  @Column({ type: 'enum', enum: RECORD_TYPES, enumName: 'health_record_type' })
+  type!: RecordType;
 
   /** When the test was done or the document issued (not the upload time). */
   @Column({ type: 'date', name: 'record_date', nullable: true })
@@ -51,12 +56,7 @@ export class HealthRecord extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   notes!: string | null;
 
-  @Column({ type: 'varchar', length: 500, name: 'file_url' })
-  fileUrl!: string;
-
-  @Column({ type: 'varchar', length: 255, name: 'file_public_id' })
-  filePublicId!: string;
-
-  @Column({ type: 'varchar', length: 80, nullable: true })
-  mime!: string | null;
+  /** 1–10 pages/photos/PDFs, each a private (authenticated) upload. */
+  @Column({ type: 'jsonb' })
+  files!: RecordFile[];
 }

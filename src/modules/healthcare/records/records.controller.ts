@@ -36,14 +36,14 @@ export class RecordsController {
   @Post()
   @ApiOperation({
     summary:
-      '{ title, kind, recordDate?, notes?, familyMemberId?, fileUrl, filePublicId, mime? } — file signed for purpose health_record (private).',
+      '{ title, type, recordDate?, notes?, familyMemberId?, files: [{ url, publicId, mime? }] } — files signed for purpose health_record (private).',
   })
   create(@CurrentUser() me: AuthenticatedUser, @Body() dto: CreateRecordDto) {
     return this.records.create(me.id, dto);
   }
 
   @Get()
-  @ApiOperation({ summary: '?person=self|<familyMemberId>&kind&page' })
+  @ApiOperation({ summary: '?person=self|<familyMemberId>&type&page' })
   list(@CurrentUser() me: AuthenticatedUser, @Query() q: RecordQueryDto) {
     return this.records.list(me.id, q);
   }

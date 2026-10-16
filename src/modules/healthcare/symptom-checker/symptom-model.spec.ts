@@ -41,6 +41,12 @@ describe('symptom model', () => {
           alternativeSlugs: ['dermatologist', 'nope', 'general-physician'],
           urgency: 'routine',
           advice: '  See a skin doctor.  ',
+          areasToDiscuss: [
+            {
+              title: 'Breakouts',
+              explanation: 'How long and where on the face.',
+            },
+          ],
         },
         slugs,
       ),
@@ -49,7 +55,33 @@ describe('symptom model', () => {
       alternativeSlugs: ['general-physician'],
       urgency: 'routine',
       advice: 'See a skin doctor.',
+      areasToDiscuss: [
+        { title: 'Breakouts', explanation: 'How long and where on the face.' },
+      ],
     });
+    // class-validator rejects malformed areas and over-long lists.
+    expect(
+      parseSuggestion(
+        {
+          specialtySlug: 'dermatologist',
+          urgency: 'routine',
+          advice: 'ok',
+          areasToDiscuss: [{ title: 'x' }],
+        },
+        slugs,
+      ),
+    ).toBeNull();
+    expect(
+      parseSuggestion(
+        {
+          specialtySlug: 'dermatologist',
+          urgency: 'routine',
+          advice: 'ok',
+          areasToDiscuss: Array(4).fill({ title: 'ab', explanation: 'cd' }),
+        },
+        slugs,
+      ),
+    ).toBeNull();
     expect(
       parseSuggestion(
         { specialtySlug: 'astrologer', urgency: 'routine', advice: 'x' },

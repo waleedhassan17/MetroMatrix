@@ -11,7 +11,7 @@ import {
 
 @ApiTags('health · patient')
 @HealthPatient()
-@Controller('health/symptom-check')
+@Controller('health/symptom-checker')
 export class SymptomCheckerController {
   constructor(private readonly checker: SymptomCheckerService) {}
 
@@ -20,7 +20,7 @@ export class SymptomCheckerController {
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
   @ApiOperation({
     summary:
-      '{ text, familyMemberId?, age?, gender? } — emergency answer on red flags (1122/115), else a specialty + urgency + advice, always with a disclaimer. 10/hour per user (429 SYMPTOM_CHECK_LIMIT).',
+      '{ text, familyMemberId?, age?, gender? } — emergency answer on red flags ({ emergency, message, numbers: 1122/115 }), else a specialty + urgency + advice + up to 3 areasToDiscuss, always with a disclaimer. 10/hour per user (429 SYMPTOM_CHECK_LIMIT).',
   })
   check(@CurrentUser() me: AuthenticatedUser, @Body() dto: SymptomCheckDto) {
     return this.checker.check(me.id, dto);

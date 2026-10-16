@@ -250,6 +250,27 @@ export class AvailabilityService implements OnModuleInit {
   }
 
   /** The n free slots nearest to an instant (offered when a slot was just taken). */
+  /** What patients will see, per active location — works before publishing too. */
+  async preview(doctorId: string, fromDate: string | undefined, days: number) {
+    const locations: Array<{ id: string }> = await this.dataSource.query(
+      `SELECT id FROM practice_locations WHERE doctor_id = $1 AND is_active ORDER BY kind, created_at`,
+      [doctorId],
+    );
+    return {
+      locations: await Promise.all(
+        locations.map(async (l) => {
+          const { location, days: list } = await this.slots(
+            doctorId,
+            l.id,
+            fromDate,
+            days,
+          );
+          return { location, days: list };
+        }),
+      ),
+    };
+  }
+
   async nearest(
     doctorId: string,
     locationId: string,

@@ -25,6 +25,8 @@ describe('symptom red flags', () => {
     ['tez bukhar aur gardan akar gayi', 'meningitis'],
     ['I am pregnant with heavy bleeding', 'pregnancy'],
     ['He hit his head in a bike accident', 'injury'],
+    ['My 2 month old baby has a high fever', 'infant_fever'],
+    ['chhota bacha hai aur tez bukhar hai', 'infant_fever'],
   ])('%s → %s', (text, id) => {
     expect(ids(text)).toContain(id);
   });
@@ -39,6 +41,13 @@ describe('symptom red flags', () => {
     'The weekend my back started hurting',
   ])('no flag: %s', (text) => {
     expect(ids(text)).toEqual([]);
+  });
+
+  it('any fever under age 1 is a red flag; the same text at 30 is not', () => {
+    expect(redFlags('fever since last night', 0).map((f) => f.id)).toEqual([
+      'infant_fever',
+    ]);
+    expect(redFlags('fever since last night', 30)).toEqual([]);
   });
 
   it('normalises punctuation, case and spacing (Urdu script survives)', () => {

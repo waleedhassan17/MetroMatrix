@@ -69,9 +69,9 @@ export class DoctorInsightsService {
           args.slice(0, 3),
         ),
         this.dataSource.query(
-          `SELECT round(avg(extract(epoch FROM a.started_at - greatest(a.checked_in_at, a.starts_at)) / 60)
-                  FILTER (WHERE a.kind = 'clinic' AND a.checked_in_at IS NOT NULL AND a.started_at IS NOT NULL))::int AS wait,
-                count(*) FILTER (WHERE a.kind = 'clinic' AND a.checked_in_at IS NOT NULL AND a.started_at IS NOT NULL)::int AS wait_n,
+          `SELECT round(avg(greatest(0, extract(epoch FROM a.started_at - CASE WHEN a.kind = 'clinic' THEN greatest(a.checked_in_at, a.starts_at) ELSE a.starts_at END) / 60))
+                  FILTER (WHERE a.started_at IS NOT NULL AND (a.kind = 'video' OR a.checked_in_at IS NOT NULL)))::int AS wait,
+                count(*) FILTER (WHERE a.started_at IS NOT NULL AND (a.kind = 'video' OR a.checked_in_at IS NOT NULL))::int AS wait_n,
                 round(avg(extract(epoch FROM a.completed_at - a.started_at) / 60)
                   FILTER (WHERE a.started_at IS NOT NULL AND a.completed_at IS NOT NULL))::int AS consult,
                 count(*) FILTER (WHERE a.started_at IS NOT NULL AND a.completed_at IS NOT NULL)::int AS consult_n
@@ -148,6 +148,8 @@ export class DoctorInsightsService {
         returning: people.returning_patients,
       },
       fees: {
+        label:
+          'Recorded by you — MetroMatrix does not process or hold payments.',
         recorded: sum((f) => f.status === 'paid'),
         atClinic: sum(
           (f) => f.status === 'paid' && f.method === 'pay_at_clinic',

@@ -24,16 +24,15 @@ export class CreateReviewDto {
   @Max(5)
   overall!: number;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     minimum: 1,
     maximum: 5,
     description: 'Diagnosis and explanation',
   })
-  @IsOptional()
   @IsInt()
   @Min(1)
   @Max(5)
-  diagnosis?: number;
+  diagnosis!: number;
 
   @ApiPropertyOptional({
     minimum: 1,
@@ -49,7 +48,7 @@ export class CreateReviewDto {
   @ApiPropertyOptional({
     minimum: 1,
     maximum: 5,
-    description: 'Clinic environment (clinic visits only)',
+    description: 'Clinic environment (clinic visits only; ignored for video)',
   })
   @IsOptional()
   @IsInt()
@@ -57,14 +56,14 @@ export class CreateReviewDto {
   @Max(5)
   environment?: number;
 
-  @ApiProperty()
+  @ApiProperty({ description: 'Would you recommend this doctor?' })
   @IsBoolean()
-  wouldRecommend!: boolean;
+  recommend!: boolean;
 
   @ApiPropertyOptional({ enum: REVIEW_TAGS, isArray: true })
   @IsOptional()
   @IsArray()
-  @ArrayMaxSize(5)
+  @ArrayMaxSize(7)
   @IsIn(REVIEW_TAGS, { each: true })
   tags?: ReviewTag[];
 
@@ -75,18 +74,21 @@ export class CreateReviewDto {
   @Trim()
   @IsString()
   @MaxLength(1000)
-  comment?: string;
+  text?: string;
 
-  @ApiPropertyOptional({ default: false })
+  @ApiPropertyOptional({
+    default: false,
+    description: 'Shown with initials only.',
+  })
   @IsOptional()
   @IsBoolean()
-  anonymous?: boolean;
+  isAnonymous?: boolean;
 }
 
-export const REVIEW_SORTS = ['recent', 'highest', 'lowest'] as const;
+export const REVIEW_SORTS = ['latest', 'highest', 'lowest'] as const;
 
 export class ReviewQueryDto extends PaginationQueryDto {
-  @ApiPropertyOptional({ enum: REVIEW_SORTS, default: 'recent' })
+  @ApiPropertyOptional({ enum: REVIEW_SORTS, default: 'latest' })
   @IsOptional()
   @IsIn(REVIEW_SORTS)
   sort?: (typeof REVIEW_SORTS)[number];
@@ -95,6 +97,14 @@ export class ReviewQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(['clinic', 'video'])
   kind?: 'clinic' | 'video';
+
+  @ApiPropertyOptional({
+    enum: ['true', 'false'],
+    description: 'Doctor list only: reviews you have not replied to.',
+  })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  unreplied?: 'true' | 'false';
 }
 
 export class ReplyDto {

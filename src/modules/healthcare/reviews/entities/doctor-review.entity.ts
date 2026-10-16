@@ -8,18 +8,15 @@ import {
   LocationKind,
 } from '../../practice/entities/practice-location.entity';
 
-/** Fixed tags so they can be counted; the first seven are praise, the rest concerns. */
+/** Fixed praise tags so they can be counted ("No waiting time", "Great experience"…). */
 export const REVIEW_TAGS = [
-  'explains_well',
-  'good_listener',
-  'thorough',
+  'no_wait',
+  'great_experience',
+  'explained_well',
   'friendly',
   'on_time',
-  'helpful_staff',
   'clean_clinic',
-  'long_wait',
-  'felt_rushed',
-  'hard_to_reach',
+  'value_for_money',
 ] as const;
 export type ReviewTag = (typeof REVIEW_TAGS)[number];
 
@@ -35,7 +32,7 @@ export type ReviewTag = (typeof REVIEW_TAGS)[number];
 @Index(['patientUserId'])
 @Check(
   'CHK_doctor_reviews_scores',
-  `"overall" BETWEEN 1 AND 5 AND ("diagnosis" IS NULL OR "diagnosis" BETWEEN 1 AND 5) AND ("staff" IS NULL OR "staff" BETWEEN 1 AND 5) AND ("environment" IS NULL OR "environment" BETWEEN 1 AND 5)`,
+  `"overall" BETWEEN 1 AND 5 AND "diagnosis" BETWEEN 1 AND 5 AND ("staff" IS NULL OR "staff" BETWEEN 1 AND 5) AND ("environment" IS NULL OR "environment" BETWEEN 1 AND 5)`,
 )
 export class DoctorReview extends BaseEntity {
   @Column({ type: 'uuid', name: 'appointment_id' })
@@ -69,8 +66,8 @@ export class DoctorReview extends BaseEntity {
   @Column({ type: 'smallint' })
   overall!: number;
 
-  @Column({ type: 'smallint', nullable: true })
-  diagnosis!: number | null;
+  @Column({ type: 'smallint' })
+  diagnosis!: number;
 
   @Column({ type: 'smallint', nullable: true })
   staff!: number | null;
@@ -78,24 +75,24 @@ export class DoctorReview extends BaseEntity {
   @Column({ type: 'smallint', nullable: true })
   environment!: number | null;
 
-  @Column({ type: 'boolean', name: 'would_recommend' })
-  wouldRecommend!: boolean;
+  @Column({ type: 'boolean' })
+  recommend!: boolean;
 
   @Column({ type: 'text', array: true, default: () => "'{}'" })
   tags!: ReviewTag[];
 
   @Column({ type: 'text', nullable: true })
-  comment!: string | null;
+  text!: string | null;
 
   @Column({ type: 'boolean', name: 'is_anonymous', default: false })
   isAnonymous!: boolean;
 
-  /** "Ayesha K." at the time of writing; never the full name. */
+  /** "Ayesha K." (or initials "A. K." when anonymous), fixed at writing; never the full name. */
   @Column({ type: 'varchar', length: 80, name: 'author_name' })
   authorName!: string;
 
-  @Column({ type: 'text', nullable: true })
-  reply!: string | null;
+  @Column({ type: 'text', name: 'doctor_reply', nullable: true })
+  doctorReply!: string | null;
 
   @Column({ type: 'timestamptz', name: 'replied_at', nullable: true })
   repliedAt!: Date | null;

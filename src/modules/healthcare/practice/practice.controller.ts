@@ -9,9 +9,12 @@ import {
   Patch,
   Post,
   Put,
+  Query,
 } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { PracticeService } from './practice.service';
+import { AvailabilityService } from '../availability/availability.service';
+import { SlotsQueryDto } from '../discovery/dto/discovery.dto';
 import {
   CreateLocationDto,
   CreateTimeOffDto,
@@ -31,7 +34,19 @@ const uuid = new ParseUUIDPipe();
 @HealthDoctor()
 @Controller('health/doctor')
 export class PracticeController {
-  constructor(private readonly practice: PracticeService) {}
+  constructor(
+    private readonly practice: PracticeService,
+    private readonly availability: AvailabilityService,
+  ) {}
+
+  @Get('availability/preview')
+  @ApiOperation({
+    summary:
+      '?from&days=7 — the slots patients will see, per active location (check before publishing).',
+  })
+  preview(@CurrentDoctor() d: CurrentDoctorRef, @Query() q: SlotsQueryDto) {
+    return this.availability.preview(d.id, q.from, q.days ?? 7);
+  }
 
   @Get('locations')
   locations(@CurrentDoctor() d: CurrentDoctorRef) {

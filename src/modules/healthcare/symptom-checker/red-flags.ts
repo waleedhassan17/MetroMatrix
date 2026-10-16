@@ -125,6 +125,18 @@ export const RED_FLAGS: RedFlagRule[] = [
     ],
   },
   {
+    id: 'infant_fever',
+    label: 'High fever in a baby',
+    patterns: [
+      W(
+        '(?:baby|infant|newborn|new born)\\b.*\\b(?:high )?fever|(?:high )?fever (?:in|of) (?:my |a |the )?(?:baby|infant|newborn)',
+      ),
+      W(
+        '(?:chhota|chota|nanha|shir ?khwar|naumaulood|naumolood) (?:bacha|bachay|bachi|baby)\\b.*\\b(?:tez )?bukhar|(?:baby|bachay|bache) (?:ko|ka) tez bukhar',
+      ),
+    ],
+  },
+  {
     id: 'pregnancy',
     label: 'Bleeding or severe pain in pregnancy',
     patterns: [
@@ -158,12 +170,23 @@ export const normalise = (text: string) =>
     .replace(/\s+/g, ' ')
     .trim();
 
-/** Every red flag the text raises (empty = none). */
-export function redFlags(text: string): Array<{ id: string; label: string }> {
+const FEVER = W('(?:high |tez )?(?:fever|bukhar|temperature)');
+
+/** Every red flag the text raises (empty = none). Any fever under age 1 is a flag too. */
+export function redFlags(
+  text: string,
+  age: number | null = null,
+): Array<{ id: string; label: string }> {
   const t = normalise(text);
-  return RED_FLAGS.filter((r) => r.patterns.some((p) => p.test(t))).map(
-    (r) => ({ id: r.id, label: r.label }),
-  );
+  const hits = RED_FLAGS.filter((r) => r.patterns.some((p) => p.test(t)));
+  if (
+    age !== null &&
+    age < 1 &&
+    FEVER.test(t) &&
+    !hits.some((h) => h.id === 'infant_fever')
+  )
+    hits.push(RED_FLAGS.find((r) => r.id === 'infant_fever')!);
+  return hits.map((r) => ({ id: r.id, label: r.label }));
 }
 
 /**
@@ -171,7 +194,7 @@ export function redFlags(text: string): Array<{ id: string; label: string }> {
  * service (coverage varies by area); Edhi's 115 ambulance line is reachable
  * across Pakistan. Checked October 2026 — see docs/API_HEALTH.md.
  */
-export const EMERGENCY_CONTACTS = [
-  { number: '1122', label: 'Rescue 1122 — emergency & ambulance' },
-  { number: '115', label: 'Edhi ambulance' },
+export const EMERGENCY_NUMBERS = [
+  { label: 'Rescue', number: '1122' },
+  { label: 'Edhi ambulance', number: '115' },
 ];

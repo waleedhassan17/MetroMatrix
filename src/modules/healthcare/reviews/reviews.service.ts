@@ -40,13 +40,18 @@ const notFound = () =>
     message: 'Review not found.',
   });
 
-/** "Ayesha Khan" → "Ayesha K." */
-export function shortName(full: string | null | undefined): string {
+/** "Ayesha Khan" → "Ayesha K."; anonymous → initials only, "A. K." */
+export function shortName(
+  full: string | null | undefined,
+  anonymous = false,
+): string {
   const parts = (full ?? '').trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return 'Patient';
-  return parts.length === 1
-    ? parts[0]
-    : `${parts[0]} ${parts[parts.length - 1][0].toUpperCase()}.`;
+  if (!parts.length) return anonymous ? 'P.' : 'Patient';
+  const initial = (w: string) => `${w[0].toUpperCase()}.`;
+  const last = parts.length > 1 ? parts[parts.length - 1] : null;
+  if (anonymous)
+    return last ? `${initial(parts[0])} ${initial(last)}` : initial(parts[0]);
+  return last ? `${parts[0]} ${initial(last)}` : parts[0];
 }
 
 const isUniqueViolation = (err: unknown) =>
@@ -103,18 +108,19 @@ export class ReviewsService implements OnModuleInit {
   publicView(r: DoctorReview) {
     return {
       id: r.id,
-      author: r.isAnonymous ? 'Anonymous patient' : r.authorName,
+      author: r.authorName,
+      isAnonymous: r.isAnonymous,
       verifiedVisit: true,
       kind: r.kind,
       overall: r.overall,
       diagnosis: r.diagnosis,
       staff: r.staff,
       environment: r.environment,
-      wouldRecommend: r.wouldRecommend,
+      recommend: r.recommend,
       tags: r.tags,
-      comment: r.comment,
+      text: r.text,
       createdAt: r.createdAt,
-      reply: r.reply ? { text: r.reply, at: r.repliedAt } : null,
+      reply: r.doctorReply ? { text: r.doctorReply, at: r.repliedAt } : null,
     };
   }
 
@@ -169,15 +175,15 @@ export class ReviewsService implements OnModuleInit {
             patientUserId: userId,
             kind: a.kind,
             overall: dto.overall,
-            diagnosis: dto.diagnosis ?? null,
+            diagnosis: dto.diagnosis,
             staff: dto.staff ?? null,
             // A video visit has no clinic to rate.
             environment: a.kind === 'clinic' ? (dto.environment ?? null) : null,
-            wouldRecommend: dto.wouldRecommend,
+            recommend: dto.recommend,
             tags: [...new Set(dto.tags ?? [])],
-            comment: dto.comment || null,
-            isAnonymous: dto.anonymous === true,
-            authorName: shortName(u?.display_name),
+            text: dto.text || null,
+            isAnonymous: dto.isAnonymous === true,
+            authorName: shortName(u?.display_name, dto.isAnonymous === true),
           }),
         );
       });
@@ -206,9 +212,7 @@ export class ReviewsService implements OnModuleInit {
       await this.notifications.notify(o.owner_user_id, {
         type: 'health.review.new',
         title: `New ${r.overall}★ review`,
-        body: r.comment
-          ? r.comment.slice(0, 120)
-          : 'A patient rated their visit.',
+        body: r.text ? r.text.slice(0, 120) : 'A patient rated their visit.',
         data: { reviewId: r.id },
       });
     } catch (err) {
@@ -234,7 +238,7 @@ export class ReviewsService implements OnModuleInit {
       .where('r.doctorId = :doctorId', { doctorId })
       .andWhere('r.hiddenAt IS NULL');
     if (q.kind) qb.andWhere('r.kind = :kind', { kind: q.kind });
-    const sort = q.sort ?? 'recent';
+    const sort = q.sort ?? 'latest';
     if (sort === 'highest') qb.orderBy('r.overall', 'DESC');
     else if (sort === 'lowest') qb.orderBy('r.overall', 'ASC');
     qb.addOrderBy('r.createdAt', 'DESC').addOrderBy('r.id', 'ASC');
@@ -257,7 +261,7 @@ export class ReviewsService implements OnModuleInit {
                 round(avg(diagnosis)::numeric, 1)::float AS diagnosis,
                 round(avg(staff)::numeric, 1)::float AS staff,
                 round(avg(environment)::numeric, 1)::float AS environment,
-                round(100.0 * avg(would_recommend::int))::int AS pct
+                round(100.0 * avg(recommend::int))::int AS pct
            FROM doctor_reviews WHERE doctor_id = $1 AND hidden_at IS NULL`,
         [doctorId],
       ),
@@ -299,7 +303,8 @@ export class ReviewsService implements OnModuleInit {
       .leftJoinAndSelect('r.appointment', 'a')
       .where('r.doctorId = :doctorId', { doctorId });
     if (q.kind) qb.andWhere('r.kind = :kind', { kind: q.kind });
-    const sort = q.sort ?? 'recent';
+    if (q.unreplied === 'true') qb.andWhere('r.doctorReply IS NULL');
+    const sort = q.sort ?? 'latest';
     if (sort === 'highest') qb.orderBy('r.overall', 'DESC');
     else if (sort === 'lowest') qb.orderBy('r.overall', 'ASC');
     qb.addOrderBy('r.createdAt', 'DESC').addOrderBy('r.id', 'ASC');
@@ -319,7 +324,7 @@ export class ReviewsService implements OnModuleInit {
       where: { id, doctorId },
     });
     if (!r) throw notFound();
-    r.reply = text;
+    r.doctorReply = text;
     r.repliedAt = now;
     await this.dataSource.manager.save(r);
     try {
@@ -384,7 +389,7 @@ export class ReviewsService implements OnModuleInit {
     await this.aggregates.refresh(null, [r.doctorId], now);
     await this.audit.record({
       actorUserId: adminUserId,
-      action: hidden ? 'review.hide' : 'review.unhide',
+      action: hidden ? 'health.review.hide' : 'health.review.unhide',
       targetType: 'doctor_review',
       targetId: r.id,
       details: { doctorId: r.doctorId, reason },

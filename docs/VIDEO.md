@@ -25,16 +25,18 @@ Both routes return:
   "provider": "jaas",
   "domain": "8x8.vc",
   "roomName": "vpaas-magic-cookie-…/mm-0f6b9c1e-…",
-  "joinUrl": "https://8x8.vc/vpaas-magic-cookie-…/mm-0f6b9c1e-…?jwt=…",
+  "roomUrl": "https://8x8.vc/vpaas-magic-cookie-…/mm-0f6b9c1e-…?jwt=…",
   "jwt": "eyJ…",
   "expiresAt": "…",
+  "displayName": "Ali Raza",
   "moderator": false
 }
 ```
 
 Mobile apps should pass `domain`, `roomName` and `jwt` to the Jitsi Meet SDK; the
-web can use the IFrame API the same way. `joinUrl` is a fallback that opens the
-call in a browser.
+web can use the IFrame API the same way. `roomUrl` is a fallback that opens the
+call in a browser. `displayName` is the name shown in the call (the doctor's
+"Dr. …" name; for a patient, the person the appointment is for).
 
 Rules (the same for both routes):
 

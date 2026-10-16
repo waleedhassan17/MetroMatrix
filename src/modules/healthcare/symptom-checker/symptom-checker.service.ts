@@ -7,7 +7,7 @@ import {
 import { DataSource, EntityManager } from 'typeorm';
 import { SymptomCheck, SymptomSource } from './entities/symptom-check.entity';
 import { SymptomCheckDto } from './dto/symptom-check.dto';
-import { EMERGENCY_CONTACTS, redFlags } from './red-flags';
+import { EMERGENCY_NUMBERS, redFlags } from './red-flags';
 import { KeywordData, keywordUrgency, matchKeywords } from './keyword-matcher';
 import { SymptomModel, Urgency } from './symptom-model';
 import { specialtyView } from '../reference/reference.service';
@@ -165,7 +165,7 @@ export class SymptomCheckerService implements OnModuleInit {
     age: number | null,
     gender: string | null,
   ): Promise<{ source: SymptomSource; result: Record<string, unknown> }> {
-    const flags = redFlags(text);
+    const flags = redFlags(text, age);
     if (flags.length) {
       const selfHarm = flags.some((f) => f.id === 'self_harm');
       return {
@@ -177,7 +177,7 @@ export class SymptomCheckerService implements OnModuleInit {
           message: selfHarm
             ? 'You deserve support right now. If you might act on these thoughts, call 1122 or go to the nearest emergency department, and tell someone you trust.'
             : 'This could be an emergency. Call 1122 or 115 now, or go to the nearest emergency department. Do not wait for an appointment.',
-          contacts: EMERGENCY_CONTACTS,
+          numbers: EMERGENCY_NUMBERS,
         },
       };
     }
@@ -214,9 +214,9 @@ export class SymptomCheckerService implements OnModuleInit {
           source: 'model',
           urgency: suggestion.urgency,
           advice: suggestion.advice,
+          areasToDiscuss: suggestion.areasToDiscuss,
           specialty,
           alternatives,
-          possibleConditions: [],
         },
       };
     }
@@ -234,9 +234,13 @@ export class SymptomCheckerService implements OnModuleInit {
         source: 'fallback',
         urgency,
         advice: ADVICE[urgency],
+        // Offline: what was recognised in the text, phrased as something to raise.
+        areasToDiscuss: match.conditions.slice(0, 3).map((c) => ({
+          title: c.name,
+          explanation: `You mentioned something that sounds like ${c.name.toLowerCase()} — tell the doctor when it started and what makes it better or worse.`,
+        })),
         specialty,
         alternatives,
-        possibleConditions: match.conditions,
       },
     };
   }

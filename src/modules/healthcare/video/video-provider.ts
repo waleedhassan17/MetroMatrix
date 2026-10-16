@@ -14,7 +14,9 @@ export interface VideoJoin {
   domain: string;
   roomName: string;
   /** Opens the call in a browser. */
-  joinUrl: string;
+  roomUrl: string;
+  /** The name shown in the call. */
+  displayName: string;
   jwt: string | null;
   /** When the room token stops admitting (null: no token). */
   expiresAt: string | null;
@@ -56,9 +58,10 @@ export class PublicJitsiProvider extends VideoProvider {
       provider: this.name,
       domain: 'meet.jit.si',
       roomName: room,
-      joinUrl: `https://meet.jit.si/${room}#userInfo.displayName=${display}`,
+      roomUrl: `https://meet.jit.si/${room}#userInfo.displayName=${display}`,
       jwt: null,
       expiresAt: null,
+      displayName: who.name,
       moderator: who.moderator,
     };
   }
@@ -138,9 +141,10 @@ export class JaasProvider extends VideoProvider {
       provider: this.name,
       domain: '8x8.vc',
       roomName: `${this.config.appId}/${room}`,
-      joinUrl: `https://8x8.vc/${this.config.appId}/${room}?jwt=${token}`,
+      roomUrl: `https://8x8.vc/${this.config.appId}/${room}?jwt=${token}`,
       jwt: token,
       expiresAt: new Date(exp * 1000).toISOString(),
+      displayName: who.name,
       moderator: who.moderator,
     };
   }
