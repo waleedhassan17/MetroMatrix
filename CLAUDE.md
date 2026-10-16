@@ -178,12 +178,73 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   in tests, which call the job methods directly.
 - `test/qa-matrix-shopping.e2e-spec.ts` is Chunk 2's release gate (24 rows).
 
+## Healthcare (Chunk 3)
+
+- `src/modules/healthcare/` — not `health/`, which is the liveness check. It is split by
+  sub-domain (reference, doctors, practice, availability, discovery, family, appointments,
+  consultation, prescriptions, records, reviews, insights, video, symptom-checker, admin,
+  jobs), and one `healthcare.module.ts` wires them.
+- Routes:
+
+  | Who | Prefix | Decorators |
+  |---|---|---|
+  | Patient | `/health/...` | `@HealthPatient()` (customer + verified email) |
+  | Doctor | `/health/doctor/...` | `@HealthDoctor()` (partner + approved + `ServiceTypeGuard('healthcare')` + `DoctorGuard`) and `@CurrentDoctor()` |
+  | Admin | `/admin/health/...` | |
+
+  Scope every doctor query by `doctorId`: another doctor's row is **404**.
+- **No money is held.** Patients pay at the clinic or transfer to the doctor's own account
+  (`doctor_payment_accounts`). Fees are integer rupees, always taken from the location.
+- Time: `common/time.util.ts` (luxon) is the only code that converts between wall time and
+  instants. Responses carry the location's offset (`toZonedIso`). Jest runs with `TZ=UTC`.
+- Availability is **computed**, never stored: `availability/slot-engine.ts` plus
+  `AvailabilityService`. The 30 s cache is only an optimisation.
+- Double booking is impossible because of the `EX_appointments_doctor_time` exclusion
+  constraint (`23P01` → `SLOT_TAKEN`). Never write `ON CONFLICT DO NOTHING` without a
+  target: it also swallows the exclusion violation.
+- Visibility is one rule: `LISTED_DOCTOR_SQL` (`discovery/listing-sql.ts`).
+- Appointment and payment status change only through `AppointmentTransitionsService`
+  (`appointment-status.ts`, `payment-status.ts`).
+- PHI:
+  - A doctor reaches a person only through an appointment between them. The person key is
+    `family_member_id ?? patient_user_id`.
+  - Prescriptions: the patient and the prescribing doctor only.
+  - Records: only while attached to that doctor's appointment.
+  - Every doctor read calls `ConsultationService.phiRead` (`phi.read` audit).
+  - PHI uploads (`health_record`, `medical_note`) are Cloudinary `authenticated` assets.
+    Anyone but the uploader gets `MediaService.privateDownload` links, never stored URLs.
+- Sub-domains connect through mutable hook fields set in `onModuleInit`, which avoids
+  circular DI:
+  - `HealthEvents`;
+  - `discovery.reviewSummary`;
+  - `views.reviewed` / `views.attachments`;
+  - `consultation.sharedRecords`;
+  - `appointments.attachRecords` / `appointments.carryRecords`;
+  - `insights.ratingTrend`;
+  - `jobs.nightly[]`.
+- Aggregates (`reviews/doctor-aggregates.service.ts`) are a full recompute that writes only
+  changed rows. Wait and consult times are shown from 5 samples.
+- Symptom checker:
+  - red flags first, with no model call;
+  - the model is optional (`SymptomModel`, Gemini, validated with class-validator);
+  - keyword fallback;
+  - 10 per user per hour, counted in `symptom_checks`;
+  - free text erased after 30 days.
+- Video: `VideoProvider` (`public_jitsi` | `jaas`); see `docs/VIDEO.md`.
+- Jobs (`jobs/health-jobs.service.ts`) are advisory-locked and idempotent. Tests call them
+  directly with a fixed `now`.
+- `test/qa-matrix-health.e2e-spec.ts` is Chunk 3's release gate (26 rows). Helpers live in
+  `test/utils/health.ts`.
+
 ## Keep in sync when the API changes
 
-- `docs/API_AUTH.md` and `docs/API_SHOPPING.md` — the contracts the apps are built from.
+- `docs/API_AUTH.md`, `docs/API_SHOPPING.md`, `docs/API_HEALTH.md` (+ `docs/VIDEO.md`): the
+  contracts the apps are built from.
 - `postman/MetroMatrix-Auth.postman_collection.json` (`npm run postman:local`) and
   `postman/MetroMatrix-Shopping.postman_collection.json` (`npm run postman:shopping`, needs
-  `seed:shopping`) — runnable flows against a local server + Mailpit.
+  `seed:shopping`) and `postman/MetroMatrix-Health.postman_collection.json`
+  (`npm run postman:health`, needs `seed:health`). These are runnable flows against a local
+  server plus Mailpit.
 - `.env.example` and `env.validation.ts` — together, always.
 
 ## Commands
@@ -195,9 +256,11 @@ npm run migration:run         apply migrations
 npm run migration:check       entities ↔ migrations drift check
 npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* env
 npm run seed:shopping         demo stores/products (SEED_DEMO_PASSWORD; --placeholder-images = no uploads)
+npm run seed:health           30 demo doctors, patients, visits, reviews (same password and flags)
 npm run lint && npm run build && npm test && npm run test:e2e
 npm run postman:local         newman run of the Auth collection (needs a running server)
 npm run postman:shopping      newman run of the Shopping collection (needs seed:shopping)
+npm run postman:health        newman run of the Healthcare collection (needs seed:health)
 ```
 
 Deploying: see `DEPLOYMENT.md` (nothing is provisioned by default — the owner decides).

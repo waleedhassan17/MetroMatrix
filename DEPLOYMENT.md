@@ -1,6 +1,6 @@
 # Deploying MetroMatrix API to Heroku
 
-Chunks 1 (auth, onboarding, admin) and 2 (Shopping) are ready to deploy. Nothing has been
+Chunks 1 (auth, onboarding, admin), 2 (Shopping) and 3 (Healthcare) are ready to deploy. Nothing has been
 provisioned yet: the deploy, and any cost it carries, is the owner's call. This runbook gets a fresh app live in about 15 minutes.
 
 The production image was proven locally before writing this:
@@ -21,7 +21,9 @@ Prices change. Check heroku.com/pricing and neon.tech/pricing on the day.
 | Web dyno | **Eco** (shared monthly hours) or **Basic** | Eco sleeps after 30 min idle; the first request after that is slow. If the account already pays for Eco (e.g. FinMatrix runs on Eco), another Eco app draws from the same pool. |
 | Postgres | **Neon free tier** (no card, usage-limited) or Heroku Postgres `essential-0` (monthly) | Both work unchanged: the app reads `DATABASE_URL` and defaults SSL on. Neon's free tier is the zero-fixed-cost choice. |
 | Email | **Brevo free tier** (daily send cap) | SMTP relay `smtp-relay.brevo.com:587`. Verify the sender domain/address in Brevo first. |
-| Uploads | **Cloudinary free tier** | Partner documents and avatars upload straight from the phone. |
+| Uploads | **Cloudinary free tier** | Partner documents and avatars upload straight from the phone. Health records and doctors' note files are `authenticated` (private) assets on the same account. |
+| Video | **meet.jit.si** (free, no account) or **8x8 JaaS Developer** (25 monthly active users free) | Default `VIDEO_PROVIDER=public_jitsi` needs nothing; the doctor signs in on meet.jit.si to moderate. JaaS gives signed, moderated rooms. See `docs/VIDEO.md`. |
+| Symptom checker model | **None** (keyword matcher) or a **Google Gemini API key** | Optional. Without `GEMINI_API_KEY`, red-flag rules plus the keyword matcher answer. With a key, check Google's free-tier and pricing terms on the day; only symptom text, age and gender are sent. |
 | Errors | **Sentry free tier** (optional) | Leave `SENTRY_DSN` unset to disable. |
 
 `app.json` lists `heroku-postgresql:essential-0` for Heroku Button/review apps only. A
@@ -82,6 +84,18 @@ Rules:
 - `JOBS_ENABLED` defaults to true (Shopping's order deadlines, reminders, completion and
   low-stock digest). Each job takes a Postgres advisory lock, so several dynos are safe.
 - `PUSH_ENABLED=true` once the app ships Expo push; until then notifications are in-app only.
+- Healthcare jobs (prepaid-video auto-cancel, auto no-show, reminders, next-available
+  refresh, the 07:00 doctor digest, nightly aggregates and symptom-text erasure) run under the
+  same `JOBS_ENABLED` switch.
+- Healthcare video and symptom checker (all optional):
+  ```bash
+  # JaaS instead of meet.jit.si (docs/VIDEO.md): all three are then required.
+  heroku config:set -a metromatrix-api VIDEO_PROVIDER=jaas \
+    JAAS_APP_ID='vpaas-magic-cookie-…' JAAS_KID='vpaas-magic-cookie-…/<key id>' \
+    JAAS_PRIVATE_KEY="$(awk 'BEGIN{ORS="\\n"} {print}' jaas-private.pem)"
+  # A model behind the symptom checker; leave unset for the keyword matcher.
+  heroku config:set -a metromatrix-api GEMINI_API_KEY='<key>'   # optional GEMINI_MODEL
+  ```
 
 ## 4. Deploy
 
@@ -125,6 +139,18 @@ heroku run -a metromatrix-api \
 With `CLOUDINARY_*` set it uploads generated image tiles (or licensed photos from
 `seed/assets/shopping/`) into each partner's media folder. Without keys it needs
 `--placeholder-images` and uses placehold.co URLs. Re-running only adds what's missing.
+
+### Demo doctors (optional)
+
+`seed:health` creates 30 fictional, PMDC-verified (`DEMO-` numbers) doctors in Lahore,
+Karachi and Islamabad with clinics, hours, video for half, 8 demo patients, past visits and
+reviews. The same flags and password rules apply:
+```bash
+heroku run -a metromatrix-api \
+  --env "SEED_DEMO_PASSWORD=<strong password>" \
+  npm run seed:health:prod -- --allow-production [--placeholder-images]
+```
+Avatars are generated initials, never photos of people.
 
 ## 6. Smoke test
 
@@ -181,3 +207,23 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
 - `MetroMatrix-Auth`: 38 requests / 102 assertions green. `MetroMatrix-Shopping`: 89
   requests / 256 assertions green (after a restart: run straight after the Auth collection
   from the same address, its partner sign-ins were correctly rate-limited).
+
+### Chunk 3 (Healthcare), same procedure (16 October 2026)
+
+- Image rebuilt (`docker build -t metromatrix-api:local .`) and run with `NODE_ENV=production`
+  against an **empty** database (`DATABASE_URL=…?sslmode=disable`), SMTP to Mailpit with a
+  login, `VIDEO_PROVIDER=public_jitsi`, no `GEMINI_API_KEY`, jobs enabled.
+- `run-migrations.js` applied all twenty migrations. `seed:superadmin:prod` created the admin.
+  `seed:shopping:prod --allow-production --placeholder-images` created the demo stores.
+- `seed:health:prod`:
+  - refused without `--allow-production`;
+  - with `--allow-production` alone it tried to upload avatars with the rehearsal's dummy
+    Cloudinary keys. Cloudinary rejected the first one ("Unknown API key"), so nothing was
+    uploaded and that doctor's transaction rolled back;
+  - with `--allow-production --placeholder-images`, created 30 doctors, 55 locations,
+    930 completed visits and 637 reviews (and 8 patients);
+  - all 30 doctors got a next-available time; 2 got the top-booked badge.
+- Docker HEALTHCHECK `healthy`; `/health` ok; no error-level log lines.
+- `MetroMatrix-Auth` 40 requests / 109 assertions, `MetroMatrix-Shopping` 89 / 256 and
+  `MetroMatrix-Health` 71 / 218: all green, with the container restarted between collections
+  (the per-address sign-in limit).

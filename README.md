@@ -4,7 +4,8 @@ Backend for MetroMatrix — a zero-commission community marketplace with three s
 **Shopping**, **Healthcare** and **Food**. NestJS 10, TypeORM, PostgreSQL 16.
 
 - API contracts for clients: [`docs/API_AUTH.md`](docs/API_AUTH.md) (auth, onboarding,
-  admin) and [`docs/API_SHOPPING.md`](docs/API_SHOPPING.md) (Shopping)
+  admin), [`docs/API_SHOPPING.md`](docs/API_SHOPPING.md) (Shopping) and
+  [`docs/API_HEALTH.md`](docs/API_HEALTH.md) (Healthcare; video in [`docs/VIDEO.md`](docs/VIDEO.md))
 - Architecture and conventions: [`CLAUDE.md`](CLAUDE.md)
 - Deploying to Heroku: [`DEPLOYMENT.md`](DEPLOYMENT.md)
 
@@ -19,6 +20,7 @@ docker compose up -d --wait # Postgres on 127.0.0.1:5433, Mailpit on :1025 / htt
 npm run migration:run
 npm run seed:superadmin     # needs SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in .env
 npm run seed:shopping       # optional demo stores; needs SEED_DEMO_PASSWORD (see seed/assets/shopping)
+npm run seed:health         # optional demo doctors, patients, visits and reviews (same password)
 npm run start:dev           # http://localhost:3000/api/v1 · Swagger at /api/docs
 ```
 
