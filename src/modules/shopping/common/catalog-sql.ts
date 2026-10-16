@@ -14,15 +14,8 @@ export const PRODUCT_FROM_SQL = `
   JOIN stores s ON s.id = p.store_id
   JOIN businesses b ON b.id = s.business_id`;
 
-/** Positional-parameter collector for hand-written SQL. */
-export class SqlParams {
-  readonly values: unknown[] = [];
-  /** Add a value; returns its placeholder (`$3`). */
-  add(value: unknown): string {
-    this.values.push(value);
-    return `$${this.values.length}`;
-  }
-}
+/** Positional-parameter collector (shared; re-exported for Shopping's imports). */
+export { SqlParams } from '../../../common/utils/sql-params';
 
 /** Escape LIKE wildcards in user input before wrapping it in %…%. */
 export const likeEscape = (s: string) => s.replace(/[\\%_]/g, (c) => `\\${c}`);

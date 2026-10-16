@@ -53,3 +53,31 @@ export async function enrolledAdmin(t: TestApp) {
     recoveryCodes: confirm.body.data.recoveryCodes as string[],
   };
 }
+
+/**
+ * Chunk 3: a doctor business can only be approved once MetroMatrix has
+ * verified its PMDC number. Finds the doctor row created at submit and
+ * verifies it; returns the doctor id.
+ */
+export async function verifyDoctorPmdc(
+  admin: { api: ApiClient },
+  businessId: string,
+): Promise<string> {
+  const list = await admin.api.get(
+    `/admin/health/doctors?businessId=${businessId}`,
+  );
+  const id = list.body.data?.items?.[0]?.id;
+  if (!id)
+    throw new Error(
+      `no doctor for business ${businessId}: ${JSON.stringify(list.body)}`,
+    );
+  const res = await admin.api.post(
+    `/admin/health/doctors/${id}/pmdc-verify`,
+    {},
+  );
+  if (res.status !== 200)
+    throw new Error(
+      `pmdc-verify failed: ${res.status} ${JSON.stringify(res.body)}`,
+    );
+  return id;
+}

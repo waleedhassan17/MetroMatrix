@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
   IsDefined,
@@ -11,6 +12,7 @@ import {
   Min,
   registerDecorator,
   ValidationArguments,
+  Matches,
 } from 'class-validator';
 import { IsPkPhone } from '../../../common/validation/phone';
 import { Trim } from '../../../common/validation/transforms';
@@ -105,6 +107,21 @@ export class CreateBusinessDto {
   @Min(-180)
   @Max(180)
   lng?: number;
+
+  @ApiPropertyOptional({
+    example: '12345-P',
+    description:
+      'Doctors only — the PMDC registration number. Required before submitting.',
+  })
+  @IsOptional()
+  @Transform(({ value }) =>
+    typeof value === 'string' ? value.trim().toUpperCase() : value,
+  )
+  @IsString()
+  @Matches(/^[A-Z0-9][A-Z0-9-]{2,19}$/, {
+    message: 'pmdcNumber must be your PMDC registration number, e.g. 12345-P',
+  })
+  pmdcNumber?: string;
 }
 
 /** Only while draft or rejected; the type only while draft. */

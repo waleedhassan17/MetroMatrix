@@ -100,6 +100,16 @@ export function uploadedDocument(
   };
 }
 
+let pmdcSeq = 0;
+/** A PMDC number no other test business has used. */
+export const nextPmdc = () =>
+  `${String(Date.now() % 1e6).padStart(6, '0')}${++pmdcSeq}-P`;
+
+/**
+ * A doctor business. `pmdcNumber` is a getter, so every spread gets a fresh,
+ * unique number; spreads for other business types must drop it
+ * (`pmdcNumber: undefined`).
+ */
 export const DOCTOR_BUSINESS = {
   serviceType: 'healthcare',
   subType: 'doctor',
@@ -109,6 +119,9 @@ export const DOCTOR_BUSINESS = {
   addressLine: '12-B Main Boulevard, Gulberg III',
   lat: 31.520369,
   lng: 74.358749,
+  get pmdcNumber(): string {
+    return nextPmdc();
+  },
 };
 
 /** Upload (fake) and attach each kind; returns the created document ids. */

@@ -121,7 +121,11 @@ describe('Partner onboarding (e2e)', () => {
   it('a sub-type must belong to its service', async () => {
     const p = await verifiedPartner(t);
     const res = await p.api
-      .post('/businesses', { ...DOCTOR_BUSINESS, serviceType: 'food' })
+      .post('/businesses', {
+        ...DOCTOR_BUSINESS,
+        serviceType: 'food',
+        pmdcNumber: undefined,
+      })
       .expect(400);
     expect(res.body.error.code).toBe('VALIDATION_FAILED');
     expect(res.body.error.details.fields.subType).toBeDefined();
@@ -174,6 +178,7 @@ describe('Partner onboarding (e2e)', () => {
         ...DOCTOR_BUSINESS,
         serviceType: 'food',
         subType: 'home_kitchen',
+        pmdcNumber: undefined,
         name: 'Ammi Ka Khana',
       })
       .expect(201);
@@ -199,6 +204,7 @@ describe('Partner onboarding (e2e)', () => {
         ...DOCTOR_BUSINESS,
         serviceType: 'shopping',
         subType: 'store',
+        pmdcNumber: undefined,
         name: 'Hafeez General Store',
       })
       .expect(201);

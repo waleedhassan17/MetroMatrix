@@ -18,6 +18,7 @@ import {
   MAX_PER_MULTI_KIND,
   MULTI_KINDS,
   SUBTYPE_SERVICE,
+  SubType,
 } from './business-types';
 import {
   ALLOWED_KINDS,
@@ -55,6 +56,8 @@ export interface BusinessView {
   reviewedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** Doctors only. */
+  pmdcNumber: string | null;
 }
 
 export interface DocumentView {
@@ -91,6 +94,7 @@ export const toBusinessView = (b: Business): BusinessView => ({
   reviewedAt: b.reviewedAt,
   createdAt: b.createdAt,
   updatedAt: b.updatedAt,
+  pmdcNumber: b.pmdcNumber,
 });
 
 export const toDocumentView = (d: BusinessDocument): DocumentView => ({
@@ -139,9 +143,17 @@ export type BusinessApprovedHook = (
   business: Business,
 ) => Promise<void>;
 
+/**
+ * Run inside the submit transaction (draft/rejected → pending_approval) —
+ * e.g. Healthcare creates the unlisted doctor row so an admin can verify the
+ * PMDC number before approving. Throwing aborts the submission.
+ */
+export type BusinessSubmittedHook = BusinessApprovedHook;
+
 @Injectable()
 export class BusinessesService implements OnModuleInit {
   private readonly approvedHooks: BusinessApprovedHook[] = [];
+  private readonly submittedHooks: BusinessSubmittedHook[] = [];
 
   constructor(
     @InjectRepository(Business)
@@ -160,6 +172,10 @@ export class BusinessesService implements OnModuleInit {
 
   onApproved(hook: BusinessApprovedHook): void {
     this.approvedHooks.push(hook);
+  }
+
+  onSubmitted(hook: BusinessSubmittedHook): void {
+    this.submittedHooks.push(hook);
   }
 
   /** Called by the admin approval, inside its transaction. */
@@ -190,6 +206,7 @@ export class BusinessesService implements OnModuleInit {
         addressLine: dto.addressLine,
         lat: dto.lat ?? null,
         lng: dto.lng ?? null,
+        pmdcNumber: this.pmdcFor(dto.subType, dto.pmdcNumber),
         status: 'draft',
       });
       try {
@@ -203,6 +220,12 @@ export class BusinessesService implements OnModuleInit {
         return this.detail(saved);
       } catch (err) {
         if (!isUniqueViolation(err)) throw err;
+        if (
+          business.pmdcNumber &&
+          (await this.pmdcTaken(business.pmdcNumber))
+        ) {
+          throw this.pmdcConflict();
+        }
         // Owner race (a double-tap) → the business already exists. A slug
         // collision → try another suffix.
         if (await this.repo.exists({ where: { ownerUserId } }))
@@ -249,6 +272,7 @@ export class BusinessesService implements OnModuleInit {
       }
       business.serviceType = serviceType;
       business.subType = subType;
+      if (subType !== 'doctor') business.pmdcNumber = null;
     }
 
     if (dto.name !== undefined && dto.name !== business.name) {
@@ -260,6 +284,15 @@ export class BusinessesService implements OnModuleInit {
     if (dto.addressLine !== undefined) business.addressLine = dto.addressLine;
     if (dto.lat !== undefined) business.lat = dto.lat;
     if (dto.lng !== undefined) business.lng = dto.lng;
+    if (dto.pmdcNumber !== undefined) {
+      business.pmdcNumber = this.pmdcFor(business.subType, dto.pmdcNumber);
+    }
+    if (
+      business.pmdcNumber &&
+      (await this.pmdcTaken(business.pmdcNumber, business.id))
+    ) {
+      throw this.pmdcConflict();
+    }
 
     const saved = await this.repo.save(business);
     return this.detail(saved);
@@ -365,10 +398,22 @@ export class BusinessesService implements OnModuleInit {
       });
     }
 
+    if (business.subType === 'doctor' && !business.pmdcNumber) {
+      const message = 'Add your PMDC registration number before submitting.';
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_FAILED,
+        message,
+        details: { fields: { pmdcNumber: [message] } },
+      });
+    }
+
     const from = business.status;
-    await this.transition(this.repo.manager, business, 'pending_approval', {
-      submittedAt: new Date(),
-      rejectionReason: null,
+    await this.dataSource.transaction(async (m) => {
+      await this.transition(m, business, 'pending_approval', {
+        submittedAt: new Date(),
+        rejectionReason: null,
+      });
+      for (const hook of this.submittedHooks) await hook(m, business);
     });
     await this.audit.record({
       action: 'business.submit',
@@ -396,6 +441,39 @@ export class BusinessesService implements OnModuleInit {
       rejectionReason: row.rejectionReason,
       suspensionReason: row.suspensionReason,
     };
+  }
+
+  /** Only doctors carry a PMDC number; anyone else sending one is told so. */
+  private pmdcFor(
+    subType: SubType,
+    pmdc: string | undefined | null,
+  ): string | null {
+    if (pmdc === undefined || pmdc === null || pmdc === '') return null;
+    if (subType !== 'doctor') {
+      const message = 'Only doctors have a PMDC number.';
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_FAILED,
+        message,
+        details: { fields: { pmdcNumber: [message] } },
+      });
+    }
+    return pmdc;
+  }
+
+  private async pmdcTaken(pmdc: string, exceptId?: string): Promise<boolean> {
+    const row = await this.repo.findOne({
+      where: { pmdcNumber: pmdc },
+      select: { id: true },
+    });
+    return !!row && row.id !== exceptId;
+  }
+
+  private pmdcConflict() {
+    return new ConflictException({
+      code: ErrorCode.CONFLICT,
+      message: 'This PMDC number is already registered with MetroMatrix.',
+      details: { fields: { pmdcNumber: ['already registered'] } },
+    });
   }
 
   // ── Shared with admin ─────────────────────────────────────────────────────

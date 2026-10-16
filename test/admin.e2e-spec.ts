@@ -11,6 +11,7 @@ import {
   enrolledAdmin,
   seedAdmin,
   totpCode,
+  verifyDoctorPmdc,
 } from './utils/admin';
 import { lastEmailTo } from './utils/outbox';
 
@@ -176,6 +177,7 @@ describe('Admin: TOTP and approvals (e2e)', () => {
       expect(one.body.data.owner.email).toBe(partner.email);
       expect(one.body.data.documents).toHaveLength(4);
 
+      await verifyDoctorPmdc(admin, businessId);
       const approved = await admin.api
         .post(`/admin/businesses/${businessId}/approve`)
         .expect(200);
@@ -283,6 +285,7 @@ describe('Admin: TOTP and approvals (e2e)', () => {
         details: { status: 'pending_approval' },
       });
 
+      await verifyDoctorPmdc(admin, businessId);
       await admin.api
         .post(`/admin/businesses/${businessId}/approve`)
         .expect(200);

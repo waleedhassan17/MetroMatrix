@@ -20,7 +20,12 @@ import {
 } from './utils/factories';
 import { emailsTo, lastEmailTo, lastOtpFor } from './utils/outbox';
 import { FakeGoogleVerifier, googleToken } from './utils/fake-google';
-import { adminChallenge, enrolledAdmin, seedAdmin } from './utils/admin';
+import {
+  adminChallenge,
+  enrolledAdmin,
+  seedAdmin,
+  verifyDoctorPmdc,
+} from './utils/admin';
 import { ProbeController } from './utils/probe.controller';
 import { GoogleTokenVerifier } from '../src/modules/auth/google-token-verifier';
 
@@ -342,6 +347,7 @@ describe('QA matrix (Chunk 1)', () => {
   it('QA #20 approve → partner status approved; audit row written; email sent', async () => {
     const admin = await enrolledAdmin(t);
     const { partner, businessId } = await submittedDoctor(t);
+    await verifyDoctorPmdc(admin, businessId);
     await admin.api.post(`/admin/businesses/${businessId}/approve`).expect(200);
     const status = await partner.api.get('/businesses/me/status').expect(200);
     expect(status.body.data.status).toBe('approved');
@@ -381,6 +387,7 @@ describe('QA matrix (Chunk 1)', () => {
   it('QA #22 suspended partner hits a guarded route → 403 BUSINESS_SUSPENDED', async () => {
     const admin = await enrolledAdmin(t);
     const { partner, businessId } = await submittedDoctor(t);
+    await verifyDoctorPmdc(admin, businessId);
     await admin.api.post(`/admin/businesses/${businessId}/approve`).expect(200);
     await partner.api.get('/__test__/partner-only').expect(200);
     await admin.api
@@ -395,6 +402,7 @@ describe('QA matrix (Chunk 1)', () => {
   it('QA #23 delete account → cannot sign in; email reusable; tokens revoked', async () => {
     const admin = await enrolledAdmin(t);
     const { partner, businessId } = await submittedDoctor(t);
+    await verifyDoctorPmdc(admin, businessId);
     await admin.api.post(`/admin/businesses/${businessId}/approve`).expect(200);
 
     await partner.api

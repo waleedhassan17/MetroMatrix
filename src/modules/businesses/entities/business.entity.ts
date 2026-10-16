@@ -37,6 +37,11 @@ const coordinate = {
     ` OR ("sub_type" IN ('restaurant', 'home_kitchen', 'cloud_kitchen') AND "service_type" = 'food')`,
 )
 @Index(['status', 'createdAt'])
+// A PMDC registration belongs to one doctor's business (only doctors have one).
+@Index('UQ_businesses_pmdc_number', ['pmdcNumber'], {
+  unique: true,
+  where: '"pmdc_number" IS NOT NULL',
+})
 export class Business extends BaseEntity {
   @Index({ unique: true })
   @Column({ type: 'uuid', name: 'owner_user_id' })
@@ -78,6 +83,13 @@ export class Business extends BaseEntity {
 
   @Column({ type: 'varchar', length: 255, name: 'address_line' })
   addressLine!: string;
+
+  /**
+   * Doctors only: the PMDC registration number, upper-cased ("12345-P").
+   * Required to submit; MetroMatrix verifies it before approval.
+   */
+  @Column({ type: 'citext', name: 'pmdc_number', nullable: true })
+  pmdcNumber!: string | null;
 
   @Column({
     type: 'numeric',

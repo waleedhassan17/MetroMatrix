@@ -73,6 +73,7 @@ describe('Shopping P1: stores, payment accounts, collections (e2e)', () => {
         ...DOCTOR_BUSINESS,
         serviceType: 'shopping',
         subType: 'store',
+        pmdcNumber: undefined,
         name: 'Not yet',
       })
       .expect(201);

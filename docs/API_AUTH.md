@@ -324,11 +324,15 @@ draft ──submit──▶ pending_approval ──approve──▶ approved ⇄
 ```json
 { "serviceType": "healthcare", "subType": "doctor", "name": "Dr. Sana's Clinic",
   "phone": "042 35761234", "city": "Lahore", "addressLine": "12-B Main Boulevard, Gulberg III",
-  "lat": 31.520369, "lng": 74.358749 }
+  "lat": 31.520369, "lng": 74.358749, "pmdcNumber": "12345-P" }
 ```
 `subType` must belong to `serviceType`: `store`→`shopping`, `doctor`→`healthcare`, and
 `restaurant`, `home_kitchen` and `cloud_kitchen`→`food`. `phone` may be a mobile or a landline, and is stored
 `+92…`. `lat` and `lng` are optional.
+`pmdcNumber` (*Chunk 3*) is for doctors only: their PMDC registration number, upper-cased on
+save. It can be added later with `PATCH /businesses/me`, but a doctor can't submit without it,
+and MetroMatrix verifies it before approval. Sending one for another type is `400`; a number
+already registered is `409 CONFLICT`.
 **201** `BusinessDetail` (below), in status `draft`.
 **Errors:** `409 BUSINESS_EXISTS` (one business per partner account), `400 VALIDATION_FAILED`.
 
@@ -340,6 +344,7 @@ draft ──submit──▶ pending_approval ──approve──▶ approved ⇄
   "city": "Lahore", "addressLine": "…", "lat": 31.520369, "lng": 74.358749,
   "status": "draft", "rejectionReason": null, "suspensionReason": null,
   "submittedAt": null, "reviewedAt": null, "createdAt": "…", "updatedAt": "…",
+  "pmdcNumber": "12345-P",
   "documents": [
     { "id": "…", "kind": "cnic_front", "url": "https://res.cloudinary.com/…", "publicId": "…",
       "status": "pending", "reviewNote": null, "createdAt": "…" }
@@ -385,6 +390,7 @@ Moves `draft` or `rejected` to `pending_approval`, sets `submittedAt` and clears
   - `details.missing`: requirement keys, e.g. `["pmdc_certificate"]`. An any-of group is
     written `"ntn_certificate|shop_photo"`.
   - `details.requirements`: the same rows as `requiredDocuments`.
+- `400 VALIDATION_FAILED` (`details.fields.pmdcNumber`): a doctor without a PMDC number.
 - `409 INVALID_TRANSITION`: already pending, approved or suspended.
 
 #### `GET /businesses/me/status`
@@ -429,7 +435,7 @@ very next request.
 |---|---|---|---|
 | GET | `/admin/businesses?status&serviceType&q&page&pageSize` | — | `{ items: [BusinessView + owner], total, page, pageSize }` |
 | GET | `/admin/businesses/:id` | — | `BusinessDetail` + `owner` + `history` (audit) |
-| POST | `/admin/businesses/:id/approve` | — | `BusinessDetail` (pending documents → accepted) |
+| POST | `/admin/businesses/:id/approve` | — | `BusinessDetail` (pending documents → accepted). A doctor whose PMDC number isn't verified yet → `422 PMDC_NOT_VERIFIED` (`details.doctorId`); verify it with `POST /admin/health/doctors/:doctorId/pmdc-verify` (see `docs/API_HEALTH.md`). |
 | POST | `/admin/businesses/:id/reject` | `{ reason, documentNotes?: [{ documentId, note }] }` | `BusinessDetail` |
 | POST | `/admin/businesses/:id/suspend` | `{ reason }` | `BusinessDetail` |
 | POST | `/admin/businesses/:id/reinstate` | `{ reason }` | `BusinessDetail` |

@@ -4,11 +4,12 @@ import { buildPkIban } from '../../src/common/payments/payment-account.validatio
 import {
   addDocuments,
   DOCTOR_BUSINESS,
+  nextPmdc,
   SignedUp,
   signup,
   verifiedPartner,
 } from './factories';
-import { enrolledAdmin } from './admin';
+import { enrolledAdmin, verifyDoctorPmdc } from './admin';
 import { lastOtpFor } from './outbox';
 
 export type PartnerKind = 'store' | 'doctor' | 'restaurant';
@@ -52,6 +53,7 @@ export async function approvedPartner(
     ...DOCTOR_BUSINESS,
     serviceType: spec.serviceType,
     subType: spec.subType,
+    pmdcNumber: kind === 'doctor' ? nextPmdc() : undefined,
     name: name ?? `Test ${kind} ${storeSeq}`,
   });
   if (created.status !== 201) {
@@ -66,6 +68,7 @@ export async function approvedPartner(
       `submit failed: ${submitted.status} ${JSON.stringify(submitted.body)}`,
     );
   }
+  if (kind === 'doctor') await verifyDoctorPmdc(admin, created.body.data.id);
   const approved = await admin.api.post(
     `/admin/businesses/${created.body.data.id}/approve`,
   );
