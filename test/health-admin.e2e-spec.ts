@@ -69,10 +69,17 @@ describe('Healthcare P7: admin reference data, appointment support, overview (e2
     // A new lay keyword on Dermatologist finds listed dermatologists straight away.
     const { doctor } = await listedDoctor(t, admin);
     const derm = await specialtyId(t, 'dermatologist');
-    const before = await expectOk(
-      await anon().get('/health/doctors?q=zitwort'),
-    );
-    expect(before.items.map((c: any) => c.id)).not.toContain(doctor.doctorId);
+    const indexed = async () =>
+      (
+        await sql(
+          `SELECT search @@ websearch_to_tsquery('english', 'zitwort') AS hit FROM doctors WHERE id = $1`,
+          [doctor.doctorId],
+        )
+      )[0].hit;
+    expect(await indexed()).toBe(false);
+    expect(
+      (await expectOk(await anon().get('/health/doctors?q=zitwort'))).total,
+    ).toBe(0);
     const [{ keywords }] = await sql(
       `SELECT keywords FROM specialties WHERE id = $1`,
       [derm],
@@ -82,8 +89,11 @@ describe('Healthcare P7: admin reference data, appointment support, overview (e2
         keywords: [...keywords, 'zitwort'],
       }),
     );
-    const after = await expectOk(await anon().get('/health/doctors?q=zitwort'));
-    expect(after.items.map((c: any) => c.id)).toContain(doctor.doctorId);
+    // The doctor's search vector was rebuilt in the same request.
+    expect(await indexed()).toBe(true);
+    expect(
+      (await expectOk(await anon().get('/health/doctors?q=zitwort'))).total,
+    ).toBeGreaterThan(0);
     expect(await audited('health.specialty.update', derm)).toBe(1);
 
     await expectOk(
