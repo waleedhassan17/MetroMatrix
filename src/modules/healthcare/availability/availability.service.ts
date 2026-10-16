@@ -199,8 +199,12 @@ export class AvailabilityService implements OnModuleInit {
     };
   }
 
-  /** Is this exact instant a real, free slot right now? (Booking; never cached.) */
-  async isRealSlot(
+  /**
+   * Booking's check, never cached: is `startsAt` on the doctor's grid at this
+   * location (hours, notice, window, time off) — and is it still free of the
+   * doctor's other appointments? Run inside the booking transaction.
+   */
+  async checkSlot(
     m: EntityManager,
     doctorId: string,
     locationId: string,
@@ -208,16 +212,41 @@ export class AvailabilityService implements OnModuleInit {
     now = new Date(),
   ) {
     const ctx = await this.context(m, doctorId, locationId);
-    const date = todayIn(ctx.location.timezone, startsAt);
-    const { days } = await this.days(doctorId, locationId, date, 1, {
-      m,
-      fresh: true,
+    const tz = ctx.location.timezone;
+    const { earliest, windowEnd } = bookingBounds({
+      tz,
       now,
+      minNoticeMinutes: ctx.doctor.minNoticeMinutes,
+      bookingWindowDays: ctx.doctor.bookingWindowDays,
+    });
+    const off: Array<{ starts_at: Date; ends_at: Date }> = await m.query(
+      `SELECT starts_at, ends_at FROM time_off
+        WHERE doctor_id = $1 AND (location_id IS NULL OR location_id = $2) AND starts_at < $4 AND ends_at > $3`,
+      [doctorId, locationId, earliest, windowEnd],
+    );
+    const [day] = buildDays({
+      tz,
+      fromDate: todayIn(tz, startsAt),
+      days: 1,
+      now,
+      minNoticeMinutes: ctx.doctor.minNoticeMinutes,
+      bookingWindowDays: ctx.doctor.bookingWindowDays,
+      slotMinutes: ctx.location.slotMinutes,
+      ranges: ctx.ranges,
+      blocked: off.map((o) => ({ start: o.starts_at, end: o.ends_at })),
     });
     const slot =
-      days[0]?.slots.find((s) => s.startsAt.getTime() === startsAt.getTime()) ??
+      day?.slots.find((s) => s.startsAt.getTime() === startsAt.getTime()) ??
       null;
-    return { ctx, slot };
+    if (!slot) return { ctx, slot: null, free: false };
+    const clash = await this.events.bookingsOverlapping(
+      m,
+      doctorId,
+      null,
+      slot.startsAt,
+      slot.endsAt,
+    );
+    return { ctx, slot, free: clash.length === 0 };
   }
 
   /** The n free slots nearest to an instant (offered when a slot was just taken). */

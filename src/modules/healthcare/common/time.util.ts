@@ -121,15 +121,43 @@ export function expandRange(
   endMinutes: number,
   slotMinutes: number,
   tz: string,
-): Array<{ startsAt: Date; endsAt: Date }> {
-  const out: Array<{ startsAt: Date; endsAt: Date }> = [];
+): Array<{ startsAt: Date; endsAt: Date; wallMinutes: number }> {
+  const out: Array<{ startsAt: Date; endsAt: Date; wallMinutes: number }> = [];
+  const [y, mo, d] = date.split('-').map(Number);
+  const midnight = DateTime.fromObject(
+    { year: y, month: mo, day: d },
+    { zone: tz },
+  );
+  const next = midnight.plus({ days: 1 });
+  // Fast path: no offset change during the day (always true in Karachi) —
+  // instants are plain arithmetic from local midnight.
+  if (
+    midnight.isValid &&
+    midnight.hour === 0 &&
+    midnight.offset === next.offset
+  ) {
+    const base = Date.UTC(y, mo - 1, d) - midnight.offset * 60_000;
+    for (
+      let m = startMinutes;
+      m + slotMinutes <= endMinutes;
+      m += slotMinutes
+    ) {
+      out.push({
+        startsAt: new Date(base + m * 60_000),
+        endsAt: new Date(base + (m + slotMinutes) * 60_000),
+        wallMinutes: m,
+      });
+    }
+    return out;
+  }
+  // A DST-change day: resolve each wall time through the zone rules.
   for (let m = startMinutes; m + slotMinutes <= endMinutes; m += slotMinutes) {
     const startsAt = wallTimeToInstant(date, m, tz);
     const endsAt =
       wallTimeToInstant(date, m + slotMinutes, tz) ??
       (startsAt ? new Date(startsAt.getTime() + slotMinutes * 60_000) : null);
     if (!startsAt || !endsAt || endsAt <= startsAt) continue;
-    out.push({ startsAt, endsAt });
+    out.push({ startsAt, endsAt, wallMinutes: m });
   }
   return out;
 }
@@ -138,6 +166,15 @@ export function expandRange(
 export function localMinutes(instant: Date, tz: string): number {
   const dt = local(instant, tz);
   return dt.hour * 60 + dt.minute;
+}
+
+/** The period of a local wall-clock minute. */
+export function periodOfMinutes(minutes: number): Period {
+  const h = Math.floor(minutes / 60) % 24;
+  if (h < 12) return 'morning';
+  if (h < 17) return 'afternoon';
+  if (h < 21) return 'evening';
+  return 'night';
 }
 
 /** morning < 12:00 ≤ afternoon < 17:00 ≤ evening < 21:00 ≤ night (local). */

@@ -283,6 +283,17 @@ export class DoctorsService implements OnModuleInit {
           d.pmdcNumber = pmdc;
         }
       }
+      if (dto.videoPrepayRequired === true && !d.videoPrepayRequired) {
+        const accounts = await m.count(DoctorPaymentAccount, {
+          where: { doctorId, isActive: true },
+        });
+        if (!accounts) {
+          throw invalid(
+            'videoPrepayRequired',
+            'Add an active payment account before asking patients to pay in advance.',
+          );
+        }
+      }
       if (dto.primarySpecialtyId !== undefined) {
         const ok = await m.exists(Specialty, {
           where: { id: dto.primarySpecialtyId, isActive: true },

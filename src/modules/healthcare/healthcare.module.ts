@@ -18,6 +18,9 @@ import { DoctorPaymentAccount } from './doctors/entities/doctor-payment-account.
 import { PracticeLocation } from './practice/entities/practice-location.entity';
 import { WeeklySchedule } from './practice/entities/weekly-schedule.entity';
 import { TimeOff } from './practice/entities/time-off.entity';
+import { FamilyMember } from './family/entities/family-member.entity';
+import { Appointment } from './appointments/entities/appointment.entity';
+import { AppointmentEvent } from './appointments/entities/appointment-event.entity';
 import { ReferenceService } from './reference/reference.service';
 import { SearchSuggestService } from './reference/search-suggest.service';
 import { ReferenceController } from './reference/reference.controller';
@@ -31,6 +34,22 @@ import { DiscoveryService } from './discovery/discovery.service';
 import { DiscoveryController } from './discovery/discovery.controller';
 import { AdminHealthService } from './admin/admin-health.service';
 import { AvailabilityService } from './availability/availability.service';
+import { FamilyService } from './family/family.service';
+import { FamilyController } from './family/family.controller';
+import { AppointmentTransitionsService } from './appointments/appointment-transitions.service';
+import { AppointmentViewsService } from './appointments/appointment-views.service';
+import {
+  APPOINTMENT_FAULT_INJECTOR,
+  AppointmentsService,
+  noAppointmentFaults,
+} from './appointments/appointments.service';
+import {
+  DoctorAppointmentPaymentsController,
+  PatientAppointmentsController,
+} from './appointments/appointments.controller';
+import { HealthJobsService } from './jobs/health-jobs.service';
+import { AuthModule } from '../auth/auth.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminHealthController } from './admin/admin-health.controller';
 
 /**
@@ -59,9 +78,14 @@ import { AdminHealthController } from './admin/admin-health.controller';
       PracticeLocation,
       WeeklySchedule,
       TimeOff,
+      FamilyMember,
+      Appointment,
+      AppointmentEvent,
     ]),
     BusinessesModule,
     MediaModule,
+    AuthModule,
+    NotificationsModule,
   ],
   controllers: [
     ReferenceController,
@@ -69,6 +93,9 @@ import { AdminHealthController } from './admin/admin-health.controller';
     DoctorProfileController,
     PracticeController,
     AdminHealthController,
+    FamilyController,
+    PatientAppointmentsController,
+    DoctorAppointmentPaymentsController,
   ],
   providers: [
     HealthEvents,
@@ -80,6 +107,12 @@ import { AdminHealthController } from './admin/admin-health.controller';
     AvailabilityService,
     DiscoveryService,
     AdminHealthService,
+    FamilyService,
+    AppointmentTransitionsService,
+    AppointmentViewsService,
+    AppointmentsService,
+    { provide: APPOINTMENT_FAULT_INJECTOR, useValue: noAppointmentFaults },
+    HealthJobsService,
   ],
 })
 export class HealthcareModule {}

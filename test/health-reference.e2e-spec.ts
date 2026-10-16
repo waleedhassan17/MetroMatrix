@@ -32,7 +32,7 @@ describe('Healthcare P0: reference data + suggest (e2e)', () => {
       });
       expect(d.specialties.length).toBeLessThanOrEqual(3);
       expect(d.conditions.length).toBeLessThanOrEqual(3);
-      expect(d.doctors).toEqual([]);
+      expect(d.doctors.length).toBeLessThanOrEqual(5); // doctors join in once listed (P2)
     }
     const pimples = await suggest('pimples');
     expect(pimples.conditions[0]).toMatchObject({

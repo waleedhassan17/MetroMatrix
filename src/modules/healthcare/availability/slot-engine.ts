@@ -3,7 +3,7 @@ import {
   addDays,
   expandRange,
   localDayBounds,
-  periodOf,
+  periodOfMinutes,
   shortDateLabel,
   todayIn,
   toZonedIso,
@@ -97,7 +97,11 @@ export function buildDays(input: EngineInput): DaySlots[] {
         if (s.startsAt < earliest || s.startsAt >= windowEnd) continue;
         const iv = { start: s.startsAt, end: s.endsAt };
         if (input.blocked.some((b) => overlaps(iv, b))) continue;
-        slots.push({ ...s, period: periodOf(s.startsAt, input.tz) });
+        slots.push({
+          startsAt: s.startsAt,
+          endsAt: s.endsAt,
+          period: periodOfMinutes(s.wallMinutes),
+        });
       }
     }
     slots.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
@@ -113,16 +117,13 @@ export function buildDays(input: EngineInput): DaySlots[] {
   return out;
 }
 
-/** The earliest free slot inside the booking window, or null. */
+/** The earliest free slot inside the booking window, or null (stops at the first day with one). */
 export function firstFreeSlot(
   input: Omit<EngineInput, 'fromDate' | 'days'>,
 ): Slot | null {
   const { today } = bookingBounds(input);
-  for (const day of buildDays({
-    ...input,
-    fromDate: today,
-    days: input.bookingWindowDays,
-  })) {
+  for (let i = 0; i < input.bookingWindowDays; i++) {
+    const [day] = buildDays({ ...input, fromDate: addDays(today, i), days: 1 });
     if (day.slots.length) return day.slots[0];
   }
   return null;
