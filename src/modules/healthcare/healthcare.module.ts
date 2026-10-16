@@ -51,6 +51,21 @@ import { HealthJobsService } from './jobs/health-jobs.service';
 import { AuthModule } from '../auth/auth.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AdminHealthController } from './admin/admin-health.controller';
+import {
+  DoctorMedicineFavourite,
+  Prescription,
+  PrescriptionMedicine,
+  PrescriptionTest,
+} from './prescriptions/entities/prescription.entity';
+import { MedicalNote } from './consultation/entities/medical-note.entity';
+import { ConsultationService } from './consultation/consultation.service';
+import { ConsultationController } from './consultation/consultation.controller';
+import { PrescriptionsService } from './prescriptions/prescriptions.service';
+import {
+  DoctorPrescriptionsController,
+  PatientPrescriptionsController,
+} from './prescriptions/prescriptions.controller';
+import { DoctorInsightsService } from './insights/doctor-insights.service';
 
 /**
  * MetroMatrix Healthcare. Sub-domains live in their own folders (reference,
@@ -81,6 +96,11 @@ import { AdminHealthController } from './admin/admin-health.controller';
       FamilyMember,
       Appointment,
       AppointmentEvent,
+      Prescription,
+      PrescriptionMedicine,
+      PrescriptionTest,
+      DoctorMedicineFavourite,
+      MedicalNote,
     ]),
     BusinessesModule,
     MediaModule,
@@ -96,6 +116,9 @@ import { AdminHealthController } from './admin/admin-health.controller';
     FamilyController,
     PatientAppointmentsController,
     DoctorAppointmentPaymentsController,
+    ConsultationController,
+    DoctorPrescriptionsController,
+    PatientPrescriptionsController,
   ],
   providers: [
     HealthEvents,
@@ -113,6 +136,9 @@ import { AdminHealthController } from './admin/admin-health.controller';
     AppointmentsService,
     { provide: APPOINTMENT_FAULT_INJECTOR, useValue: noAppointmentFaults },
     HealthJobsService,
+    ConsultationService,
+    PrescriptionsService,
+    DoctorInsightsService,
   ],
 })
 export class HealthcareModule {}

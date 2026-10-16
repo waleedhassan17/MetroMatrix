@@ -359,11 +359,13 @@ describe('Healthcare P2: availability + discovery (e2e)', () => {
       'Available tomorrow from 10:00 AM',
     );
 
+    // D2 is the only Karachi dermatologist, so its list is led by the most-reviewed
+    // dermatologist elsewhere (D1) whatever other suites have left listed.
     const similar = (
-      await anon.get(`/health/doctors/${D.D1.doctorId}/similar`).expect(200)
+      await anon.get(`/health/doctors/${D.D2.doctorId}/similar`).expect(200)
     ).body.data;
-    expect(similar.map((c: any) => c.id)).toContain(D.D2.doctorId);
-    expect(similar.map((c: any) => c.id)).not.toContain(D.D1.doctorId);
+    expect(similar[0].id).toBe(D.D1.doctorId);
+    expect(similar.map((c: any) => c.id)).not.toContain(D.D2.doctorId);
 
     const specialties = (
       await anon.get('/health/specialties?city=Karachi').expect(200)
@@ -379,11 +381,23 @@ describe('Healthcare P2: availability + discovery (e2e)', () => {
       .data;
     expect(home.specialties).toHaveLength(12);
     expect(home.commonConditions.length).toBeGreaterThan(5);
+    // "Available today nearby" is the first page of the earliest-first city list
+    // (other suites' Lahore doctors may fill it, so pin it to the list contract).
     const nearby = home.availableTodayNearby.map((c: any) => c.id);
+    const ids = async (q: string) =>
+      (await anon.get(`/health/doctors?${q}`).expect(200)).body.data.items.map(
+        (c: any) => c.id,
+      );
     expect(nearby).toEqual(
+      await ids('city=Lahore&availableToday=true&sort=earliest&pageSize=10'),
+    );
+    const lahoreToday = await ids(
+      'city=Lahore&availableToday=true&minExperience=15&pageSize=100',
+    );
+    expect(lahoreToday).toEqual(
       expect.arrayContaining([D.D1.doctorId, D.D3.doctorId]),
     );
-    expect(nearby).not.toContain(D.D2.doctorId);
+    expect(lahoreToday).not.toContain(D.D2.doctorId);
     expect(home.upcomingAppointment).toBeNull();
     expect(home.featuredDoctors.length).toBeGreaterThan(0);
 
