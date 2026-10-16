@@ -30,6 +30,7 @@ import { PracticeController } from './practice/practice.controller';
 import { DiscoveryService } from './discovery/discovery.service';
 import { DiscoveryController } from './discovery/discovery.controller';
 import { AdminHealthService } from './admin/admin-health.service';
+import { AvailabilityService } from './availability/availability.service';
 import { AdminHealthController } from './admin/admin-health.controller';
 
 /**
@@ -76,6 +77,7 @@ import { AdminHealthController } from './admin/admin-health.controller';
     DoctorsService,
     DoctorGuard,
     PracticeService,
+    AvailabilityService,
     DiscoveryService,
     AdminHealthService,
   ],

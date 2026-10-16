@@ -16,12 +16,6 @@ export class ReferenceController {
     private readonly suggestService: SearchSuggestService,
   ) {}
 
-  @Get('specialties')
-  @ApiOperation({ summary: 'All specialties (English + Urdu).' })
-  specialties() {
-    return this.reference.specialties();
-  }
-
   @Get('conditions')
   @ApiOperation({
     summary:
