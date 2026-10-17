@@ -101,8 +101,11 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
     );
   }
 
+  /** Tomorrow from 09:00: outside every cutoff whatever the time of day. */
   const tomorrow = async (d: Doctor, locationId: string, i = 0) =>
-    (await slotsOf(d, locationId)).days[1].slots[i].startsAt as string;
+    (await slotsOf(d, locationId)).days[1].slots.filter(
+      (s: any) => Number(s.startsAt.slice(11, 13)) >= 9,
+    )[i].startsAt as string;
 
   const bookRaw = async (
     p: SignedUp,

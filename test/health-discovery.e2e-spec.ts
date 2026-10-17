@@ -17,6 +17,12 @@ import {
 } from '../src/modules/healthcare/common/time.util';
 
 const PKT = 'Asia/Karachi';
+/**
+ * Within three hours of midnight in Karachi the all-day doctors have no
+ * bookable slot left today (minimum notice), so "available today" can't be
+ * asserted then.
+ */
+const NEAR_MIDNIGHT = (new Date().getUTCHours() + 5) % 24 >= 21;
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
 
 /**
@@ -212,7 +218,11 @@ describe('Healthcare P2: availability + discovery (e2e)', () => {
       ['city=lahore', ['D1', 'D3']],
       ['area=clifton', ['D2']],
       ['kind=video', ['D1', 'D3']],
-      ['availableToday=true', ['D1', 'D3', 'D4']],
+      ...((NEAR_MIDNIGHT
+        ? []
+        : [['availableToday=true', ['D1', 'D3', 'D4']]]) as Array<
+        [string, string[]]
+      >),
       ['gender=female', ['D1', 'D3']],
       ['minFee=2500', ['D3', 'D4']], // D1's cheapest is its 2000 video fee
       ['maxFee=1800', ['D2']],
@@ -282,7 +292,11 @@ describe('Healthcare P2: availability + discovery (e2e)', () => {
       const n = card(k).nextAvailable;
       expect(n.at).toMatch(/\+05:00$/);
       expect(n.label).toBe(availabilityLabel(new Date(n.at), PKT));
-      expect(n.label).toMatch(/^Available today, \d{1,2}:\d{2} (AM|PM)$/);
+      expect(n.label).toMatch(
+        NEAR_MIDNIGHT
+          ? /^Available (today, |tomorrow from )\d{1,2}:\d{2} (AM|PM)$/
+          : /^Available today, \d{1,2}:\d{2} (AM|PM)$/,
+      );
     }
     expect(card('D1')).toMatchObject({
       displayName: 'Dr. Ayesha Rehman',
@@ -394,9 +408,10 @@ describe('Healthcare P2: availability + discovery (e2e)', () => {
     const lahoreToday = await ids(
       'city=Lahore&availableToday=true&minExperience=15&pageSize=100',
     );
-    expect(lahoreToday).toEqual(
-      expect.arrayContaining([D.D1.doctorId, D.D3.doctorId]),
-    );
+    if (!NEAR_MIDNIGHT)
+      expect(lahoreToday).toEqual(
+        expect.arrayContaining([D.D1.doctorId, D.D3.doctorId]),
+      );
     expect(lahoreToday).not.toContain(D.D2.doctorId);
     expect(home.upcomingAppointment).toBeNull();
     expect(home.featuredDoctors.length).toBeGreaterThan(0);

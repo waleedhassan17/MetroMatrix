@@ -57,7 +57,10 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
     const res = await anon()
       .get(`/health/doctors/${d.doctorId}/locations/${locationId}/slots?days=2`)
       .expect(200);
-    return res.body.data.days[1].slots[index].startsAt as string;
+    // From 09:00 tomorrow: outside every cutoff whatever the time of day.
+    return res.body.data.days[1].slots.filter(
+      (s: any) => Number(s.startsAt.slice(11, 13)) >= 9,
+    )[index].startsAt as string;
   }
 
   const bookRaw = async (

@@ -60,14 +60,19 @@ describe('Healthcare P3: booking, family, reschedule, cancel, payments, jobs (e2
     return { d, clinic };
   }
 
-  /** Free slot instants for a location, from tomorrow (well outside any cutoff). */
+  /**
+   * Free slot instants for a location, from tomorrow 09:00 — well outside any
+   * cutoff whatever the time of day (tomorrow 00:15 is inside one at 23:30).
+   */
   async function slots(d: Doctor, locationId: string, day = 1) {
     const res = await new ApiClient(t.http)
       .get(
         `/health/doctors/${d.doctorId}/locations/${locationId}/slots?days=${day + 1}`,
       )
       .expect(200);
-    return res.body.data.days[day].slots.map((s: any) => s.startsAt as string);
+    return res.body.data.days[day].slots
+      .filter((s: any) => day === 0 || Number(s.startsAt.slice(11, 13)) >= 9)
+      .map((s: any) => s.startsAt as string);
   }
 
   beforeAll(async () => {
