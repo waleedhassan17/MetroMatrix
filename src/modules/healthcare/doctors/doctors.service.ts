@@ -24,6 +24,7 @@ import {
 } from './dto/profile.dto';
 import { Business } from '../../businesses/entities/business.entity';
 import { BusinessesService } from '../../businesses/businesses.service';
+import { AccountViewService } from '../../auth/account-view.service';
 import { MediaService } from '../../media/media.service';
 import { Specialty } from '../reference/entities/specialty.entity';
 import { Condition } from '../reference/entities/condition.entity';
@@ -80,12 +81,15 @@ export class DoctorsService implements OnModuleInit {
   constructor(
     private readonly dataSource: DataSource,
     private readonly businesses: BusinessesService,
+    private readonly accounts: AccountViewService,
     private readonly media: MediaService,
     private readonly events: HealthEvents,
   ) {}
 
   onModuleInit(): void {
-    this.businesses.onView(async (business) => {
+    // A1: a doctor's business, in its full view and in every session
+    // (sign-in, /auth/me), says whether it is listed and PMDC-verified.
+    const doctorFlags = async (business: Business) => {
       if (business.subType !== 'doctor') return {};
       const [row] = await this.dataSource.query(
         `SELECT is_listed, pmdc_verified_at FROM doctors WHERE business_id = $1`,
@@ -95,7 +99,9 @@ export class DoctorsService implements OnModuleInit {
         isListed: !!row?.is_listed,
         pmdcVerified: !!row?.pmdc_verified_at,
       };
-    });
+    };
+    this.businesses.onView(doctorFlags);
+    this.accounts.onSummary(doctorFlags);
     this.businesses.onSubmitted(async (m, business) => {
       if (business.subType === 'doctor')
         await this.ensureForBusiness(m, business);

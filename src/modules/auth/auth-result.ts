@@ -26,6 +26,9 @@ export interface BusinessSummary {
   rejectionReason: string | null;
   suspensionReason: string | null;
   submittedAt: Date | null;
+  /** Doctors only (API_HEALTH.md A1): patients can find them; staff checked the PMDC number. */
+  isListed?: boolean;
+  pmdcVerified?: boolean;
 }
 
 /** GET /auth/me — and the body of AuthResult minus tokens. */

@@ -62,6 +62,9 @@ securely (SecureStore) and never decode it.
   "rejectionReason": null, "suspensionReason": null, "submittedAt": "2026-10-15T09:12:00.000Z"
 }
 ```
+A doctor's summary also carries `isListed` and `pmdcVerified` (`docs/API_HEALTH.md` A1), so the
+doctor app knows from the session whether to open on Practice setup. Other businesses don't
+have the keys.
 
 ### `AuthResult` (signup, signin, Google, admin TOTP)
 ```json

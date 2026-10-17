@@ -385,11 +385,19 @@ describe('Healthcare P8: home, banners and app additions (e2e)', () => {
           await admin.api.get(`/admin/businesses/${d.businessId}`),
         ),
       ).toMatchObject({ isListed: true, pmdcVerified: true });
+      // The session says so too (sign-in and /auth/me share one view), so
+      // the doctor app opens on Today rather than Practice setup.
+      expect(
+        (await expectOk(await d.api.get('/auth/me'))).business,
+      ).toMatchObject({ isListed: true, pmdcVerified: true });
 
       const shop = await approvedPartner(t, admin, 'store');
       const store = await expectOk(await shop.api.get('/businesses/me'));
       expect(store).not.toHaveProperty('isListed');
       expect(store).not.toHaveProperty('pmdcVerified');
+      const session = (await expectOk(await shop.api.get('/auth/me'))).business;
+      expect(session).not.toHaveProperty('isListed');
+      expect(session).not.toHaveProperty('pmdcVerified');
     });
 
     it('A2 + A3: slug filters match the id filters; cards say whether a clinic is offered', async () => {

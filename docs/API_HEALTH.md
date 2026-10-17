@@ -651,7 +651,7 @@ What the Healthcare app reads beyond the first contract, each covered by
 
 | # | Addition |
 |---|---|
-| A1 | A doctor's business (`GET /businesses/me`, `GET /admin/businesses/:id`) carries `isListed` and `pmdcVerified`. Other businesses don't have the keys. |
+| A1 | A doctor's business (`GET /businesses/me`, `GET /admin/businesses/:id`, and the session's `BusinessSummary` from sign-in and `GET /auth/me`) carries `isListed` and `pmdcVerified`. Other businesses don't have the keys. |
 | A2 | `GET /health/doctors` takes `specialty` and `condition` slugs as well as ids. |
 | A3 | `DoctorCard.offersClinic`. |
 | A4 | `reviewSummary.distribution`, `GET /health/doctor/reviews/summary`, and `rating` on review lists. |
