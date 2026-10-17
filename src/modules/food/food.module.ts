@@ -44,6 +44,33 @@ import { MenuReadService } from './menu/menu-read.service';
 import { VendorMenuController } from './menu/menu.controller';
 import { FoodDiscoveryService } from './discovery/discovery.service';
 import { FoodDiscoveryController } from './discovery/discovery.controller';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { FoodCart } from './cart/entities/food-cart.entity';
+import { FoodCartItem } from './cart/entities/food-cart-item.entity';
+import { FoodPromotion } from './promotions/entities/food-promotion.entity';
+import { FoodOrder } from './orders/entities/food-order.entity';
+import { FoodOrderItem } from './orders/entities/food-order-item.entity';
+import { FoodOrderEvent } from './orders/entities/food-order-event.entity';
+import { PromotionsService } from './promotions/promotions.service';
+import { VendorPromotionsController } from './promotions/promotions.controller';
+import { FoodScheduleService } from './checkout/food-schedule.service';
+import { FoodCheckoutPlanner } from './checkout/food-checkout-planner.service';
+import {
+  FOOD_CHECKOUT_FAULT_INJECTOR,
+  FoodCheckoutService,
+  noFoodCheckoutFaults,
+} from './checkout/food-checkout.service';
+import {
+  FoodCheckoutController,
+  FoodSlotsController,
+} from './checkout/checkout.controller';
+import { FoodCartService } from './cart/food-cart.service';
+import { FoodCartController } from './cart/cart.controller';
+import { FoodOrderTransitionsService } from './orders/food-order-transitions.service';
+import { FoodOrderViewsService } from './orders/food-order-views.service';
+import { FoodNotifier } from './orders/food-notifier.service';
+import { CustomerFoodOrdersController } from './orders/customer-orders.controller';
+import { FoodJobsService } from './jobs/food-jobs.service';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -74,15 +101,27 @@ import { FoodDiscoveryController } from './discovery/discovery.controller';
       BranchItemOverride,
       BranchOptionOverride,
       PreorderSlot,
+      FoodCart,
+      FoodCartItem,
+      FoodPromotion,
+      FoodOrder,
+      FoodOrderItem,
+      FoodOrderEvent,
     ]),
     MediaModule,
     BusinessesModule,
     AuthModule,
     PlansModule,
+    NotificationsModule,
   ],
   controllers: [
     FoodReferenceController,
     FoodDiscoveryController,
+    FoodSlotsController,
+    FoodCartController,
+    FoodCheckoutController,
+    CustomerFoodOrdersController,
+    VendorPromotionsController,
     VendorController,
     VendorMenuController,
     VendorRidersController,
@@ -104,6 +143,16 @@ import { FoodDiscoveryController } from './discovery/discovery.controller';
     MenuAvailabilityService,
     MenuReadService,
     FoodDiscoveryService,
+    PromotionsService,
+    FoodScheduleService,
+    FoodCheckoutPlanner,
+    FoodCartService,
+    FoodCheckoutService,
+    { provide: FOOD_CHECKOUT_FAULT_INJECTOR, useValue: noFoodCheckoutFaults },
+    FoodOrderTransitionsService,
+    FoodOrderViewsService,
+    FoodNotifier,
+    FoodJobsService,
   ],
   exports: [FoodVendorService],
 })

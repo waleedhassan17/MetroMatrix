@@ -129,6 +129,10 @@ export const ErrorCode = {
   PROMO_INVALID: 'PROMO_INVALID',
   PROMO_EXPIRED: 'PROMO_EXPIRED',
   PROMO_LIMIT_REACHED: 'PROMO_LIMIT_REACHED',
+  /** Delivery needs a saved address with a map pin (lat/lng). */
+  ADDRESS_LOCATION_REQUIRED: 'ADDRESS_LOCATION_REQUIRED',
+  /** The vendor doesn't offer delivery (or pickup) right now. */
+  FULFILMENT_UNAVAILABLE: 'FULFILMENT_UNAVAILABLE',
   /** The rider is off duty, inactive or not this vendor's. */
   RIDER_NOT_AVAILABLE: 'RIDER_NOT_AVAILABLE',
   /** The action needs a rider on the order (or the own-rider hand-over). */

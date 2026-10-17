@@ -8,6 +8,7 @@ import {
   toMinutes,
 } from './open-state';
 import { FeeBand } from './delivery-quote';
+import { parallel } from '../../../common/db/parallel';
 
 export interface BranchSchedule {
   hours: HoursRange[];
@@ -44,22 +45,25 @@ export class BranchStateService {
       branchIds.map((id) => [id, { hours: [], closures: [], bands: [] }]),
     );
     if (!branchIds.length) return out;
-    const [hours, closures, bands] = await Promise.all([
-      m.query(
-        `SELECT branch_id, weekday, opens_at::text AS opens_at, closes_at::text AS closes_at
+    const [hours, closures, bands] = await parallel(m, [
+      () =>
+        m.query(
+          `SELECT branch_id, weekday, opens_at::text AS opens_at, closes_at::text AS closes_at
            FROM branch_hours WHERE branch_id = ANY($1::uuid[])`,
-        [branchIds],
-      ),
-      m.query(
-        `SELECT branch_id, starts_at, ends_at FROM branch_closures
+          [branchIds],
+        ),
+      () =>
+        m.query(
+          `SELECT branch_id, starts_at, ends_at FROM branch_closures
           WHERE branch_id = ANY($1::uuid[]) AND ends_at > $2::timestamptz - interval '1 day'`,
-        [branchIds, now],
-      ),
-      m.query(
-        `SELECT branch_id, from_km, to_km, fee, min_order FROM delivery_fee_bands
+          [branchIds, now],
+        ),
+      () =>
+        m.query(
+          `SELECT branch_id, from_km, to_km, fee, min_order FROM delivery_fee_bands
           WHERE branch_id = ANY($1::uuid[]) ORDER BY from_km`,
-        [branchIds],
-      ),
+          [branchIds],
+        ),
     ]);
     for (const h of hours)
       out.get(h.branch_id)!.hours.push({

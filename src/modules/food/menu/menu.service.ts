@@ -27,6 +27,7 @@ import { VendorSetupService } from '../vendor/vendor-setup.service';
 import { PlanService } from '../../plans/plans.service';
 import { MediaService } from '../../media/media.service';
 import { ErrorCode } from '../../../common/errors/codes';
+import { parallel } from '../../../common/db/parallel';
 
 const notFound = (what: string) =>
   new NotFoundException({
@@ -209,15 +210,17 @@ export class MenuService implements OnModuleInit {
   private async itemViews(m: EntityManager, rows: MenuItem[]) {
     if (!rows.length) return [];
     const ids = rows.map((r) => r.id);
-    const [variants, links] = await Promise.all([
-      m.find(ItemVariant, {
-        where: { itemId: In(ids) },
-        order: { sort: 'ASC', price: 'ASC' },
-      }),
-      m.find(ItemOptionGroup, {
-        where: { itemId: In(ids) },
-        order: { sort: 'ASC' },
-      }),
+    const [variants, links] = await parallel(m, [
+      () =>
+        m.find(ItemVariant, {
+          where: { itemId: In(ids) },
+          order: { sort: 'ASC', price: 'ASC' },
+        }),
+      () =>
+        m.find(ItemOptionGroup, {
+          where: { itemId: In(ids) },
+          order: { sort: 'ASC' },
+        }),
     ]);
     return rows.map((i) => ({
       id: i.id,

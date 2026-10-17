@@ -23,6 +23,8 @@ export interface NotifyPayload {
   body: string;
   /** Deep-link target for the app, e.g. `{ storeOrderId, groupCode }`. */
   data?: Record<string, unknown>;
+  /** Push only: 'high' wakes the device at once (a vendor's new order). */
+  priority?: 'high';
 }
 
 export const notificationView = (n: Notification) => ({
@@ -85,7 +87,7 @@ export class NotificationsService implements OnModuleInit {
         }),
       ),
     );
-    await this.sendPush(rows).catch((err: Error) =>
+    await this.sendPush(rows, payload.priority).catch((err: Error) =>
       this.logger.warn(`Push failed: ${err.message}`),
     );
     return rows;
@@ -133,7 +135,10 @@ export class NotificationsService implements OnModuleInit {
 
   // ── push ──────────────────────────────────────────────────────────────────
 
-  private async sendPush(rows: Notification[]): Promise<void> {
+  private async sendPush(
+    rows: Notification[],
+    priority?: 'high',
+  ): Promise<void> {
     if (!this.push.enabled || rows.length === 0) return;
     const devices = await this.devices.find({
       where: { userId: In(rows.map((r) => r.userId)) },
@@ -148,6 +153,7 @@ export class NotificationsService implements OnModuleInit {
         title: n.title,
         body: n.body,
         sound: 'default',
+        ...(priority ? { priority } : {}),
         data: { ...n.data, type: n.type, notificationId: n.id },
       };
     });

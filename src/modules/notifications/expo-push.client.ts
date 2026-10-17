@@ -7,6 +7,8 @@ export interface ExpoMessage {
   body: string;
   data?: Record<string, unknown>;
   sound?: 'default' | null;
+  /** 'high' delivers immediately, waking the device. */
+  priority?: 'default' | 'normal' | 'high';
 }
 
 /** One ticket per message, same order (https://docs.expo.dev/push-notifications/sending-notifications/). */

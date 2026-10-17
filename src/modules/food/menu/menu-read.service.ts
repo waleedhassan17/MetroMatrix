@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
+import { parallel } from '../../../common/db/parallel';
 import {
   ItemSnapshot,
   fromPrice,
@@ -42,13 +43,15 @@ export class MenuReadService {
     const out = new Map<string, ItemSnapshot>();
     if (!items.length) return out;
     const ids = items.map((i: any) => i.id);
-    const [variants, groups, unavailable] = await Promise.all([
-      m.query(
-        `SELECT id, item_id, name, price FROM item_variants WHERE item_id = ANY($1::uuid[]) ORDER BY sort, price, id`,
-        [ids],
-      ),
-      m.query(
-        `SELECT l.item_id, l.variant_id, l.sort, g.id, g.name, g.min_select, g.max_select,
+    const [variants, groups, unavailable] = await parallel(m, [
+      () =>
+        m.query(
+          `SELECT id, item_id, name, price FROM item_variants WHERE item_id = ANY($1::uuid[]) ORDER BY sort, price, id`,
+          [ids],
+        ),
+      () =>
+        m.query(
+          `SELECT l.item_id, l.variant_id, l.sort, g.id, g.name, g.min_select, g.max_select,
                 coalesce(json_agg(json_build_object('id', o.id, 'name', o.name, 'priceDelta', o.price_delta,
                          'isActive', o.is_active, 'isDefault', o.is_default) ORDER BY o.sort, o.name)
                          FILTER (WHERE o.id IS NOT NULL), '[]') AS options
@@ -56,12 +59,13 @@ export class MenuReadService {
            LEFT JOIN options o ON o.group_id = g.id
           WHERE l.item_id = ANY($1::uuid[])
           GROUP BY l.item_id, l.variant_id, l.sort, g.id ORDER BY l.sort, g.name`,
-        [ids],
-      ),
-      m.query(
-        `SELECT option_id FROM branch_option_overrides WHERE branch_id = $1 AND NOT is_available`,
-        [branchId],
-      ),
+          [ids],
+        ),
+      () =>
+        m.query(
+          `SELECT option_id FROM branch_option_overrides WHERE branch_id = $1 AND NOT is_available`,
+          [branchId],
+        ),
     ]);
     const off = unavailable.map((u: any) => u.option_id);
     for (const i of items) {

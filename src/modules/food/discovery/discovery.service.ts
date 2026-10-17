@@ -23,7 +23,10 @@ const CANDIDATE_CAP = 500;
 export const VISIBLE_VENDOR_SQL = `b.status = 'approved' AND fb.status = 'active' AND br.status = 'active' AND br.geo IS NOT NULL`;
 
 export interface DealLabel {
+  id: string;
+  title: string;
   label: string;
+  /** Free delivery with no minimum: the card shows a Rs 0 fee. */
   freeDelivery: boolean;
 }
 
@@ -62,9 +65,11 @@ export const vendorNotFound = () =>
  */
 @Injectable()
 export class FoodDiscoveryService {
-  /** Filled in by promotions (P4): live deal labels per brand. */
-  dealsFor: (brandIds: string[], now: Date) => Promise<Map<string, DealLabel>> =
-    async () => new Map();
+  /** Filled in by promotions: live automatic deals per brand, best first. */
+  dealsFor: (
+    brandIds: string[],
+    now: Date,
+  ) => Promise<Map<string, DealLabel[]>> = async () => new Map();
   /** Filled in by orders (P5): brands this customer ordered from before, most recent first. */
   orderAgain: (userId: string) => Promise<string[]> = async () => [];
   /** Filled in by admin (P7): live banners near this point. */
@@ -176,7 +181,7 @@ export class FoodDiscoveryService {
         fulfilment,
         { now },
       );
-      const deal = deals.get(r.brand.id) ?? null;
+      const deal = deals.get(r.brand.id)?.[0] ?? null;
       return {
         row: r,
         quote,
@@ -412,7 +417,7 @@ export class FoodDiscoveryService {
           }
         : null,
       acceptsCod: branch.accepts_cod,
-      deals: deals.get(brand.id) ? [deals.get(brand.id)] : [],
+      deals: deals.get(brand.id) ?? [],
       ratingSummary: rating,
       menu: menu.categories,
       popular: menu.popular,

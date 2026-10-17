@@ -185,3 +185,64 @@ export async function setUpVendor(
   if (opts.goLive !== false) return v.api.post('/food/vendor/go-live');
   return null;
 }
+
+/** A verified customer with a pinned address (default Lahore, next to LAHORE vendors). */
+export async function foodCustomer(
+  t: TestApp,
+  at: { lat: number; lng: number } = LAHORE,
+) {
+  const { shopper, addAddress } = await import('./shopping');
+  const c = await shopper(t);
+  const addressId = await addAddress(c, {
+    lat: at.lat,
+    lng: at.lng,
+    isDefault: true,
+  });
+  return { ...c, addressId };
+}
+
+let checkoutSeq = 0;
+/** POST /food/checkout with a fresh (or given) Idempotency-Key. */
+export function checkout(
+  c: { api: ApiClient; addressId?: string },
+  body: Record<string, unknown> = {},
+  key = `food-checkout-${Date.now()}-${++checkoutSeq}`,
+) {
+  return c.api
+    .post('/food/checkout', {
+      paymentMethod: 'cod',
+      ...(c.addressId ? { addressId: c.addressId } : {}),
+      ...body,
+    })
+    .set('Idempotency-Key', key);
+}
+
+/** The vendor's first dish with this name. */
+export async function itemId(t: TestApp, v: Vendor, name = 'Chicken Karahi') {
+  const [row] = await t.ds.query(
+    `SELECT id FROM menu_items WHERE brand_id = $1 AND name = $2 LIMIT 1`,
+    [v.brandId, name],
+  );
+  return row.id as string;
+}
+
+/** A home kitchen through its food-safety check and live. */
+export async function liveHomeKitchen(
+  t: TestApp,
+  admin: Admin,
+  name?: string,
+  opts: Parameters<typeof setUpVendor>[2] = {},
+) {
+  const v = await foodVendor(t, admin, 'home_kitchen', name);
+  await setUpVendor(t, v, { ...opts, goLive: false });
+  await expectStatus(
+    await admin.api.post(
+      `/admin/food/branches/${v.branchId}/food-safety-check`,
+      { outcome: 'passed', note: 'Test order tasted fine' },
+    ),
+    200,
+  );
+  if (opts.goLive !== false)
+    await expectStatus(await v.api.post('/food/vendor/go-live'), 200);
+  return v;
+}

@@ -4,6 +4,7 @@ import { BusinessPlan } from './entities/business-plan.entity';
 import {
   PLAN_LIMIT_KEYS,
   PlanConfig,
+  PlanEntitlementKey,
   PlanLimitKey,
   PlanOverrides,
   applyOverrides,
@@ -114,6 +115,22 @@ export class PlanService {
         code: ErrorCode.PLAN_LIMIT_REACHED,
         message: `Your ${plan.label} plan allows ${limit} ${LIMIT_LABELS[key]}${limit === 1 ? '' : 's'}.`,
         details: { key, limit, used: nextCount - 1, planKey: plan.key },
+      });
+    }
+  }
+
+  /** 409 PLAN_LIMIT_REACHED when the plan doesn't include `key` (every key is on today). */
+  async assertEntitled(
+    m: EntityManager,
+    businessId: string,
+    key: PlanEntitlementKey,
+  ): Promise<void> {
+    const { plan } = await this.effective(businessId, m);
+    if (!plan.entitlements[key]) {
+      throw new ConflictException({
+        code: ErrorCode.PLAN_LIMIT_REACHED,
+        message: `Your ${plan.label} plan doesn't include ${key}.`,
+        details: { entitlement: key, planKey: plan.key },
       });
     }
   }
