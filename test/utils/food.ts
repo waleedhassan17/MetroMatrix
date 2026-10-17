@@ -104,6 +104,8 @@ export async function setUpVendor(
     }>;
     settings?: Record<string, unknown>;
     goLive?: boolean;
+    /** false = no menu (the "menu" setup item stays open). */
+    menu?: boolean;
   } = {},
 ) {
   const { asset } = await import('./shopping');
@@ -155,6 +157,31 @@ export async function setUpVendor(
     ),
     200,
   );
+  if (opts.menu !== false) {
+    const cat = await expectStatus(
+      await v.api.post('/food/vendor/menu/categories', { name: 'Mains' }),
+      201,
+    );
+    const item = await expectStatus(
+      await v.api.post('/food/vendor/menu/items', {
+        categoryId: cat.id,
+        name: 'Chicken Karahi',
+        basePrice: 1600,
+      }),
+      201,
+    );
+    const setup = await expectStatus(
+      await v.api.get('/food/vendor/setup'),
+      200,
+    );
+    if (setup.subType === 'home_kitchen')
+      await expectStatus(
+        await v.api.patch('/food/vendor/today', {
+          items: [{ itemId: item.id, portions: 20 }],
+        }),
+        200,
+      );
+  }
   if (opts.goLive !== false) return v.api.post('/food/vendor/go-live');
   return null;
 }

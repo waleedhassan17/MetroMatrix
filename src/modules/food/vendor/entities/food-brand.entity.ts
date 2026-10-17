@@ -17,6 +17,8 @@ const decimal = {
  */
 @Entity('food_brands')
 @Index(['businessId'], { unique: true })
+@Index('IDX_food_brands_search', { synchronize: false })
+@Index('IDX_food_brands_name_trgm', { synchronize: false })
 @Check('CHK_food_brands_price_level', '"price_level" BETWEEN 1 AND 3')
 export class FoodBrand extends BaseEntity {
   @Column({ type: 'uuid', name: 'business_id' })

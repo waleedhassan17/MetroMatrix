@@ -29,6 +29,19 @@ import { VendorSetupService } from './vendor/vendor-setup.service';
 import { VendorController } from './vendor/vendor.controller';
 import { FoodReferenceController } from './reference/reference.controller';
 import { MediaModule } from '../media/media.module';
+import { MenuCategory } from './menu/entities/menu-category.entity';
+import { MenuItem } from './menu/entities/menu-item.entity';
+import { ItemVariant } from './menu/entities/item-variant.entity';
+import { OptionGroup } from './menu/entities/option-group.entity';
+import { MenuOption } from './menu/entities/menu-option.entity';
+import { ItemOptionGroup } from './menu/entities/item-option-group.entity';
+import { BranchItemOverride } from './menu/entities/branch-item-override.entity';
+import { BranchOptionOverride } from './menu/entities/branch-option-override.entity';
+import { PreorderSlot } from './menu/entities/preorder-slot.entity';
+import { MenuService } from './menu/menu.service';
+import { MenuAvailabilityService } from './menu/menu-availability.service';
+import { MenuReadService } from './menu/menu-read.service';
+import { VendorMenuController } from './menu/menu.controller';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -50,6 +63,15 @@ import { MediaModule } from '../media/media.module';
       BranchClosure,
       DeliveryFeeBand,
       VendorPaymentAccount,
+      MenuCategory,
+      MenuItem,
+      ItemVariant,
+      OptionGroup,
+      MenuOption,
+      ItemOptionGroup,
+      BranchItemOverride,
+      BranchOptionOverride,
+      PreorderSlot,
     ]),
     MediaModule,
     BusinessesModule,
@@ -59,6 +81,7 @@ import { MediaModule } from '../media/media.module';
   controllers: [
     FoodReferenceController,
     VendorController,
+    VendorMenuController,
     VendorRidersController,
     RiderSelfController,
     VendorPlanController,
@@ -74,6 +97,9 @@ import { MediaModule } from '../media/media.module';
     ServiceabilityService,
     VendorSettingsService,
     VendorSetupService,
+    MenuService,
+    MenuAvailabilityService,
+    MenuReadService,
   ],
   exports: [FoodVendorService],
 })

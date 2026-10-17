@@ -197,6 +197,7 @@ export class VendorSettingsService {
       }
       if (Object.keys(patch).length)
         await m.update(FoodBrand, { id: brand.id }, patch);
+      await m.query(`SELECT food_brand_search_refresh($1)`, [brand.id]);
     });
     return this.profile(v);
   }
