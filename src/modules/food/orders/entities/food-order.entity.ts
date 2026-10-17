@@ -6,6 +6,7 @@ import { Branch, GeoPoint } from '../../vendor/entities/branch.entity';
 import { Rider } from '../../riders/entities/rider.entity';
 import { FoodPromotion } from '../../promotions/entities/food-promotion.entity';
 import { PreorderSlot } from '../../menu/entities/preorder-slot.entity';
+import { RIDER_STEPS, RiderStep } from '../../riders/rider-steps';
 import {
   FOOD_PAYMENT_METHODS,
   FULFILMENTS,
@@ -242,6 +243,16 @@ export class FoodOrder extends BaseEntity {
   @ManyToOne(() => Rider, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'rider_id' })
   rider?: Rider;
+
+  /** Where the assigned rider is (rider-steps.ts); each step is also an event. */
+  @Column({
+    type: 'enum',
+    enum: RIDER_STEPS,
+    enumName: 'food_rider_step',
+    name: 'rider_step',
+    nullable: true,
+  })
+  riderStep!: RiderStep | null;
 
   /** "Handed to own rider": a rider without an account. */
   @Column({ type: 'boolean', name: 'handed_to_external', default: false })

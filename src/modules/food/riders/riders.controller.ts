@@ -7,9 +7,12 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { RidersService } from './riders.service';
+import { RiderDeliveryService } from './rider-delivery.service';
+import { HandoverDto, SuggestRidersQueryDto } from './dto/delivery.dto';
 import {
   CreateRiderDto,
   RiderStatusDto,
@@ -27,7 +30,10 @@ import type { RiderRef } from '../common/rider.guard';
 @FoodVendor()
 @Controller('food/vendor/riders')
 export class VendorRidersController {
-  constructor(private readonly riders: RidersService) {}
+  constructor(
+    private readonly riders: RidersService,
+    private readonly delivery: RiderDeliveryService,
+  ) {}
 
   @Get()
   list(@CurrentVendor() v: VendorRef) {
@@ -43,9 +49,49 @@ export class VendorRidersController {
     return this.riders.create(v, dto);
   }
 
+  @Get('suggest')
+  @ApiOperation({
+    summary:
+      '?orderId — on-duty riders, fewest active orders first, then nearest (live locations only). You choose; nothing is auto-dispatched.',
+  })
+  suggest(@CurrentVendor() v: VendorRef, @Query() q: SuggestRidersQueryDto) {
+    return this.delivery.suggest(v, q.orderId);
+  }
+
+  @Get('live')
+  @ApiOperation({
+    summary:
+      'Active riders: duty, live location (last 2 minutes), what they carry.',
+  })
+  live(@CurrentVendor() v: VendorRef) {
+    return this.delivery.live(v);
+  }
+
   @Get(':id')
   get(@CurrentVendor() v: VendorRef, @Param('id', ParseUUIDPipe) id: string) {
     return this.riders.get(v, id);
+  }
+
+  @Get(':id/cash')
+  @ApiOperation({
+    summary:
+      'Cash the rider holds for you (COD collected − handed over), with entries.',
+  })
+  cash(@CurrentVendor() v: VendorRef, @Param('id', ParseUUIDPipe) id: string) {
+    return this.delivery.riderCash(v, id);
+  }
+
+  @Post(':id/handover')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '{ amount } the rider handed you — never more than they hold.',
+  })
+  handover(
+    @CurrentVendor() v: VendorRef,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: HandoverDto,
+  ) {
+    return this.delivery.handover(v, id, dto);
   }
 
   @Patch(':id')

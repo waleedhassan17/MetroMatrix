@@ -18,6 +18,8 @@ import {
   VendorOrdersQueryDto,
 } from './dto/order-action.dto';
 import { FoodVendor } from '../common/food-roles.decorator';
+import { RiderDeliveryService } from '../riders/rider-delivery.service';
+import { AssignRiderDto } from '../riders/dto/delivery.dto';
 import { CurrentVendor } from '../common/current-vendor.decorator';
 import type { VendorRef } from '../vendor/food-vendor.service';
 
@@ -29,6 +31,7 @@ export class VendorFoodOrdersController {
   constructor(
     private readonly views: FoodOrderViewsService,
     private readonly actions: FoodOrderActionsService,
+    private readonly delivery: RiderDeliveryService,
   ) {}
 
   @Get()
@@ -86,6 +89,20 @@ export class VendorFoodOrdersController {
   @HttpCode(200)
   ready(@CurrentVendor() v: VendorRef, @Param('id', ParseUUIDPipe) id: string) {
     return this.actions.ready(v, id);
+  }
+
+  @Post(':id/assign')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '{ riderId } — one of your riders, active and on duty (else 409 RIDER_NOT_AVAILABLE). Reassigning before pickup is allowed.',
+  })
+  assign(
+    @CurrentVendor() v: VendorRef,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignRiderDto,
+  ) {
+    return this.delivery.assign(v, id, dto.riderId);
   }
 
   @Post(':id/handed-external')

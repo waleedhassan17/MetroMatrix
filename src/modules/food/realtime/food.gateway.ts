@@ -8,7 +8,10 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from '@nestjs/websockets';
-import { isUUID } from 'class-validator';
+import { isUUID, validate } from 'class-validator';
+import { plainToInstance } from 'class-transformer';
+import { RiderLocationService } from '../riders/rider-location.service';
+import { LocationPointDto } from '../riders/dto/delivery.dto';
 import type { Namespace, Socket } from 'socket.io';
 import { DataSource, In } from 'typeorm';
 import { AccessTokenValidator } from '../../auth/access-token-validator';
@@ -75,10 +78,13 @@ export class FoodGateway
     private readonly dataSource: DataSource,
     private readonly views: FoodOrderViewsService,
     private readonly notifier: FoodNotifier,
+    private readonly locations: RiderLocationService,
   ) {}
 
   onModuleInit(): void {
     this.notifier.onOrderChanged = (id, kind) => this.emitOrder(id, kind);
+    this.locations.fanOut = (p) =>
+      this.server?.to(rooms.order(p.orderId)).emit('rider.location', p);
   }
 
   afterInit(server: Namespace): void {
@@ -90,9 +96,17 @@ export class FoodGateway
         return next(err);
       }
       this.validator.verify(token).then(
-        (user) => {
-          (socket.data as FoodSocketData).user = user;
-          next();
+        async (user) => {
+          const data = socket.data as FoodSocketData;
+          data.user = user;
+          // Who they are on Food Court is settled before `connect`, so the
+          // first message is already authorised correctly.
+          try {
+            await this.identify(data);
+            next();
+          } catch (err) {
+            next(err as Error);
+          }
         },
         (e: unknown) => {
           const body =
@@ -108,35 +122,37 @@ export class FoodGateway
     });
   }
 
+  /** A vendor owner's branch, or an active rider's row. */
+  private async identify(data: FoodSocketData) {
+    if (data.user.role === 'partner') {
+      const [b] = await this.dataSource.query(
+        `SELECT br.id FROM branches br JOIN businesses b ON b.id = br.business_id
+          WHERE b.owner_user_id = $1 AND b.service_type = 'food' AND b.status = 'approved'`,
+        [data.user.id],
+      );
+      if (b) data.branchId = b.id;
+    } else if (data.user.role === 'rider') {
+      const [r] = await this.dataSource.query(
+        `SELECT r.id FROM riders r JOIN businesses b ON b.id = r.business_id
+          WHERE r.user_id = $1 AND r.status = 'active' AND b.status = 'approved'`,
+        [data.user.id],
+      );
+      if (r) data.riderId = r.id;
+    }
+  }
+
   async handleConnection(socket: FoodSocket): Promise<void> {
-    const user = socket.data.user;
-    if (!user) {
+    const data = socket.data;
+    if (!data.user) {
       socket.disconnect(true);
       return;
     }
     try {
-      if (user.role === 'partner') {
-        const [b] = await this.dataSource.query(
-          `SELECT br.id FROM branches br JOIN businesses b ON b.id = br.business_id
-            WHERE b.owner_user_id = $1 AND b.service_type = 'food' AND b.status = 'approved'`,
-          [user.id],
-        );
-        if (b) {
-          socket.data.branchId = b.id;
-          await socket.join(rooms.branch(b.id));
-          socket.emit('board.sync', await this.board(b.id));
-        }
-      } else if (user.role === 'rider') {
-        const [r] = await this.dataSource.query(
-          `SELECT r.id FROM riders r JOIN businesses b ON b.id = r.business_id
-            WHERE r.user_id = $1 AND r.status = 'active' AND b.status = 'approved'`,
-          [user.id],
-        );
-        if (r) {
-          socket.data.riderId = r.id;
-          await socket.join(rooms.rider(user.id));
-        }
+      if (data.branchId) {
+        await socket.join(rooms.branch(data.branchId));
+        socket.emit('board.sync', await this.board(data.branchId));
       }
+      if (data.riderId) await socket.join(rooms.rider(data.user.id));
     } catch (err) {
       this.logger.warn(`connection setup failed: ${(err as Error).message}`);
     }
@@ -163,6 +179,29 @@ export class FoodGateway
     if (typeof body?.orderId === 'string')
       await socket.leave(rooms.order(body.orderId));
     return { ok: true };
+  }
+
+  /**
+   * A rider's GPS fix: on duty, and (when it names one) for an order assigned
+   * to them — else `{ ok: false, code }`. Fanned out to the order's room,
+   * throttled.
+   */
+  @SubscribeMessage('rider.location')
+  async riderLocation(
+    @ConnectedSocket() socket: FoodSocket,
+    @MessageBody() body: unknown,
+  ) {
+    if (!socket.data.riderId) return { ok: false, code: 'FORBIDDEN' };
+    const point = plainToInstance(LocationPointDto, body ?? {});
+    const errors = await validate(point);
+    if (errors.length)
+      return {
+        ok: false,
+        code: 'VALIDATION_FAILED',
+        fields: errors.map((e) => e.property),
+      };
+    const res = await this.locations.record(socket.data.riderId, [point]);
+    return res.ok ? { ok: true } : { ok: false, code: res.code };
   }
 
   /** Called after a commit (FoodNotifier.onOrderChanged). Never throws into the caller. */

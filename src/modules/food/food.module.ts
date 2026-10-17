@@ -77,6 +77,11 @@ import { FoodFavourite } from './favourites/entities/food-favourite.entity';
 import { FoodFavouritesService } from './favourites/favourites.service';
 import { FoodFavouritesController } from './favourites/favourites.controller';
 import { FoodGateway } from './realtime/food.gateway';
+import { RiderLocationLog } from './riders/entities/rider-location-log.entity';
+import { RiderCashEntry } from './riders/entities/rider-cash-entry.entity';
+import { RiderLocationService } from './riders/rider-location.service';
+import { RiderDeliveryService } from './riders/rider-delivery.service';
+import { RiderDeliveryController } from './riders/rider-delivery.controller';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -114,6 +119,8 @@ import { FoodGateway } from './realtime/food.gateway';
       FoodOrderItem,
       FoodOrderEvent,
       FoodFavourite,
+      RiderLocationLog,
+      RiderCashEntry,
     ]),
     MediaModule,
     BusinessesModule,
@@ -135,6 +142,7 @@ import { FoodGateway } from './realtime/food.gateway';
     VendorMenuController,
     VendorRidersController,
     RiderSelfController,
+    RiderDeliveryController,
     VendorPlanController,
     AdminFoodPlanController,
     AdminFoodSafetyController,
@@ -165,6 +173,8 @@ import { FoodGateway } from './realtime/food.gateway';
     FoodOrderActionsService,
     FoodFavouritesService,
     FoodGateway,
+    RiderLocationService,
+    RiderDeliveryService,
   ],
   exports: [FoodVendorService],
 })
