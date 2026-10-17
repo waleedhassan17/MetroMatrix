@@ -42,6 +42,8 @@ import { MenuService } from './menu/menu.service';
 import { MenuAvailabilityService } from './menu/menu-availability.service';
 import { MenuReadService } from './menu/menu-read.service';
 import { VendorMenuController } from './menu/menu.controller';
+import { FoodDiscoveryService } from './discovery/discovery.service';
+import { FoodDiscoveryController } from './discovery/discovery.controller';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -80,6 +82,7 @@ import { VendorMenuController } from './menu/menu.controller';
   ],
   controllers: [
     FoodReferenceController,
+    FoodDiscoveryController,
     VendorController,
     VendorMenuController,
     VendorRidersController,
@@ -100,6 +103,7 @@ import { VendorMenuController } from './menu/menu.controller';
     MenuService,
     MenuAvailabilityService,
     MenuReadService,
+    FoodDiscoveryService,
   ],
   exports: [FoodVendorService],
 })
