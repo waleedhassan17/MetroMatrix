@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
   UnprocessableEntityException,
@@ -18,6 +19,7 @@ import {
   MAX_PER_MULTI_KIND,
   MULTI_KINDS,
   SUBTYPE_SERVICE,
+  SUB_TYPE_LABELS,
   SubType,
 } from './business-types';
 import {
@@ -44,6 +46,8 @@ export interface BusinessView {
   slug: string;
   serviceType: string;
   subType: string;
+  /** "Home kitchen", "Cloud kitchen", … */
+  subTypeLabel: string;
   phone: string;
   city: string;
   addressLine: string;
@@ -85,6 +89,7 @@ export const toBusinessView = (b: Business): BusinessView => ({
   slug: b.slug,
   serviceType: b.serviceType,
   subType: b.subType,
+  subTypeLabel: SUB_TYPE_LABELS[b.subType as SubType] ?? b.subType,
   phone: b.phone,
   city: b.city,
   addressLine: b.addressLine,
@@ -153,6 +158,12 @@ export type BusinessApprovedHook = (
  */
 export type BusinessSubmittedHook = BusinessApprovedHook;
 
+/** After staff suspend or reinstate a business (committed). Best-effort: a failing hook is logged. */
+export type BusinessStatusHook = (
+  business: Business,
+  change: { to: 'suspended' | 'approved'; reason: string },
+) => Promise<void>;
+
 /**
  * Extra fields a service adds to its own businesses' detail — e.g.
  * Healthcare's `isListed` and `pmdcVerified` for a doctor.
@@ -166,6 +177,8 @@ export class BusinessesService implements OnModuleInit {
   private readonly approvedHooks: BusinessApprovedHook[] = [];
   private readonly submittedHooks: BusinessSubmittedHook[] = [];
   private readonly viewExtras: BusinessViewExtras[] = [];
+  private readonly statusHooks: BusinessStatusHook[] = [];
+  private readonly hookLogger = new Logger('BusinessStatusHooks');
 
   constructor(
     @InjectRepository(Business)
@@ -192,6 +205,26 @@ export class BusinessesService implements OnModuleInit {
 
   onView(extras: BusinessViewExtras): void {
     this.viewExtras.push(extras);
+  }
+
+  /** Suspend / reinstate — e.g. Food tells customers with active orders. */
+  onStatusChanged(hook: BusinessStatusHook): void {
+    this.statusHooks.push(hook);
+  }
+
+  async runStatusChangedHooks(
+    business: Business,
+    change: Parameters<BusinessStatusHook>[1],
+  ): Promise<void> {
+    for (const hook of this.statusHooks) {
+      try {
+        await hook(business, change);
+      } catch (err) {
+        this.hookLogger.warn(
+          `status hook failed for ${business.id}: ${(err as Error).message}`,
+        );
+      }
+    }
   }
 
   /** Called by the admin approval, inside its transaction. */

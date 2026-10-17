@@ -82,6 +82,21 @@ import { RiderCashEntry } from './riders/entities/rider-cash-entry.entity';
 import { RiderLocationService } from './riders/rider-location.service';
 import { RiderDeliveryService } from './riders/rider-delivery.service';
 import { RiderDeliveryController } from './riders/rider-delivery.controller';
+import { AdminModule } from '../admin/admin.module';
+import { FoodReview } from './reviews/entities/food-review.entity';
+import { FoodBanner } from './admin/entities/food-banner.entity';
+import { FoodAggregatesService } from './reviews/food-aggregates.service';
+import { FoodReviewsService } from './reviews/food-reviews.service';
+import {
+  CustomerFoodReviewsController,
+  PublicFoodReviewsController,
+  VendorFoodReviewsController,
+} from './reviews/reviews.controller';
+import { FoodInsightsService } from './insights/insights.service';
+import { VendorInsightsController } from './insights/insights.controller';
+import { FoodBannersService } from './admin/food-banners.service';
+import { AdminFoodService } from './admin/admin-food.service';
+import { AdminFoodController } from './admin/admin-food.controller';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -121,12 +136,15 @@ import { RiderDeliveryController } from './riders/rider-delivery.controller';
       FoodFavourite,
       RiderLocationLog,
       RiderCashEntry,
+      FoodReview,
+      FoodBanner,
     ]),
     MediaModule,
     BusinessesModule,
     AuthModule,
     PlansModule,
     NotificationsModule,
+    AdminModule,
   ],
   controllers: [
     FoodReferenceController,
@@ -143,6 +161,11 @@ import { RiderDeliveryController } from './riders/rider-delivery.controller';
     VendorRidersController,
     RiderSelfController,
     RiderDeliveryController,
+    CustomerFoodReviewsController,
+    PublicFoodReviewsController,
+    VendorFoodReviewsController,
+    VendorInsightsController,
+    AdminFoodController,
     VendorPlanController,
     AdminFoodPlanController,
     AdminFoodSafetyController,
@@ -175,6 +198,11 @@ import { RiderDeliveryController } from './riders/rider-delivery.controller';
     FoodGateway,
     RiderLocationService,
     RiderDeliveryService,
+    FoodAggregatesService,
+    FoodReviewsService,
+    FoodInsightsService,
+    FoodBannersService,
+    AdminFoodService,
   ],
   exports: [FoodVendorService],
 })

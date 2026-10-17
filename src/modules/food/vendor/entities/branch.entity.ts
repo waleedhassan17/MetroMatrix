@@ -76,6 +76,10 @@ export class Branch extends BaseEntity {
   @Column({ type: 'varchar', length: 60, default: 'Asia/Karachi' })
   timezone!: string;
 
+  /** The branch-local date today's portions were last reset (the 00:05 job runs once a day). */
+  @Column({ type: 'date', name: 'portions_reset_on', nullable: true })
+  portionsResetOn!: string | null;
+
   @Column({ type: 'smallint', name: 'prep_minutes', default: 20 })
   prepMinutes!: number;
 

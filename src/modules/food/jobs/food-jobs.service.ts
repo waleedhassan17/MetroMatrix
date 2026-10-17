@@ -8,6 +8,10 @@ import {
   SYSTEM,
 } from '../orders/food-order-transitions.service';
 import { FoodNotice, FoodNotifier } from '../orders/food-notifier.service';
+import { FoodAggregatesService } from '../reviews/food-aggregates.service';
+import { RiderLocationService } from '../riders/rider-location.service';
+import { LOCATION_RETENTION_DAYS } from '../riders/presence';
+import { formatTime12 } from '../../../common/time/time.util';
 
 const BATCH = 200;
 export const AUTO_REJECT_REASON = 'The restaurant didn’t respond in time.';
@@ -37,6 +41,8 @@ export class FoodJobsService {
     private readonly transitions: FoodOrderTransitionsService,
     private readonly notifier: FoodNotifier,
     private readonly config: ConfigService,
+    private readonly aggregates: FoodAggregatesService,
+    private readonly locations: RiderLocationService,
   ) {}
 
   private get enabled(): boolean {
@@ -48,6 +54,130 @@ export class FoodJobsService {
     if (!this.enabled) return;
     await this.autoReject();
     await this.cancelUnpaidTransfers();
+  }
+
+  @Cron('0 * * * * *', { name: 'food-reminders' })
+  async cronReminders() {
+    if (!this.enabled) return;
+    await this.kitchenReminders();
+    await this.acceptNudges();
+  }
+
+  @Cron('5 0 * * *', { name: 'food-daily-reset', timeZone: 'Asia/Karachi' })
+  async cronDaily() {
+    if (this.enabled) await this.dailyReset();
+  }
+
+  @Cron('30 3 * * *', { name: 'food-nightly', timeZone: 'Asia/Karachi' })
+  async cronNightly() {
+    if (this.enabled) await this.nightlyWork();
+  }
+
+  /** Scheduled orders: tell the kitchen to start at scheduled_for − prep − 10 min. Once. */
+  async kitchenReminders(now = new Date()) {
+    return this.run('food:kitchen-reminders', async (m) => {
+      const rows = await m.query(
+        `UPDATE food_orders o SET kitchen_reminded_at = $1
+           FROM branches br
+          WHERE br.id = o.branch_id AND o.scheduled_for IS NOT NULL AND o.kitchen_reminded_at IS NULL
+            AND o.status = 'accepted'
+            AND o.scheduled_for - make_interval(mins => br.prep_minutes + 10) <= $1
+          RETURNING o.id, o.code, o.branch_id, o.scheduled_for, br.timezone`,
+        [now],
+      );
+      const due = rows[0] ?? [];
+      const notices: FoodNotice[] = [];
+      for (const r of due)
+        notices.push({
+          userId: await this.notifier.ownerOf(r.branch_id),
+          payload: {
+            type: 'food.order.start_cooking',
+            title: `Start ${r.code}`,
+            body: `Scheduled for ${formatTime12(new Date(r.scheduled_for), r.timezone)}.`,
+            data: { orderId: r.id, code: r.code },
+            priority: 'high',
+          },
+        });
+      return { counts: { reminded: due.length }, notices, changed: [] };
+    });
+  }
+
+  /** Two minutes before an unanswered order auto-rejects, ring the kitchen again. Once. */
+  async acceptNudges(now = new Date()) {
+    return this.run('food:accept-nudges', async (m) => {
+      const [rows] = await m.query(
+        `UPDATE food_orders SET accept_nudged_at = $1
+          WHERE status = 'placed' AND accept_nudged_at IS NULL
+            AND accept_by - interval '2 minutes' <= $1 AND accept_by > $1
+          RETURNING id, code, branch_id`,
+        [now],
+      );
+      const notices: FoodNotice[] = [];
+      for (const r of rows)
+        notices.push({
+          userId: await this.notifier.ownerOf(r.branch_id),
+          payload: {
+            type: 'food.order.accept_soon',
+            title: `${r.code} is waiting`,
+            body: 'Accept or reject it — it auto-rejects in 2 minutes.',
+            data: { orderId: r.id, code: r.code },
+            priority: 'high',
+          },
+        });
+      return { counts: { nudged: rows.length }, notices, changed: [] };
+    });
+  }
+
+  /**
+   * 00:05 local: today's portions back to each dish's daily limit, and stale
+   * busy mode cleared. A branch is reset once per local day
+   * (portions_reset_on), so a second run changes nothing.
+   */
+  async dailyReset(now = new Date()) {
+    return this.run('food:daily-reset', async (m) => {
+      const [branches] = await m.query(
+        `UPDATE branches SET portions_reset_on = (($1::timestamptz) AT TIME ZONE timezone)::date
+          WHERE portions_reset_on IS DISTINCT FROM (($1::timestamptz) AT TIME ZONE timezone)::date
+          RETURNING id`,
+        [now],
+      );
+      const ids = branches.map((b: any) => b.id);
+      const [, portions] = ids.length
+        ? await m.query(
+            `UPDATE branch_item_overrides SET remaining_today = daily_limit, updated_at = now()
+              WHERE branch_id = ANY($1::uuid[]) AND daily_limit IS NOT NULL
+                AND remaining_today IS DISTINCT FROM daily_limit`,
+            [ids],
+          )
+        : [[], 0];
+      const [, busy] = await m.query(
+        `UPDATE branches SET busy_until = NULL, busy_extra_minutes = 0, updated_at = now()
+          WHERE busy_until IS NOT NULL AND busy_until <= $1`,
+        [now],
+      );
+      return {
+        counts: {
+          branches: ids.length,
+          portions: portions ?? 0,
+          busyCleared: busy ?? 0,
+        },
+        notices: [],
+        changed: [],
+      };
+    });
+  }
+
+  /** Ratings and sold_30d recomputed (changed rows only); location history past 14 days purged. */
+  async nightlyWork(now = new Date()) {
+    return this.run('food:nightly', async (m) => {
+      const ratings = await this.aggregates.ratings(m);
+      const sold = await this.aggregates.sold30d(now);
+      const purged = await this.locations.purge(
+        new Date(now.getTime() - LOCATION_RETENTION_DAYS * 86_400_000),
+      );
+      for (const work of this.nightly) await work(now);
+      return { counts: { ratings, sold, purged }, notices: [], changed: [] };
+    });
   }
 
   /** Placed and unanswered past accept_by → auto_rejected; portions and promotion back; both sides told. */

@@ -19,5 +19,6 @@ import {
     AdminTotpController,
   ],
   providers: [AdminService, AdminTotpService],
+  exports: [AdminService],
 })
 export class AdminModule {}

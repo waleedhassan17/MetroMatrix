@@ -15,6 +15,15 @@ export const SUB_TYPES = [
 ] as const;
 export type SubType = (typeof SUB_TYPES)[number];
 
+/** How the approval queue and apps name each kind of business. */
+export const SUB_TYPE_LABELS: Record<SubType, string> = {
+  store: 'Store',
+  doctor: 'Doctor',
+  restaurant: 'Restaurant',
+  home_kitchen: 'Home kitchen',
+  cloud_kitchen: 'Cloud kitchen',
+};
+
 /** Which service each sub-type belongs to. Mirrored by a CHECK constraint. */
 export const SUBTYPE_SERVICE: Record<SubType, ServiceType> = {
   store: 'shopping',

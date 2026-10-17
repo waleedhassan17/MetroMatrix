@@ -232,6 +232,10 @@ export class AdminService {
     await this.notifyOwner(business, (to, name) =>
       this.mail.sendBusinessSuspended(to, name, business.name, reason),
     );
+    await this.businessesService.runStatusChangedHooks(business, {
+      to: 'suspended',
+      reason,
+    });
     return this.businessesService.detail(business);
   }
 
@@ -259,6 +263,10 @@ export class AdminService {
         reinstated: true,
       }),
     );
+    await this.businessesService.runStatusChangedHooks(business, {
+      to: 'approved',
+      reason,
+    });
     return this.businessesService.detail(business);
   }
 
