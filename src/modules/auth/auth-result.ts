@@ -29,6 +29,14 @@ export interface BusinessSummary {
   /** Doctors only (API_HEALTH.md A1): patients can find them; staff checked the PMDC number. */
   isListed?: boolean;
   pmdcVerified?: boolean;
+  /** Food vendors only (API_FOOD.md): their brand and whether they are live. */
+  food?: {
+    brandId: string;
+    brandSlug: string;
+    branchStatus: string;
+    isLive: boolean;
+    setupComplete: boolean;
+  };
 }
 
 /** GET /auth/me — and the body of AuthResult minus tokens. */

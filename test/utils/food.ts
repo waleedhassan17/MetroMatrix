@@ -69,3 +69,92 @@ export async function vendorRider(
   );
   return { ...created, api };
 }
+
+export const LAHORE = { lat: 31.5204, lng: 74.3587 };
+export const ALL_WEEK = [0, 1, 2, 3, 4, 5, 6];
+
+export async function cuisineIds(
+  t: TestApp,
+  ...slugs: string[]
+): Promise<string[]> {
+  const rows = await t.ds.query(
+    `SELECT id, slug FROM cuisines WHERE slug = ANY($1::text[])`,
+    [slugs],
+  );
+  return slugs.map((s) => rows.find((r: any) => r.slug === s).id);
+}
+
+/**
+ * A vendor through setup: logo, cuisines, location (default Lahore), all-day
+ * hours, two fee bands — then live (unless `goLive: false` or a home kitchen
+ * without its food-safety check).
+ */
+export async function setUpVendor(
+  t: TestApp,
+  v: Vendor,
+  opts: {
+    cuisines?: string[];
+    at?: { lat: number; lng: number };
+    hours?: Array<{ weekday: number; opensAt: string; closesAt: string }>;
+    bands?: Array<{
+      fromKm: number;
+      toKm: number;
+      fee: number;
+      minOrder: number;
+    }>;
+    settings?: Record<string, unknown>;
+    goLive?: boolean;
+  } = {},
+) {
+  const { asset } = await import('./shopping');
+  const logo = asset(v.userId, 'food_branding');
+  await expectStatus(
+    await v.api.patch('/food/vendor/profile', {
+      logoUrl: logo.url,
+      cuisineIds: await cuisineIds(
+        t,
+        ...(opts.cuisines ?? ['pakistani', 'karahi']),
+      ),
+      brandColor: '#B4532A',
+    }),
+    200,
+  );
+  const at = opts.at ?? LAHORE;
+  await expectStatus(
+    await v.api.patch('/food/vendor/settings', {
+      addressLine: '12-B Main Boulevard',
+      area: 'Gulberg III',
+      city: 'Lahore',
+      phone: '042 35761234',
+      lat: at.lat,
+      lng: at.lng,
+      maxRadiusKm: 6,
+      ...opts.settings,
+    }),
+    200,
+  );
+  await expectStatus(
+    await v.api.put(
+      '/food/vendor/hours',
+      (opts.hours ??
+        ALL_WEEK.map((weekday) => ({
+          weekday,
+          opensAt: '00:00',
+          closesAt: '24:00',
+        }))) as unknown as object,
+    ),
+    200,
+  );
+  await expectStatus(
+    await v.api.put(
+      '/food/vendor/fee-bands',
+      (opts.bands ?? [
+        { fromKm: 0, toKm: 3, fee: 99, minOrder: 300 },
+        { fromKm: 3, toKm: 6, fee: 149, minOrder: 500 },
+      ]) as unknown as object,
+    ),
+    200,
+  );
+  if (opts.goLive !== false) return v.api.post('/food/vendor/go-live');
+  return null;
+}

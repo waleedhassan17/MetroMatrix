@@ -71,6 +71,19 @@ export const UPLOAD_PURPOSES = {
     maxBytes: 15_000_000,
     delivery: 'authenticated',
   },
+  // ── Food ──
+  /** A food vendor's logo and cover. */
+  food_branding: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+  },
+  /** A dish photo on the menu. */
+  menu_item: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+  },
   /** Files on a doctor's private visit notes. PHI: private. */
   medical_note: {
     resourceType: 'auto',
