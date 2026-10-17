@@ -6,6 +6,9 @@ import {
 } from '../../notifications/notifications.service';
 import { FoodOrder } from './entities/food-order.entity';
 
+/** new → order.new to the kitchen; updated → order.updated; payment → order.payment too. */
+export type OrderChange = 'new' | 'updated' | 'payment';
+
 export interface FoodNotice {
   userId: string;
   payload: NotifyPayload;
@@ -23,7 +26,7 @@ const rs = (n: number) => `Rs ${n.toLocaleString('en-PK')}`;
 export class FoodNotifier {
   private readonly logger = new Logger(FoodNotifier.name);
   /** Filled in by the realtime gateway: emit order.new / order.updated. */
-  onOrderChanged: (orderId: string, kind: 'new' | 'updated') => Promise<void> =
+  onOrderChanged: (orderId: string, kind: OrderChange) => Promise<void> =
     async () => undefined;
 
   constructor(
@@ -64,7 +67,7 @@ export class FoodNotifier {
     await this.changed(order.id, 'new');
   }
 
-  async changed(orderId: string, kind: 'new' | 'updated' = 'updated') {
+  async changed(orderId: string, kind: OrderChange = 'updated') {
     try {
       await this.onOrderChanged(orderId, kind);
     } catch (err) {

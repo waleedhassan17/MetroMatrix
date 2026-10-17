@@ -5,6 +5,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { validationExceptionFactory } from './common/validation/validation-exception.factory';
 import { appVersion } from './common/utils/app-version';
+import { ConfiguredIoAdapter } from './common/realtime/configured-io.adapter';
 
 /**
  * Everything main.ts does to the app between create() and listen().
@@ -36,6 +37,7 @@ export function configureApp(app: INestApplication): void {
   // allowed; a browser origin not on the list simply gets no CORS headers
   // (FinMatrix threw here, which surfaced as a 500).
   const corsOrigins = config.get<string[]>('app.corsOrigins', []);
+  app.useWebSocketAdapter(new ConfiguredIoAdapter(app, corsOrigins));
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);

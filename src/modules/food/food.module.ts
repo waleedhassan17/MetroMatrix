@@ -71,6 +71,12 @@ import { FoodOrderViewsService } from './orders/food-order-views.service';
 import { FoodNotifier } from './orders/food-notifier.service';
 import { CustomerFoodOrdersController } from './orders/customer-orders.controller';
 import { FoodJobsService } from './jobs/food-jobs.service';
+import { FoodOrderActionsService } from './orders/food-order-actions.service';
+import { VendorFoodOrdersController } from './orders/vendor-orders.controller';
+import { FoodFavourite } from './favourites/entities/food-favourite.entity';
+import { FoodFavouritesService } from './favourites/favourites.service';
+import { FoodFavouritesController } from './favourites/favourites.controller';
+import { FoodGateway } from './realtime/food.gateway';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -107,6 +113,7 @@ import { FoodJobsService } from './jobs/food-jobs.service';
       FoodOrder,
       FoodOrderItem,
       FoodOrderEvent,
+      FoodFavourite,
     ]),
     MediaModule,
     BusinessesModule,
@@ -121,6 +128,8 @@ import { FoodJobsService } from './jobs/food-jobs.service';
     FoodCartController,
     FoodCheckoutController,
     CustomerFoodOrdersController,
+    VendorFoodOrdersController,
+    FoodFavouritesController,
     VendorPromotionsController,
     VendorController,
     VendorMenuController,
@@ -153,6 +162,9 @@ import { FoodJobsService } from './jobs/food-jobs.service';
     FoodOrderViewsService,
     FoodNotifier,
     FoodJobsService,
+    FoodOrderActionsService,
+    FoodFavouritesService,
+    FoodGateway,
   ],
   exports: [FoodVendorService],
 })

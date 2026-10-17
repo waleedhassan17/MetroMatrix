@@ -11,6 +11,8 @@ export interface TestApp {
   app: INestApplication;
   http: ReturnType<INestApplication['getHttpServer']>;
   ds: DataSource;
+  /** With `listen: true`: the base URL (sockets connect to `${url}/food`). */
+  url?: string;
   close(): Promise<void>;
 }
 
@@ -25,6 +27,8 @@ export async function createTestApp(
   opts: {
     controllers?: Type<unknown>[];
     override?: (b: TestingModuleBuilder) => TestingModuleBuilder;
+    /** Listen on a random local port (Socket.IO tests need a real server). */
+    listen?: boolean;
   } = {},
 ): Promise<TestApp> {
   let builder = Test.createTestingModule({
@@ -38,11 +42,17 @@ export async function createTestApp(
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication({ logger: false });
   configureApp(app);
-  await app.init();
+  let url: string | undefined;
+  if (opts.listen) {
+    await app.listen(0, '127.0.0.1');
+    const address = app.getHttpServer().address() as { port: number };
+    url = `http://127.0.0.1:${address.port}`;
+  } else await app.init();
   return {
     app,
     http: app.getHttpServer(),
     ds: app.get(DataSource),
+    url,
     close: () => app.close(),
   };
 }

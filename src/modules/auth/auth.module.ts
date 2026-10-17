@@ -5,6 +5,7 @@ import { PassportModule } from '@nestjs/passport';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AccessTokenValidator } from './access-token-validator';
 import { TokenService } from './token.service';
 import { AccountViewService } from './account-view.service';
 import { AuthMaintenanceService } from './auth-maintenance.service';
@@ -61,6 +62,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AdminTotpEnrolGuard,
     AuthMaintenanceService,
     JwtStrategy,
+    AccessTokenValidator,
   ],
   exports: [
     AuthService,
@@ -70,6 +72,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     PasswordHasher,
     TotpService,
     AdminTotpEnrolGuard,
+    AccessTokenValidator,
     UsersModule,
   ],
 })

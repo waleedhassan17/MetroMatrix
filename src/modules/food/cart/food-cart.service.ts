@@ -251,6 +251,120 @@ export class FoodCartService {
     return this.view(userId);
   }
 
+  /**
+   * Rebuild the cart from a past order at today's menu and prices. Lines
+   * that can't be ordered any more are left out and reported (QA #23).
+   */
+  async reorder(userId: string, code: string) {
+    const result = await this.dataSource.transaction(async (m) => {
+      const [o] = await m.query(
+        `SELECT id, brand_id, branch_id, fulfilment FROM food_orders WHERE code = $1 AND user_id = $2`,
+        [code, userId],
+      );
+      if (!o)
+        throw new NotFoundException({
+          code: ErrorCode.NOT_FOUND,
+          message: 'Order not found.',
+        });
+      const [b] = await m.query(
+        `SELECT br.id, br.timezone, br.accepts_delivery, br.accepts_pickup FROM food_brands fb
+           JOIN branches br ON br.brand_id = fb.id JOIN businesses b ON b.id = fb.business_id
+          WHERE fb.id = $1 AND ${VISIBLE_VENDOR_SQL}`,
+        [o.brand_id],
+      );
+      if (!b)
+        throw new NotFoundException({
+          code: ErrorCode.NOT_FOUND,
+          message: 'This vendor is no longer on Food Court.',
+        });
+      const items: Array<{
+        item_id: string | null;
+        variant_id: string | null;
+        item_name: string;
+        options: Array<{ id: string }>;
+        quantity: number;
+        unit_price: number;
+        notes: string | null;
+      }> = await m.query(
+        `SELECT item_id, variant_id, item_name, options, quantity, unit_price, notes
+           FROM food_order_items WHERE order_id = $1 ORDER BY line_no`,
+        [o.id],
+      );
+      const fulfilment =
+        (o.fulfilment === 'delivery' && b.accepts_delivery) ||
+        (o.fulfilment === 'pickup' && b.accepts_pickup)
+          ? o.fulfilment
+          : b.accepts_delivery
+            ? 'delivery'
+            : 'pickup';
+      await m.delete(FoodCart, { userId });
+      const [cart] = await m.query(
+        `INSERT INTO food_carts (user_id, brand_id, branch_id, fulfilment) VALUES ($1, $2, $3, $4) RETURNING id`,
+        [userId, o.brand_id, b.id, fulfilment],
+      );
+      const snaps = await this.menu.snapshots(
+        b.id,
+        items.map((i) => i.item_id).filter((x): x is string => !!x),
+        m,
+      );
+      const dropped: Array<{ name: string; reason: string; message: string }> =
+        [];
+      const priceChanges: Array<{ name: string; was: number; now: number }> =
+        [];
+      const kept: FoodCartItem[] = [];
+      for (const i of items) {
+        const snap = i.item_id ? snaps.get(i.item_id) : undefined;
+        if (!snap) {
+          dropped.push({
+            name: i.item_name,
+            reason: 'not_on_menu',
+            message: `${i.item_name} is no longer on the menu.`,
+          });
+          continue;
+        }
+        const dto = {
+          variantId: i.variant_id,
+          optionIds: i.options.map((x) => x.id),
+        };
+        let unitPrice: number;
+        try {
+          unitPrice = this.validate(snap, b.timezone, null, dto);
+          this.assertPortions(snap, b.timezone, null, kept, i.quantity);
+        } catch (e) {
+          const err = (e as HttpException).getResponse?.() as
+            { code: string; message: string } | undefined;
+          if (!err) throw e;
+          dropped.push({
+            name: i.item_name,
+            reason: err.code,
+            message: err.message,
+          });
+          continue;
+        }
+        if (unitPrice !== i.unit_price)
+          priceChanges.push({
+            name: i.item_name,
+            was: i.unit_price,
+            now: unitPrice,
+          });
+        const line = m.create(FoodCartItem, {
+          cartId: cart.id,
+          itemId: snap.id,
+          variantId: dto.variantId,
+          optionIds: dto.optionIds,
+          quantity: i.quantity,
+          notes: i.notes,
+          unitPriceSeen: unitPrice,
+        });
+        await m.save(line);
+        kept.push(line);
+      }
+      if (!kept.length) await m.delete(FoodCart, { id: cart.id });
+      return { dropped, priceChanges };
+    });
+    return { cart: await this.view(userId), ...result };
+  }
+
   async clear(userId: string) {
     await this.dataSource.manager.delete(FoodCart, { userId });
     return { cleared: true };

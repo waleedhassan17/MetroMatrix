@@ -3,7 +3,15 @@ import { DataSource } from 'typeorm';
 import { FoodOrder } from './entities/food-order.entity';
 import { FoodOrderItem } from './entities/food-order-item.entity';
 import { FoodOrderEvent } from './entities/food-order-event.entity';
-import { ACTIVE_STATUSES, STATUS_LABEL, TERMINAL } from './food-order-status';
+import {
+  ACTIVE_STATUSES,
+  STATUS_LABEL,
+  TERMINAL,
+  allowedFoodMoves,
+} from './food-order-status';
+import { FOOD_PAYMENT_STATUS } from './food-payment-status';
+import { VendorOrdersQueryDto } from './dto/order-action.dto';
+import type { VendorRef } from '../vendor/food-vendor.service';
 import { orderNotFound } from './food-order-transitions.service';
 import { CustomerFoodOrdersQueryDto } from './dto/order-query.dto';
 import { paged } from '../../../common/pagination/pagination';
@@ -200,6 +208,145 @@ export class FoodOrderViewsService {
       canCancel: viewer === 'customer' && o.status === 'placed',
       canReview: viewer === 'customer' && (await this.canReview(o)),
       canReorder: viewer === 'customer' && ended,
+    };
+  }
+
+  // ── vendor ────────────────────────────────────────────────────────────────
+
+  /** The kitchen board: new (placed), active, done — or one status. */
+  async vendorList(v: VendorRef, q: VendorOrdersQueryDto) {
+    const qb = this.dataSource
+      .getRepository(FoodOrder)
+      .createQueryBuilder('o')
+      .where('o.branch_id = :branchId', { branchId: v.branchId });
+    const buckets: Record<string, readonly string[]> = {
+      new: ['placed'],
+      active: ACTIVE_STATUSES.filter((x) => x !== 'placed'),
+      done: TERMINAL,
+    };
+    if (q.status)
+      qb.andWhere('o.status IN (:...s)', {
+        s: buckets[q.status] ?? [q.status],
+      });
+    if (q.scheduled === 'true') qb.andWhere('o.scheduled_for IS NOT NULL');
+    if (q.scheduled === 'false') qb.andWhere('o.scheduled_for IS NULL');
+    const oldestFirst = q.status === 'new' || q.status === 'active';
+    const [rows, total] = await qb
+      .orderBy('o.createdAt', oldestFirst ? 'ASC' : 'DESC')
+      .addOrderBy('o.id', 'ASC')
+      .skip((q.page - 1) * q.pageSize)
+      .take(q.pageSize)
+      .getManyAndCount();
+    return paged(await this.boardCards(rows), total, q);
+  }
+
+  /** Board cards (also what board.sync and order.new carry). */
+  async boardCards(rows: FoodOrder[]) {
+    if (!rows.length) return [];
+    const lines: Array<{
+      order_id: string;
+      item_name: string;
+      quantity: number;
+    }> = await this.dataSource.query(
+      `SELECT order_id, item_name, quantity FROM food_order_items WHERE order_id = ANY($1::uuid[]) ORDER BY line_no`,
+      [rows.map((r) => r.id)],
+    );
+    const users: Array<{ id: string; display_name: string | null }> =
+      await this.dataSource.query(
+        `SELECT id, display_name FROM users WHERE id = ANY($1::uuid[])`,
+        [[...new Set(rows.map((r) => r.userId))]],
+      );
+    return rows.map((o) => {
+      const mine = lines.filter((l) => l.order_id === o.id);
+      return {
+        id: o.id,
+        code: o.code,
+        status: o.status,
+        statusLabel: STATUS_LABEL[o.status],
+        fulfilment: o.fulfilment,
+        scheduledFor: o.scheduledFor,
+        placedAt: o.createdAt,
+        acceptBy: o.status === 'placed' ? o.acceptBy : null,
+        promisedAt: o.promisedAt,
+        total: o.total,
+        payment: { method: o.paymentMethod, status: o.paymentStatus },
+        itemCount: mine.reduce((s, l) => s + l.quantity, 0),
+        itemsSummary: mine
+          .map((l) => `${l.quantity}× ${l.item_name}`)
+          .join(', '),
+        customerName:
+          o.addressSnapshot?.fullName ??
+          users.find((u) => u.id === o.userId)?.display_name ??
+          'Customer',
+        riderId: o.riderId,
+        handedToExternal: o.handedToExternal,
+      };
+    });
+  }
+
+  async vendorDetail(v: VendorRef, id: string) {
+    const o = await this.dataSource.manager.findOne(FoodOrder, {
+      where: { id, branchId: v.branchId },
+    });
+    if (!o) throw orderNotFound();
+    const [u] = await this.dataSource.query(
+      `SELECT display_name, phone FROM users WHERE id = $1`,
+      [o.userId],
+    );
+    const ended = TERMINAL.includes(o.status);
+    const paymentMoves = FOOD_PAYMENT_STATUS.allowed(o.paymentStatus).filter(
+      (s) =>
+        (s === 'paid' && o.paymentMethod === 'transfer' && !ended) ||
+        (s === 'awaiting_transfer' && o.paymentStatus === 'proof_submitted'),
+    );
+    return {
+      ...(await this.detail(o, 'vendor')),
+      customer: {
+        name: o.addressSnapshot?.fullName ?? u?.display_name ?? 'Customer',
+        phone: o.addressSnapshot?.phone ?? u?.phone ?? null,
+      },
+      actions: {
+        status: allowedFoodMoves(o.status, 'vendor', o.fulfilment),
+        payment: paymentMoves,
+      },
+    };
+  }
+
+  // ── tracking ──────────────────────────────────────────────────────────────
+
+  /** Live tracking for the customer: status, ETA, the two ends, the rider. */
+  async tracking(userId: string, code: string, now = new Date()) {
+    const o = await this.dataSource.manager.findOne(FoodOrder, {
+      where: { code, userId },
+    });
+    if (!o) throw orderNotFound();
+    const [b] = await this.dataSource.query(
+      `SELECT fb.name, br.phone, ST_Y(br.geo::geometry) AS lat, ST_X(br.geo::geometry) AS lng
+         FROM branches br JOIN food_brands fb ON fb.id = br.brand_id WHERE br.id = $1`,
+      [o.branchId],
+    );
+    return {
+      code: o.code,
+      status: o.status,
+      statusLabel: STATUS_LABEL[o.status],
+      fulfilment: o.fulfilment,
+      eta: {
+        promisedAt: o.promisedAt,
+        minutesLeft:
+          o.promisedAt && !TERMINAL.includes(o.status)
+            ? Math.max(
+                0,
+                Math.ceil((o.promisedAt.getTime() - now.getTime()) / 60_000),
+              )
+            : null,
+      },
+      branch: { name: b.name, phone: b.phone, lat: b.lat, lng: b.lng },
+      drop: o.addressSnapshot
+        ? { lat: o.addressSnapshot.lat, lng: o.addressSnapshot.lng }
+        : null,
+      rider: await this.riderCard(o),
+      handedToExternal: o.handedToExternal,
+      updatedAt: o.updatedAt,
     };
   }
 
