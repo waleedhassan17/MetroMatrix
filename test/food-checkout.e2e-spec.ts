@@ -744,6 +744,45 @@ describe('Food P4: cart, promotions, preview, checkout, jobs (e2e)', () => {
     expect(res.body.error.code).toBe('SLOT_FULL');
   });
 
+  it('scheduling: inside opening hours only; a closed vendor can be ordered from for later', async () => {
+    const v = await foodVendor(t, admin, 'restaurant', 'Lunch Only Lounge');
+    const inTwoDays = new Date(Date.now() + 5 * 3600e3 + 2 * 86_400e3);
+    await setUpVendor(t, v, {
+      hours: [
+        { weekday: inTwoDays.getUTCDay(), opensAt: '12:00', closesAt: '15:00' },
+      ],
+    });
+    const c = await foodCustomer(t);
+    await expectStatus(await add(c, v, await itemId(t, v)), 201);
+    const now = await checkout(c);
+    expect(now.status).toBe(409);
+    expect(now.body.error.code).toBe('VENDOR_CLOSED');
+    const day = inTwoDays.toISOString().slice(0, 10);
+    const closedThen = await c.api.patch('/food/cart', {
+      scheduledFor: `${day}T18:00:00+05:00`,
+    });
+    expect(closedThen.status).toBe(409);
+    expect(closedThen.body.error).toMatchObject({
+      code: 'VENDOR_CLOSED',
+      details: { scheduledFor: `${day}T18:00:00.000+05:00` },
+    });
+    expect(
+      (await expectStatus(await c.api.get('/food/cart'), 200)).scheduledFor,
+    ).toBeNull();
+    const ok = await expectStatus(
+      await c.api.patch('/food/cart', {
+        scheduledFor: `${day}T13:00:00+05:00`,
+      }),
+      200,
+    );
+    expect(ok.scheduledFor.at).toBe(`${day}T13:00:00.000+05:00`);
+    const o = await expectStatus(await checkout(c), 201);
+    expect(o).toMatchObject({
+      scheduledFor: `${day}T13:00:00.000+05:00`,
+      eta: { minutes: null },
+    });
+  });
+
   it('silent vendor: auto-rejected, the customer told, portions back (QA #11); jobs twice → no double effects (QA #27)', async () => {
     const v = await liveHomeKitchen(t, admin, 'Sleepy Kitchen');
     const karahi = await itemId(t, v);

@@ -106,6 +106,12 @@ Recommended client handling of a 401/403 on any authenticated call:
 Serialise refreshes in the client (one in flight at a time). The grace window is a safety
 net, not a strategy.
 
+**Realtime (Socket.IO).** The Food Court channel (namespace `/food`, `docs/API_FOOD.md` §5)
+takes the same access token in the handshake (`auth: { token }`) and checks it the same way
+(sign-out denylist, `token_version`, account status). A refused token gets a `connect_error`
+whose message is the error code (`UNAUTHORIZED`, `TOKEN_REVOKED`, `ACCOUNT_DISABLED`). After a
+refresh, reconnect with the new token.
+
 ---
 
 ## 4. Endpoints

@@ -405,8 +405,13 @@ export class FoodCartService {
       if (Object.keys(patch).length) await m.update(FoodCart, cart.id, patch);
     });
     const view = await this.view(userId);
-    const schedulingIssue = view.issues.find((i) =>
-      [ErrorCode.SLOT_INVALID, ErrorCode.SLOT_FULL].includes(i.code as never),
+    const schedulingIssue = view.issues.find(
+      (i) =>
+        [ErrorCode.SLOT_INVALID, ErrorCode.SLOT_FULL].includes(
+          i.code as never,
+        ) ||
+        // Closed at the chosen time (not merely closed now).
+        (i.code === ErrorCode.VENDOR_CLOSED && !!i.details?.scheduledFor),
     );
     if (dto.scheduledFor && schedulingIssue) {
       // Don't keep a time that can't be used.
@@ -421,7 +426,7 @@ export class FoodCartService {
           message: schedulingIssue.message,
           details: schedulingIssue.details,
         },
-        schedulingIssue.code === ErrorCode.SLOT_FULL ? 409 : 400,
+        schedulingIssue.code === ErrorCode.SLOT_INVALID ? 400 : 409,
       );
     }
     return view;

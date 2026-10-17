@@ -1,0 +1,2667 @@
+{
+  "info": {
+    "name": "MetroMatrix — Chunk 4 (Food Court)",
+    "description": "Discover → cart (option rules, one vendor) → preview (delivery fee is the only fee) → checkout (idempotent, PIZZA20) → kitchen (accept, prepare, ready, assign) → rider (steps, location, delivered, cash, handover) → review, reorder, insights, plan → staff.\n\nNeeds: migrated DB, `npm run seed:superadmin`, `npm run seed:food` (SEED_DEMO_PASSWORD), Mailpit. Run with `npm run postman:food` (passes adminPassword and demoPassword from env; never stored here). When the demo vendor is closed, the order is scheduled for half an hour after it opens — every step still runs. Realtime events are checked by `npm run socket:food`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0 · Setup (needs seed:food)",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/health",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Health → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('database up', () => pm.expect(d.status).to.eql('ok'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: sign in (step 1)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"password\": \"{{adminPassword}}\",\n  \"portal\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: sign in (step 1) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('challengeToken', d.challengeToken);",
+                  "pm.execution.setNextRequest(d.enrolmentRequired ? 'Admin: enrol TOTP (first time)' : 'Admin: sign in (step 2, TOTP)');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: enrol TOTP (first time)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/me/totp/enrol",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{challengeToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: enrol TOTP (first time) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.environment.set('adminTotpSecret', d.secret);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: confirm TOTP (first time)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/me/totp/confirm",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{challengeToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cryptoJs = require('crypto-js');",
+                  "function base32ToHex(b32) {",
+                  "  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const c of b32.replace(/=+$/, '').toUpperCase()) {",
+                  "    const v = a.indexOf(c);",
+                  "    if (v >= 0) bits += v.toString(2).padStart(5, '0');",
+                  "  }",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  return hex;",
+                  "}",
+                  "function totp(secret) {",
+                  "  const counter = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                  "  const h = cryptoJs.HmacSHA1(cryptoJs.enc.Hex.parse(counter), cryptoJs.enc.Hex.parse(base32ToHex(secret))).toString(cryptoJs.enc.Hex);",
+                  "  const o = parseInt(h.substr(h.length - 1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}",
+                  "pm.collectionVariables.set('totpCode', totp(pm.environment.get('adminTotpSecret')));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: confirm TOTP (first time) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('adminAccessToken', d.auth.tokens.accessToken);",
+                  "pm.execution.setNextRequest('Doctor (Sana Iqbal): sign in');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: sign in (step 2, TOTP)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/admin/totp",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"challengeToken\": \"{{challengeToken}}\",\n  \"code\": \"{{totpCode}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const cryptoJs = require('crypto-js');",
+                  "function base32ToHex(b32) {",
+                  "  const a = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';",
+                  "  let bits = '';",
+                  "  for (const c of b32.replace(/=+$/, '').toUpperCase()) {",
+                  "    const v = a.indexOf(c);",
+                  "    if (v >= 0) bits += v.toString(2).padStart(5, '0');",
+                  "  }",
+                  "  let hex = '';",
+                  "  for (let i = 0; i + 8 <= bits.length; i += 8) hex += parseInt(bits.substr(i, 8), 2).toString(16).padStart(2, '0');",
+                  "  return hex;",
+                  "}",
+                  "function totp(secret) {",
+                  "  const counter = Math.floor(Date.now() / 1000 / 30).toString(16).padStart(16, '0');",
+                  "  const h = cryptoJs.HmacSHA1(cryptoJs.enc.Hex.parse(counter), cryptoJs.enc.Hex.parse(base32ToHex(secret))).toString(cryptoJs.enc.Hex);",
+                  "  const o = parseInt(h.substr(h.length - 1), 16);",
+                  "  return String((parseInt(h.substr(o * 2, 8), 16) & 0x7fffffff) % 1000000).padStart(6, '0');",
+                  "}",
+                  "pm.collectionVariables.set('totpCode', totp(pm.environment.get('adminTotpSecret')));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Admin: sign in (step 2, TOTP) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('adminAccessToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor (Sahil Tikka & Pizza Oven): sign in",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"demo.food.sahil@metromatrix.test\",\n  \"password\": \"{{demoPassword}}\",\n  \"portal\": \"partner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor (Sahil Tikka & Pizza Oven): sign in → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('vendorToken', d.tokens.accessToken);",
+                  "pm.test('a food vendor session', () => pm.expect(d.business.food.isLive).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rider: sign in with a username",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signin",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"identifier\": \"sahil-tikka-pizza-oven.asif\",\n  \"password\": \"{{demoPassword}}\",\n  \"portal\": \"partner\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rider: sign in with a username → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('riderToken', d.tokens.accessToken);",
+                  "pm.test('role rider', () => pm.expect(d.user.role).to.eql('rider'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: sign up",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/signup",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{customerEmail}}\",\n  \"password\": \"Secret123\",\n  \"displayName\": \"Postman Foodie\",\n  \"role\": \"customer\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const run = Date.now().toString(36);",
+                  "pm.collectionVariables.set('runId', run);",
+                  "pm.collectionVariables.set('customerEmail', 'pm.food.' + run + '@example.com');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: sign up → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('customerToken', d.tokens.accessToken);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Mailpit: verification code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{mailpitUrl}}/api/v1/search?query={{mailpitQuery}}&limit=1",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('mailpitQuery', encodeURIComponent('to:' + pm.collectionVariables.get('customerEmail') + ' subject:\"Verify your MetroMatrix email\"'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Mailpit: verification code → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "const msg = pm.response.json().messages[0];",
+                  "pm.test('an email arrived', () => pm.expect(msg, 'no email yet').to.be.ok);",
+                  "const code = (msg.Snippet.match(/\\b(\\d{6})\\b/) || [])[1];",
+                  "pm.collectionVariables.set('customerOtp', code);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: verify email",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/auth/verify-email",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"otp\": \"{{customerOtp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: verify email → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('verified', () => pm.expect(d.user.isEmailVerified).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: an address with a map pin (Clifton)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/addresses",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"home\",\n  \"fullName\": \"Postman Foodie\",\n  \"phone\": \"0333 2190199\",\n  \"city\": \"Karachi\",\n  \"area\": \"Clifton Block 5\",\n  \"line1\": \"Flat 2A, Sea Breeze\",\n  \"lat\": 24.82,\n  \"lng\": 67.035,\n  \"isDefault\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: an address with a map pin (Clifton) → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('addressId', d.id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "1 · Discover (guest)",
+      "item": [
+        {
+          "name": "Home (Karachi)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/home?lat=24.82&lng=67.035",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Home (Karachi) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('delivering here', () => pm.expect(d.coverage.delivering).to.be.true);",
+                  "pm.test('sections', () => ['cuisines', 'banners', 'offers', 'homeKitchens', 'topRated', 'fastest', 'newOnFoodCourt', 'freeDelivery'].forEach((k) => pm.expect(d).to.have.property(k)));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Far away: \"Not delivering here yet\"",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/home?lat=25.4&lng=68.36",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Far away: \"Not delivering here yet\" → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('not delivering', () => pm.expect(d.coverage).to.include({ delivering: false, message: 'Not delivering here yet' }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendors: pizza, nearest first",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendors?lat=24.82&lng=67.035&cuisine=pizza&sort=distance",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendors: pizza, nearest first → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "const v = d.items.find((c) => c.slug === 'sahil-tikka-pizza-oven');",
+                  "pm.test('the demo pizza vendor', () => pm.expect(v).to.be.ok);",
+                  "pm.test('card: fee, minimum, ETA range', () => { pm.expect(v.deliveryFee).to.be.a('number'); pm.expect(v.etaRange.max - v.etaRange.min).to.eql(10); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendors: pickup, home kitchens",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendors?lat=24.82&lng=67.035&pickup=true&homeKitchen=true",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendors: pickup, home kitchens → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('home kitchens only', () => d.items.forEach((c) => pm.expect(c.isHomeKitchen).to.be.true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendors/sahil-tikka-pizza-oven?lat=24.82&lng=67.035",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor page → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('vendorId', d.id);",
+                  "const pizza = d.menu.flatMap((c) => c.items).find((i) => i.name === 'Chicken Tikka Pizza');",
+                  "pm.collectionVariables.set('pizzaId', pizza.id);",
+                  "pm.test('delivers here', () => pm.expect(d.delivery.available).to.be.true);",
+                  "pm.test('rating summary', () => pm.expect(d.ratingSummary.ratingCount).to.be.above(0));",
+                  "// Closed now? Schedule the order for half an hour after it opens.",
+                  "const at = d.openState.open ? null : new Date(new Date(d.openState.opensAt).getTime() + 30 * 60000).toISOString();",
+                  "pm.collectionVariables.set('scheduleBody', JSON.stringify({ scheduledFor: at }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Item sheet: sizes and option groups",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/items/{{pizzaId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Item sheet: sizes and option groups → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('smallId', d.variants[0].id);",
+                  "const crust = d.groups.find((g) => g.name === 'Crust');",
+                  "const tops = d.groups.find((g) => g.name === 'Extra toppings');",
+                  "pm.test('crust is required (1/1)', () => pm.expect(crust).to.include({ required: true, minSelect: 1, maxSelect: 1 }));",
+                  "pm.collectionVariables.set('thinCrustId', crust.options.find((o) => o.name === 'Thin crust').id);",
+                  "pm.collectionVariables.set('cheeseId', tops.options.find((o) => o.name === 'Extra cheese').id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Search: tikka → dishes grouped by vendor",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/search?q=tikka&lat=24.82&lng=67.035",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Search: tikka → dishes grouped by vendor → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('dishes by vendor', () => pm.expect(d.dishes.some((g) => g.vendor.slug === 'sahil-tikka-pizza-oven')).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuisines",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/cuisines",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cuisines → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('18 cuisines', () => pm.expect(d.length).to.be.at.least(18));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Pre-order slots (home kitchen)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendors/khala-rukhsanas-kitchen/slots",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Pre-order slots (home kitchen) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('slots with places left', () => { pm.expect(d.usesSlots).to.be.true; pm.expect(d.slots[0]).to.have.property('remaining'); });",
+                  "pm.collectionVariables.set('otherVendorId', null);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Another vendor (for the cart rule)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendors/khala-rukhsanas-kitchen",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Another vendor (for the cart rule) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('otherVendorId', d.id);",
+                  "pm.collectionVariables.set('otherItemId', d.menu.flatMap((c) => c.items).find((i) => !i.name.startsWith('Degi')).id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2 · Cart and checkout",
+      "item": [
+        {
+          "name": "Add without the required crust → OPTION_REQUIRED",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart/items",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendorId\": \"{{vendorId}}\",\n  \"itemId\": \"{{pizzaId}}\",\n  \"variantId\": \"{{smallId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Add without the required crust → OPTION_REQUIRED → 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('names the item and group', () => pm.expect(body.error).to.deep.include({ code: 'OPTION_REQUIRED' }) && pm.expect(body.error.details.group).to.eql('Crust'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add: small, thin crust, extra cheese",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart/items",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendorId\": \"{{vendorId}}\",\n  \"itemId\": \"{{pizzaId}}\",\n  \"variantId\": \"{{smallId}}\",\n  \"optionIds\": [\"{{thinCrustId}}\", \"{{cheeseId}}\"],\n  \"quantity\": 1,\n  \"notes\": \"Well done, please\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Add: small, thin crust, extra cheese → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('priced by the server', () => pm.expect(d.lines[0].unitPrice).to.eql(950 + 180));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Another vendor’s dish → CART_OTHER_VENDOR",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart/items",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"vendorId\": \"{{otherVendorId}}\",\n  \"itemId\": \"{{otherItemId}}\",\n  \"quantity\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Another vendor’s dish → CART_OTHER_VENDOR → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('names the current vendor', () => pm.expect(body.error.details.currentVendor.name).to.eql('Sahil Tikka & Pizza Oven'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "When: now, or after it opens",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{{scheduleBody}}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('When: now, or after it opens → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('still the pizza cart', () => pm.expect(d.vendor.slug).to.eql('sahil-tikka-pizza-oven'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preview: the delivery fee is the only fee",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart/preview",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"cod\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preview: the delivery fee is the only fee → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('ok', () => pm.expect(d.ok, JSON.stringify(d.issues)).to.be.true);",
+                  "pm.test('subtotal, discount, delivery fee, total — nothing else', () => pm.expect(Object.keys(d.totals).sort()).to.eql(['deliveryFee', 'discount', 'subtotal', 'total']));",
+                  "pm.test('total adds up', () => pm.expect(d.totals.total).to.eql(d.totals.subtotal - d.totals.discount + d.totals.deliveryFee));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preview with PIZZA20",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart/preview",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"cod\",\n  \"promoCode\": \"pizza20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preview with PIZZA20 → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the code applies (20% of the pizza, rounded down)', () => pm.expect(d.deal).to.include({ code: 'PIZZA20', discount: Math.floor(1130 * 0.2) }));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout without Idempotency-Key → 400",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"cod\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Checkout without Idempotency-Key → 400 → 400', () => pm.response.to.have.status(400));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('IDEMPOTENCY_KEY_REQUIRED', () => pm.expect(body.error.code).to.eql('IDEMPOTENCY_KEY_REQUIRED'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout (Idempotency-Key)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/food/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"cod\",\n  \"promoCode\": \"PIZZA20\",\n  \"riderInstructions\": \"Gate 2, call on arrival\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('checkoutKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Checkout (Idempotency-Key) → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('orderId', d.id);",
+                  "pm.collectionVariables.set('orderCode', d.code);",
+                  "pm.collectionVariables.set('orderTotal', d.totals.total);",
+                  "pm.test('FC- code, placed, COD', () => { pm.expect(d.code).to.match(/^FC-[A-Z2-9]{6}$/); pm.expect(d.status).to.eql('placed'); pm.expect(d.payment.status).to.eql('cod_pending'); });",
+                  "pm.test('the deal is on the order', () => pm.expect(d.deal.code).to.eql('PIZZA20'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Checkout replay (same key → same order)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{checkoutKey}}"
+              }
+            ],
+            "url": "{{baseUrl}}/food/checkout",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"addressId\": \"{{addressId}}\",\n  \"paymentMethod\": \"cod\",\n  \"promoCode\": \"PIZZA20\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Checkout replay (same key → same order) → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('same code', () => pm.expect(d.code).to.eql(pm.collectionVariables.get('orderCode')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My active orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/orders?status=active",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('My active orders → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('listed', () => pm.expect(d.items.map((o) => o.code)).to.include(pm.collectionVariables.get('orderCode')));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "3 · Kitchen",
+      "item": [
+        {
+          "name": "Board: new orders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders?status=new",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Board: new orders → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('our order is waiting', () => pm.expect(d.items.map((o) => o.code)).to.include(pm.collectionVariables.get('orderCode')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ready before accepted → INVALID_TRANSITION",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders/{{orderId}}/ready",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ready before accepted → INVALID_TRANSITION → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('INVALID_TRANSITION', () => pm.expect(body.error.code).to.eql('INVALID_TRANSITION'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accept (ETA 35 min)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders/{{orderId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"etaMinutes\": 35\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Accept (ETA 35 min) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('accepted', () => pm.expect(d.status).to.eql('accepted'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Preparing",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders/{{orderId}}/preparing",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Preparing → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('preparing', () => pm.expect(d.status).to.eql('preparing'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders/{{orderId}}/ready",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ready → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('ready', () => pm.expect(d.status).to.eql('ready'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rider: on duty",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/duty",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"onDuty\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rider: on duty → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('on duty', () => pm.expect(d.onDuty).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Suggested riders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/riders/suggest?orderId={{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Suggested riders → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "const me = d.items.find((r) => r.fullName === 'Asif Baloch');",
+                  "pm.test('the on-duty rider is suggested', () => pm.expect(me).to.be.ok);",
+                  "pm.collectionVariables.set('riderId', me.riderId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Assign the rider",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders/{{orderId}}/assign",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"riderId\": \"{{riderId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Assign the rider → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('rider on the order', () => pm.expect(d.rider).to.include({ name: 'Asif Baloch', step: 'assigned' }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4 · Rider",
+      "item": [
+        {
+          "name": "My active deliveries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/orders?scope=active",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('My active deliveries → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "const o = d.items.find((x) => x.id === pm.collectionVariables.get('orderId'));",
+                  "pm.test('pickup, drop and cash to collect', () => { pm.expect(o.pickup.name).to.eql('Sahil Tikka & Pizza Oven'); pm.expect(o.drop.riderInstructions).to.eql('Gate 2, call on arrival'); pm.expect(o.cashToCollect).to.eql(o.total); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Accept",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/orders/{{orderId}}/accept",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Accept → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('accepted_by_rider', () => pm.expect(d.riderStep).to.eql('accepted_by_rider'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Arrived at the branch",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/orders/{{orderId}}/arrived-branch",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Arrived at the branch → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('arrived_at_branch', () => pm.expect(d.riderStep).to.eql('arrived_at_branch'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Picked up → on the way",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/orders/{{orderId}}/picked-up",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Picked up → on the way → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('on_the_way', () => pm.expect(d.status).to.eql('on_the_way'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Location (REST batch)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/location",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"points\": [\n    {\n      \"orderId\": \"{{orderId}}\",\n      \"lat\": 24.8165,\n      \"lng\": 67.0331,\n      \"heading\": 70,\n      \"speed\": 6.5\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Location (REST batch) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('accepted', () => pm.expect(d.accepted).to.eql(1));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: tracking shows the rider",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/orders/{{orderCode}}/tracking",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: tracking shows the rider → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('rider with a live location', () => pm.expect(d.rider).to.include({ name: 'Asif Baloch', locationLive: true }));",
+                  "pm.test('both ends', () => { pm.expect(d.branch.lat).to.be.a('number'); pm.expect(d.drop.lat).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Arrived at the customer",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/orders/{{orderId}}/arrived-customer",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Arrived at the customer → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('arrived_at_customer', () => pm.expect(d.riderStep).to.eql('arrived_at_customer'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Delivered (cash collected)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/orders/{{orderId}}/delivered",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"codCollected\": {{orderTotal}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delivered (cash collected) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('delivered', () => pm.expect(d.status).to.eql('delivered'));",
+                  "pm.test('cash recorded', () => pm.expect(d.codCollected).to.eql(d.total));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My cash",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/cash",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('My cash → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('the COD is on my ledger', () => pm.expect(d.entries.some((e) => e.kind === 'cod_collected' && e.orderCode === pm.collectionVariables.get('orderCode'))).to.be.true);",
+                  "pm.collectionVariables.set('cashHeld', d.balance);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor: rider hands the cash over",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/riders/{{riderId}}/handover",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": {{cashHeld}},\n  \"note\": \"End of shift\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor: rider hands the cash over → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('holds Rs 0', () => pm.expect(d.balance).to.eql(0));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Rider: off duty",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "url": "{{baseUrl}}/food/rider/duty",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{riderToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"onDuty\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rider: off duty → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('off duty', () => pm.expect(d.onDuty).to.be.false);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5 · After the meal",
+      "item": [
+        {
+          "name": "Order: delivered, paid, reviewable",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/orders/{{orderCode}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Order: delivered, paid, reviewable → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('delivered and paid', () => { pm.expect(d.status).to.eql('delivered'); pm.expect(d.payment.status).to.eql('paid'); });",
+                  "pm.test('can review and reorder', () => { pm.expect(d.canReview).to.be.true; pm.expect(d.canReorder).to.be.true; });",
+                  "pm.test('every rider step is an event', () => pm.expect(d.events.filter((e) => e.kind === 'rider').map((e) => e.to)).to.include.members(['assigned', 'picked_up', 'delivered']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Review",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/orders/{{orderCode}}/review",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"foodRating\": 5,\n  \"deliveryRating\": 5,\n  \"tags\": [\n    \"tasty\",\n    \"hot_and_fresh\",\n    \"on_time\"\n  ],\n  \"text\": \"Crisp crust, hot on arrival.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Review → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.collectionVariables.set('reviewId', d.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Review twice → REVIEW_EXISTS",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/orders/{{orderCode}}/review",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"foodRating\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Review twice → REVIEW_EXISTS → 409', () => pm.response.to.have.status(409));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('REVIEW_EXISTS', () => pm.expect(body.error.code).to.eql('REVIEW_EXISTS'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor: reply",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/reviews/{{reviewId}}/reply",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"Thank you! See you again.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor: reply → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('replied', () => pm.expect(d.vendorReply).to.eql('Thank you! See you again.'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reorder",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/orders/{{orderCode}}/reorder",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Reorder → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('cart rebuilt', () => pm.expect(d.cart.lines.length).to.eql(1));",
+                  "pm.test('nothing dropped', () => pm.expect(d.dropped).to.eql([]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Clear the cart",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/food/cart",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Clear the cart → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('cleared', () => pm.expect(d.cleared).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Favourite the vendor",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/favourites/{{vendorId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Favourite the vendor → 201', () => pm.response.to.have.status(201));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('saved', () => pm.expect(d.favourite).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor: insights (7 days)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/insights?range=7d",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor: insights (7 days) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('recorded, not earnings', () => pm.expect(d.note).to.match(/holds none of it/));",
+                  "pm.test('a week of days', () => pm.expect(d.days.length).to.eql(7));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor: plan (community)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/plan",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor: plan (community) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('community, free', () => pm.expect(d).to.include({ planKey: 'community', priceMinorUnits: 0 }));",
+                  "pm.test('one brand, one branch', () => pm.expect(d.limits).to.include({ brands: 1, branches: 1 }));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6 · Staff",
+      "item": [
+        {
+          "name": "Overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/overview",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Overview → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('live vendors by type', () => pm.expect(d.activeVendors.total).to.be.at.least(6));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendors: Sahil",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/vendors?q=Sahil",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendors: Sahil → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('found', () => pm.expect(d.items[0].slug).to.eql('sahil-tikka-pizza-oven'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor detail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/vendors/{{vendorId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor detail → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('menu read-only, plan, ratings', () => { pm.expect(d.menu.length).to.be.above(0); pm.expect(d.plan.planKey).to.eql('community'); pm.expect(d.ratings).to.have.property('ratingAvg'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Orders lookup by code",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/orders?code={{orderCode}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Orders lookup by code → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('found', () => pm.expect(d.items[0].code).to.eql(pm.collectionVariables.get('orderCode')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Order with every event",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/orders/{{orderId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Order with every event → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('events', () => pm.expect(d.events.length).to.be.above(8));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Feature the vendor",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/vendors/{{vendorId}}/feature",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Feature the vendor → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('featured', () => pm.expect(d.isFeatured).to.be.true);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Unfeature",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/vendors/{{vendorId}}/unfeature",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Unfeature → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('not featured', () => pm.expect(d.isFeatured).to.be.false);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cuisines (with vendor counts)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/food/cuisines",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Cuisines (with vendor counts) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('counts', () => pm.expect(d[0]).to.have.property('vendors'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "A customer on food vendor routes → FORBIDDEN",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/orders",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('A customer on food vendor routes → FORBIDDEN → 403', () => pm.response.to.have.status(403));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test('FORBIDDEN', () => pm.expect(body.error.code).to.eql('FORBIDDEN'));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Every API response is enveloped.",
+          "if (pm.request.url.toString().includes(pm.environment.get('baseUrl'))) {",
+          "  const body = pm.response.json();",
+          "  pm.test('envelope', () => pm.expect(body.success).to.be.a('boolean'));",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "vendorToken",
+      "value": ""
+    },
+    {
+      "key": "riderToken",
+      "value": ""
+    },
+    {
+      "key": "customerToken",
+      "value": ""
+    },
+    {
+      "key": "runId",
+      "value": ""
+    },
+    {
+      "key": "customerEmail",
+      "value": ""
+    },
+    {
+      "key": "customerOtp",
+      "value": ""
+    },
+    {
+      "key": "mailpitQuery",
+      "value": ""
+    },
+    {
+      "key": "addressId",
+      "value": ""
+    },
+    {
+      "key": "vendorId",
+      "value": ""
+    },
+    {
+      "key": "pizzaId",
+      "value": ""
+    },
+    {
+      "key": "scheduleBody",
+      "value": ""
+    },
+    {
+      "key": "smallId",
+      "value": ""
+    },
+    {
+      "key": "thinCrustId",
+      "value": ""
+    },
+    {
+      "key": "cheeseId",
+      "value": ""
+    },
+    {
+      "key": "otherVendorId",
+      "value": ""
+    },
+    {
+      "key": "otherItemId",
+      "value": ""
+    },
+    {
+      "key": "orderId",
+      "value": ""
+    },
+    {
+      "key": "orderCode",
+      "value": ""
+    },
+    {
+      "key": "orderTotal",
+      "value": ""
+    },
+    {
+      "key": "checkoutKey",
+      "value": ""
+    },
+    {
+      "key": "riderId",
+      "value": ""
+    },
+    {
+      "key": "cashHeld",
+      "value": ""
+    },
+    {
+      "key": "reviewId",
+      "value": ""
+    },
+    {
+      "key": "challengeToken",
+      "value": ""
+    },
+    {
+      "key": "totpCode",
+      "value": ""
+    },
+    {
+      "key": "adminAccessToken",
+      "value": ""
+    }
+  ]
+}

@@ -195,7 +195,7 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   Scope every doctor query by `doctorId`: another doctor's row is **404**.
 - **No money is held.** Patients pay at the clinic or transfer to the doctor's own account
   (`doctor_payment_accounts`). Fees are integer rupees, always taken from the location.
-- Time: `common/time.util.ts` (luxon) is the only code that converts between wall time and
+- Time: `src/common/time/time.util.ts` (luxon; `healthcare/common/time.util.ts` re-exports it) is the only code that converts between wall time and
   instants. Responses carry the location's offset (`toZonedIso`). Jest runs with `TZ=UTC`.
 - Availability is **computed**, never stored: `availability/slot-engine.ts` plus
   `AvailabilityService`. The 30 s cache is only an optimisation.
@@ -245,15 +245,75 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   `DEMO_PORTRAITS`, credits in `seeds/health/CREDITS.md`); every demo profile says it is
   fictional. Demo and dev data only.
 
+## Food Court (Chunk 4)
+
+- `src/modules/food/` is split by sub-domain (reference, vendor, menu, availability, discovery,
+  cart, promotions, checkout, orders, riders, realtime, reviews, insights, plans, admin, jobs,
+  favourites, common); one `food.module.ts` wires them. Plans are top-level in
+  `src/modules/plans` (`plan-config.ts` is the single source of truth, FinMatrix shape).
+- Routes:
+
+  | Who | Prefix | Decorators |
+  |---|---|---|
+  | Customer | `/food/...` | `@FoodCustomer()` (customer + verified email); discovery is `@OptionalAuth()` |
+  | Vendor | `/food/vendor/...` | `@FoodVendor()` (partner + approved + `ServiceTypeGuard('food')` + `VendorGuard`) and `@CurrentVendor()` |
+  | Rider | `/food/rider/...` | `@FoodRider()` (role `rider` + `RiderGuard`: rider active, vendor approved) and `@CurrentRider()` |
+  | Admin | `/admin/food/...` | `@Roles('admin', 'super_admin')`, every write audited |
+
+  Scope every vendor query by its `brandId`/`branchId`/`businessId`, every rider query by
+  `riderId`: anything else is **404**.
+- **One brand and one branch per vendor**, created on approval (`FoodVendorService.ensureForBusiness`).
+  The vendor id in APIs is the **brand id**. Separate tables so chains can come later.
+- **No money is held, zero commission.** COD, pay at pickup, or transfer to the vendor's own
+  account (`vendor_payment_accounts`). The delivery fee is the only fee: a CHECK enforces
+  `total = subtotal − discount + delivery_fee`. Vendor screens say "recorded".
+- Riders: role `rider`, vendor-issued username (`riders/rider-username.ts`), email
+  `<username>@riders.metromatrix.invalid` (the mailer skips `.invalid`), sign-in by
+  `identifier` on the partner portal. Seats follow the plan (`riders/rider-seats.ts`).
+- Visibility is one rule: `VISIBLE_VENDOR_SQL` (`discovery/discovery.service.ts`). Paused
+  vendors drop out of lists but keep their page.
+- Geo is PostGIS (`geography(Point,4326)`, `ST_DWithin`/`ST_Distance`); the first Food
+  migration creates the extension. Open state is `availability/open-state.ts` (overnight
+  ranges, closures); fee/ETA/zone only through `ServiceabilityService.quote`.
+- Pricing and validation only in `menu/item-pricing.ts`; cart, preview and checkout all go
+  through `checkout/food-checkout-planner.service.ts`. Promotions: `promotions/best-promotion.ts`
+  (pure). Scheduling and slots: `checkout/food-schedule.service.ts`.
+- Checkout is one transaction behind `Idempotency-Key`: slot (row lock), portions and promotion
+  use (conditional UPDATEs), order + snapshot lines + event, cart cleared; notify after commit.
+  `FOOD_CHECKOUT_FAULT_INJECTOR` is the test seam.
+- Order, payment and rider-step changes only through `FoodOrderTransitionsService`
+  (`orders/food-order-status.ts`, `food-payment-status.ts`, `riders/rider-steps.ts`). Every
+  cancel gives back today's portions and the promotion use. Events are ordered by `seq`.
+- Realtime: `realtime/food.gateway.ts`, namespace `/food`. The handshake uses
+  `AccessTokenValidator` (shared with `JwtStrategy`); socket users are identified in the
+  middleware. Rooms `branch:`, `rider:`, `order:` (only via an authorised `subscribe`).
+  Services never emit directly: they call `FoodNotifier.changed()` after commit. Socket CORS
+  follows `CORS_ORIGINS` (`ConfiguredIoAdapter` in `configureApp`).
+- Sub-domains connect through hook fields set in `onModuleInit`: `discovery.dealsFor` /
+  `orderAgain` / `banners` / `reviewSummary`, `views.riderCard` / `canReview`,
+  `actions.onDelivered`, `notifier.onOrderChanged`, `locations.fanOut`,
+  `BusinessesService.onStatusChanged` (suspend/reinstate), `PlanService.registerCounter` /
+  `onPlanChanged`, `VendorSetupService.register`.
+- Queries in a transaction must not overlap: use `common/db/parallel.ts`, not `Promise.all`,
+  when `m` may be a transaction manager.
+- Jobs (`jobs/food-jobs.service.ts`) are advisory-locked and idempotent; tests call them with
+  a fixed `now`. The daily portions reset runs once per branch-local day (`portions_reset_on`).
+- `test/qa-matrix-food.e2e-spec.ts` is Chunk 4's release gate (28 rows). Helpers live in
+  `test/utils/food.ts` and `test/utils/socket.ts`; `createTestApp({ listen: true })` for sockets.
+- Demo vendors are fictional (taglines say so), logos are generated monograms, photos are
+  credited Unsplash food photos (`seeds/food/CREDITS.md`, checked by `food-data.spec.ts`).
+
 ## Keep in sync when the API changes
 
-- `docs/API_AUTH.md`, `docs/API_SHOPPING.md`, `docs/API_HEALTH.md` (+ `docs/VIDEO.md`): the
-  contracts the apps are built from.
+- `docs/API_AUTH.md`, `docs/API_SHOPPING.md`, `docs/API_HEALTH.md` (+ `docs/VIDEO.md`),
+  `docs/API_FOOD.md` (+ `docs/SUBSCRIPTIONS_LATER.md`): the contracts the apps are built from.
 - `postman/MetroMatrix-Auth.postman_collection.json` (`npm run postman:local`) and
   `postman/MetroMatrix-Shopping.postman_collection.json` (`npm run postman:shopping`, needs
   `seed:shopping`) and `postman/MetroMatrix-Health.postman_collection.json`
-  (`npm run postman:health`, needs `seed:health`). These are runnable flows against a local
-  server plus Mailpit.
+  (`npm run postman:health`, needs `seed:health`) and
+  `postman/MetroMatrix-Food.postman_collection.json` (`npm run postman:food`, needs
+  `seed:food`), plus `scripts/food-socket-check.mjs` (`npm run socket:food`). These are
+  runnable flows against a local server plus Mailpit.
 - `.env.example` and `env.validation.ts` — together, always.
 
 ## Commands
@@ -266,10 +326,13 @@ npm run migration:check       entities ↔ migrations drift check
 npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* env
 npm run seed:shopping         demo stores/products (SEED_DEMO_PASSWORD; --placeholder-images = no uploads)
 npm run seed:health           30 demo doctors (portraits), patients, visits, reviews, home banners (same password and flags)
+npm run seed:food             6 fictional food vendors, 58 dishes, riders, customers, orders, reviews, banners (same password and flags)
 npm run lint && npm run build && npm test && npm run test:e2e
 npm run postman:local         newman run of the Auth collection (needs a running server)
 npm run postman:shopping      newman run of the Shopping collection (needs seed:shopping)
 npm run postman:health        newman run of the Healthcare collection (needs seed:health)
+npm run postman:food          newman run of the Food Court collection (needs seed:food)
+npm run socket:food           Socket.IO check of the Food realtime flow (needs seed:food)
 ```
 
 Deploying: see `DEPLOYMENT.md` (nothing is provisioned by default — the owner decides).

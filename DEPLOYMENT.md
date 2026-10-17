@@ -50,7 +50,10 @@ heroku config:set -a metromatrix-api DATABASE_URL='postgres://USER:PASSWORD@HOST
 heroku addons:create heroku-postgresql:essential-0 -a metromatrix-api   # sets DATABASE_URL
 ```
 
-Both providers allow the `citext` extension, which the first migration creates.
+Both providers allow the `citext` extension, which the first migration creates, and
+**PostGIS**, which the first Food Court migration creates (`CREATE EXTENSION IF NOT EXISTS
+postgis`; Neon and Heroku Postgres both support it on every plan). Locally,
+`docker-compose.yml` runs `postgis/postgis:16-3.4`.
 
 ## 3. Config vars
 
@@ -155,6 +158,19 @@ License; `src/database/seeds/health/CREDITS.md`), uploaded to Cloudinary with ke
 stored as Unsplash URLs. Every demo profile says the doctor is fictional. A production
 database should only get them for a demo, and never alongside real doctors.
 
+### Demo food vendors (optional)
+
+`seed:food` creates six fictional vendors in Lahore and Karachi (three restaurants, a cloud
+kitchen, two home kitchens), 58 dishes, riders with usernames for three of them, six demo
+customers, past orders, reviews and three home banners. Same flags and password rules:
+```bash
+heroku run -a metromatrix-api \
+  --env "SEED_DEMO_PASSWORD=<strong password>" \
+  npm run seed:food:prod -- --allow-production [--placeholder-images]
+```
+Every brand is made up and says so; logos are generated monograms; dish and cover photos
+are Unsplash food photos (`src/database/seeds/food/CREDITS.md`).
+
 ## 6. Smoke test
 
 ```bash
@@ -180,6 +196,15 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
   on the new schema.
 - Scaling past one dyno: the rate limiter keeps its counters in memory per dyno. With more
   than one dyno, move it to Redis before relying on the limits.
+- **Realtime (Food Court).** The Socket.IO gateway (namespace `/food`) runs in the web dyno;
+  Heroku routes WebSockets with no extra setup. Clients connect with
+  `transports: ['websocket']`; a dyno restart drops sockets and clients reconnect and resync
+  from REST. With more than one dyno, add the Socket.IO Redis adapter (not provisioned) or
+  events reach only the clients on the emitting dyno. Socket CORS follows `CORS_ORIGINS`.
+- Food jobs (advisory-locked, idempotent, counts logged): every 30 s auto-reject unanswered
+  orders and cancel unpaid transfers; every minute scheduled-order reminders and the
+  2-minute accept nudge; 00:05 PKT today's portions reset; 03:30 PKT ratings, `sold30d` and
+  the 14-day rider-location purge.
 - A daily cron (03:00 server time) prunes expired denylist entries, dead refresh tokens, old
   OTP rows and idempotency records.
 - Shopping jobs (advisory-locked, idempotent, counts logged): every 10 min cancel unpaid
@@ -230,3 +255,22 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
 - `MetroMatrix-Auth` 40 requests / 109 assertions, `MetroMatrix-Shopping` 89 / 256 and
   `MetroMatrix-Health` 71 / 218: all green, with the container restarted between collections
   (the per-address sign-in limit).
+
+### Chunk 4 (Food Court), same procedure (18 October 2026)
+
+- Image rebuilt (`docker build -t metromatrix-api:local .`) and run with `NODE_ENV=production`
+  against an **empty** database on the PostGIS image (`DATABASE_URL=…?sslmode=disable`),
+  host networking, SMTP to Mailpit with a login, jobs enabled, push off, a dummy
+  `GOOGLE_CLIENT_IDS` (production requires one).
+- `run-migrations.js` applied all 29 migrations (PostGIS created by the first Food one).
+  `seed:superadmin:prod`, then `seed:shopping:prod`, `seed:health:prod` and
+  `seed:food:prod` with `--allow-production --placeholder-images` (the Food seed refused
+  without `--allow-production`): 6 vendors, 58 dishes, 6 riders, 6 customers, 75 orders,
+  48 reviews, 6 promotions, 3 banners.
+- Docker HEALTHCHECK `healthy`; `/health` ok; no error-level log lines; the food jobs logged
+  their counts every 30 s.
+- `MetroMatrix-Auth` 40 requests / 109 assertions, `MetroMatrix-Shopping` 89 / 256,
+  `MetroMatrix-Health` 80 / 247 and `MetroMatrix-Food` 66 / 204: all green, the container
+  restarted between collections. `npm run socket:food`: every realtime check passed.
+- Both again with the demo vendor closed (a temporary closure): the order was scheduled for
+  half an hour after opening and walked to delivered; all green.

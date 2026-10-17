@@ -4,6 +4,7 @@
 #   npm run postman:local                       # Auth collection, http://localhost:3000/api/v1
 #   npm run postman:shopping                    # Shopping collection (needs seed:shopping)
 #   npm run postman:health                      # Healthcare collection (needs seed:health)
+#   npm run postman:food                        # Food Court collection (needs seed:food)
 #   BASE_URL=http://localhost:3100/api/v1 npm run postman:local
 #
 # The demo partners' password comes from SEED_DEMO_PASSWORD the same way.
@@ -37,7 +38,13 @@ case "${COLLECTION:-auth}" in
       echo "Set SEED_DEMO_PASSWORD (env or .env) — the password seed:health gave the demo accounts." >&2
       exit 1
     fi ;;
-  *) echo "COLLECTION must be auth, shopping or health" >&2; exit 1 ;;
+  food)
+    FILE=postman/MetroMatrix-Food.postman_collection.json
+    if [ -z "$DEMO_PASSWORD" ]; then
+      echo "Set SEED_DEMO_PASSWORD (env or .env) — the password seed:food gave the demo accounts." >&2
+      exit 1
+    fi ;;
+  *) echo "COLLECTION must be auth, shopping, health or food" >&2; exit 1 ;;
 esac
 
 ENV_BASE=postman/MetroMatrix-Local.postman_environment.json
