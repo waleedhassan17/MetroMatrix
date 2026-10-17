@@ -142,7 +142,12 @@ export class SeedImages {
    */
   async image(opts: {
     ownerUserId: string;
-    purpose: 'product_image' | 'store_branding' | 'banner' | 'doctor_photo';
+    purpose:
+      | 'product_image'
+      | 'store_branding'
+      | 'banner'
+      | 'doctor_photo'
+      | 'food_branding';
     storeKey: string;
     name: string;
     title: string;
@@ -198,7 +203,7 @@ export class SeedImages {
    */
   async remote(opts: {
     ownerUserId: string;
-    purpose: 'banner' | 'doctor_photo';
+    purpose: 'banner' | 'doctor_photo' | 'food_branding' | 'menu_item';
     storeKey: string;
     name: string;
     url: string;
