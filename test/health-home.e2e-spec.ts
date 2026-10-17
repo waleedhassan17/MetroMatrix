@@ -20,6 +20,8 @@ import {
   specialtyId,
 } from './utils/health';
 
+/** Within three hours of midnight (Karachi) minimum notice leaves no slot today. */
+const NEAR_MIDNIGHT = (new Date().getUTCHours() + 5) % 24 >= 21;
 const ALL_DAY = [0, 1, 2, 3, 4, 5, 6].map(
   (w) => [w, '00:00', '24:00'] as [number, string, string],
 );
@@ -287,9 +289,10 @@ describe('Healthcare P8: home, banners and app additions (e2e)', () => {
       expect(multan.featuredDoctors.map((c: any) => c.id)).toContain(
         d.doctorId,
       );
-      expect(multan.availableTodayNearby.map((c: any) => c.id)).toContain(
-        d.doctorId,
-      );
+      if (!NEAR_MIDNIGHT)
+        expect(multan.availableTodayNearby.map((c: any) => c.id)).toContain(
+          d.doctorId,
+        );
       for (const s of multan.specialties)
         expect(typeof s.doctorCount).toBe('number');
       expect(multan.emergencyNumbers).toEqual([

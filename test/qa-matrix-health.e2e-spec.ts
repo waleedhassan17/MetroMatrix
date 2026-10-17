@@ -25,6 +25,11 @@ import {
 } from '../src/modules/healthcare/symptom-checker/symptom-model';
 
 const EVERY_DAY = [0, 1, 2, 3, 4, 5, 6];
+/**
+ * Within three hours of midnight in Karachi minimum notice leaves no slot
+ * today, so "available today" is checked as "next available" then.
+ */
+const NEAR_MIDNIGHT = (new Date().getUTCHours() + 5) % 24 >= 21;
 const ALL_DAY = EVERY_DAY.map(
   (w) => [w, '00:00', '24:00'] as [number, string, string],
 );
@@ -189,7 +194,7 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
     const { d: clinicOnly } = await doctor({ profile: { gender: 'female' } });
     const list = await expectOk(
       await anon().get(
-        '/health/doctors?availableToday=true&kind=video&gender=female&pageSize=100',
+        `/health/doctors?${NEAR_MIDNIGHT ? '' : 'availableToday=true&'}kind=video&gender=female&pageSize=100`,
       ),
     );
     const ids = list.items.map((c: any) => c.id);
@@ -198,7 +203,9 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
     expect(ids).not.toContain(clinicOnly.doctorId);
     const card = list.items.find((c: any) => c.id === yes.doctorId);
     expect(card.nextAvailable.label).toMatch(
-      /^Available today, \d{1,2}:\d{2} (AM|PM)$/,
+      NEAR_MIDNIGHT
+        ? /^Available (today, |tomorrow from )\d{1,2}:\d{2} (AM|PM)$/
+        : /^Available today, \d{1,2}:\d{2} (AM|PM)$/,
     );
     expect(card.nextAvailable.at).toMatch(/\+05:00$/);
   });

@@ -113,7 +113,10 @@ describe('Healthcare P6: video and symptom checker (e2e)', () => {
         .post('/health/appointments', {
           doctorId: d.doctorId,
           locationId,
-          startsAt: slots.body.data.days[1].slots[index].startsAt,
+          // From 09:00 tomorrow: outside every window whatever the time of day.
+          startsAt: slots.body.data.days[1].slots.filter(
+            (s: any) => Number(s.startsAt.slice(11, 13)) >= 9,
+          )[index].startsAt,
         })
         .set('Idempotency-Key', randomUUID()),
       201,
