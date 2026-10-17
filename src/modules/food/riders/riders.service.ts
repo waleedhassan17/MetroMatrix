@@ -144,6 +144,7 @@ export class RidersService {
       await m.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
         `riders:${v.businessId}`,
       ]);
+      await this.plans.assertEntitled(m, v.businessId, 'riders');
       await this.plans.assertWithin(
         m,
         v.businessId,

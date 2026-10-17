@@ -425,6 +425,54 @@ describe('Food P7: reviews, insights, admin, nightly jobs (e2e)', () => {
     expect(await audited('food.vendor.plan')).toBeGreaterThanOrEqual(2);
   });
 
+  it('entitlement overrides switch riders and scheduled orders off at once', async () => {
+    const v = await foodVendor(t, admin, 'restaurant', 'Entitled Eatery');
+    await setUpVendor(t, v);
+    const plan = (overrides: object | null) =>
+      admin.api.patch(`/admin/food/vendors/${v.brandId}/plan`, { overrides });
+    await expectStatus(
+      await plan({ entitlements: { riders: false, preorders: false } }),
+      200,
+    );
+    const rider = await v.api.post('/food/vendor/riders', {
+      fullName: 'Nadeem Shah',
+    });
+    expect(rider.status).toBe(409);
+    expect(rider.body.error).toMatchObject({
+      code: 'PLAN_LIMIT_REACHED',
+      details: { entitlement: 'riders' },
+    });
+    const c = await foodCustomer(t);
+    await expectStatus(
+      await c.api.post('/food/cart/items', {
+        vendorId: v.brandId,
+        itemId: await itemId(t, v),
+        quantity: 1,
+      }),
+      201,
+    );
+    const later = new Date(Date.now() + 26 * 3600e3).toISOString();
+    const scheduled = await c.api.patch('/food/cart', { scheduledFor: later });
+    expect(scheduled.status).toBe(400);
+    expect(scheduled.body.error).toMatchObject({
+      code: 'SLOT_INVALID',
+      details: { preorders: false },
+    });
+    await expectStatus(await plan(null), 200);
+    await expectStatus(
+      await v.api.post('/food/vendor/riders', { fullName: 'Nadeem Shah' }),
+      201,
+    );
+    expect(
+      (
+        await expectStatus(
+          await c.api.patch('/food/cart', { scheduledFor: later }),
+          200,
+        )
+      ).scheduledFor,
+    ).not.toBeNull();
+  });
+
   it('suspend hides the vendor and tells customers with active orders (QA #26); reinstate brings it back', async () => {
     const v = await foodVendor(t, admin, 'restaurant', 'Suspended Sajji');
     await setUpVendor(t, v, { at: SIALKOT });

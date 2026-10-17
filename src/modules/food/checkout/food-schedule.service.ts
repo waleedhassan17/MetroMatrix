@@ -13,6 +13,7 @@ import { isWithinHours } from '../availability/open-state';
 import { MenuAvailabilityService } from '../menu/menu-availability.service';
 import { VISIBLE_VENDOR_SQL } from '../discovery/discovery.service';
 import { NEGATIVE_END } from '../orders/food-order-status';
+import { PlanService } from '../../plans/plans.service';
 
 /** A scheduled order is at least this far ahead (or prep time, if longer). */
 export const MIN_LEAD_MINUTES = 30;
@@ -46,6 +47,7 @@ export class FoodScheduleService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly availability: MenuAvailabilityService,
+    private readonly plans: PlanService,
   ) {}
 
   /** Orders already holding a place in a slot occurrence. */
@@ -70,6 +72,17 @@ export class FoodScheduleService {
     now: Date,
   ): Promise<{ issue: ScheduleIssue | null; slot: SlotChoice | null }> {
     const tz = branch.timezone;
+    // Scheduled orders are the plan's `preorders` entitlement (on in community).
+    const { plan } = await this.plans.effective(branch.business_id, m);
+    if (!plan.entitlements.preorders)
+      return {
+        issue: {
+          code: ErrorCode.SLOT_INVALID,
+          message: 'This vendor isn’t taking scheduled orders.',
+          details: { preorders: false },
+        },
+        slot: null,
+      };
     if (at.getTime() > now.getTime() + MAX_AHEAD_DAYS * 86_400_000)
       return {
         issue: {
