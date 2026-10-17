@@ -29,6 +29,15 @@ export class UsersService {
     });
   }
 
+  /** An email (contains "@") or a rider username; both case-insensitive. */
+  findByIdentifier(identifier: string): Promise<User | null> {
+    const value = identifier.trim();
+    if (value.includes('@')) return this.findByEmail(value);
+    return this.repo.findOne({
+      where: { username: value.toLowerCase(), status: Not('deleted') },
+    });
+  }
+
   findByGoogleSub(sub: string): Promise<User | null> {
     return this.repo.findOne({
       where: { googleSub: sub, status: Not('deleted') },

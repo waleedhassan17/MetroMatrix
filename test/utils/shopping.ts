@@ -12,7 +12,8 @@ import {
 import { enrolledAdmin, verifyDoctorPmdc } from './admin';
 import { lastOtpFor } from './outbox';
 
-export type PartnerKind = 'store' | 'doctor' | 'restaurant';
+export type PartnerKind =
+  'store' | 'doctor' | 'restaurant' | 'cloud_kitchen' | 'home_kitchen';
 
 const KINDS: Record<
   PartnerKind,
@@ -32,6 +33,16 @@ const KINDS: Record<
     serviceType: 'food',
     subType: 'restaurant',
     docs: ['cnic_front', 'cnic_back', 'pfa_licence', 'storefront_photo'],
+  },
+  cloud_kitchen: {
+    serviceType: 'food',
+    subType: 'cloud_kitchen',
+    docs: ['cnic_front', 'cnic_back', 'pfa_licence'],
+  },
+  home_kitchen: {
+    serviceType: 'food',
+    subType: 'home_kitchen',
+    docs: ['cnic_front', 'cnic_back', 'kitchen_photo', 'kitchen_photo'],
   },
 };
 

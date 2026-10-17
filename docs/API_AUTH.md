@@ -44,8 +44,8 @@ Every response, success or failure, is enveloped.
   "isEmailVerified": false, "hasPassword": true
 }
 ```
-`role` is one of `customer | partner | rider | admin | super_admin`. `rider` is reserved for
-the Food chunk. `hasPassword` is false for Google-only accounts; offer "Set a password".
+`role` is one of `customer | partner | rider | admin | super_admin`. `rider` is a Food vendor's rider
+(`docs/API_FOOD.md`). `hasPassword` is false for Google-only accounts; offer "Set a password".
 
 ### `TokenPair`
 ```json
@@ -139,13 +139,23 @@ curl -X POST $API/auth/signup -H 'Content-Type: application/json' \
 ```json
 { "email": "ayesha@example.com", "password": "Secret123", "portal": "customer" }
 ```
-`portal` is `customer`, `partner` or `admin`. The password is checked first and the portal second.
+Instead of `email` a client may send `identifier`: a username or an email. **Riders** (Food,
+`docs/API_FOOD.md`) sign in this way, on the **partner** portal, with the username their vendor
+issued:
+```json
+{ "identifier": "karahi-house.imran", "password": "Rk7mXq2p4T", "portal": "partner" }
+```
+Riders have no usable email and no self-service password reset; the vendor resets it.
+
+`portal` is `customer`, `partner` (partners and riders) or `admin`. The password is checked first
+and the portal second.
 - **200** `AuthResult` (customer and partner portals).
 - **200 on the admin portal**: no tokens yet. The response is
   `{ "totpRequired": true, "enrolmentRequired": false, "challengeToken": "eyJ…" }`; continue with
   `/auth/admin/totp`, or with `/admin/me/totp/*` when `enrolmentRequired` is true.
 - **Errors:**
-  - `401 INVALID_CREDENTIALS`: the same answer for an unknown email and a wrong password.
+  - `401 INVALID_CREDENTIALS`: the same answer for an unknown email (or username) and a wrong
+    password.
   - `403 WRONG_PORTAL`: `details: { accountType, portal }`; the message names the right door.
   - `403 ACCOUNT_DISABLED`.
 

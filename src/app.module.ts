@@ -38,6 +38,8 @@ import { AddressesModule } from './modules/addresses/addresses.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { ShoppingModule } from './modules/shopping/shopping.module';
 import { HealthcareModule } from './modules/healthcare/healthcare.module';
+import { FoodModule } from './modules/food/food.module';
+import { PlansModule } from './modules/plans/plans.module';
 import { HealthModule } from './modules/health/health.module';
 
 @Module({
@@ -99,6 +101,8 @@ import { HealthModule } from './modules/health/health.module';
     NotificationsModule,
     ShoppingModule,
     HealthcareModule,
+    PlansModule,
+    FoodModule,
     HealthModule,
   ],
   providers: [

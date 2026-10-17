@@ -103,6 +103,42 @@ export const ErrorCode = {
   ATTACHMENTS_CLOSED: 'ATTACHMENTS_CLOSED',
   /** The symptom checker's per-user hourly limit (details.retryAfterSeconds). */
   SYMPTOM_CHECK_LIMIT: 'SYMPTOM_CHECK_LIMIT',
+
+  // ── Food (Chunk 4) ──
+  /** Closed now (details.opensAt); scheduling may still be possible. */
+  VENDOR_CLOSED: 'VENDOR_CLOSED',
+  /** The vendor paused ordering (details.message). */
+  VENDOR_PAUSED: 'VENDOR_PAUSED',
+  /** The drop point is outside the vendor's delivery radius. */
+  OUT_OF_ZONE: 'OUT_OF_ZONE',
+  /** details.minOrder, details.shortfall. */
+  BELOW_MIN_ORDER: 'BELOW_MIN_ORDER',
+  /** The cart holds another vendor's items (?replace=true clears it). */
+  CART_OTHER_VENDOR: 'CART_OTHER_VENDOR',
+  ITEM_UNAVAILABLE: 'ITEM_UNAVAILABLE',
+  /** An option that isn't one of this item's (details.item, details.group). */
+  OPTION_INVALID: 'OPTION_INVALID',
+  /** A required option group has no choice (details.item, details.group). */
+  OPTION_REQUIRED: 'OPTION_REQUIRED',
+  /** Too many choices in a group (details.item, details.group, details.max). */
+  OPTION_LIMIT: 'OPTION_LIMIT',
+  /** Today's portions ran out (details.item, details.remaining). */
+  PORTIONS_SOLD_OUT: 'PORTIONS_SOLD_OUT',
+  /** The pre-order slot is full. */
+  SLOT_FULL: 'SLOT_FULL',
+  PROMO_INVALID: 'PROMO_INVALID',
+  PROMO_EXPIRED: 'PROMO_EXPIRED',
+  PROMO_LIMIT_REACHED: 'PROMO_LIMIT_REACHED',
+  /** The rider is off duty, inactive or not this vendor's. */
+  RIDER_NOT_AVAILABLE: 'RIDER_NOT_AVAILABLE',
+  /** The action needs a rider on the order (or the own-rider hand-over). */
+  RIDER_NOT_ASSIGNED: 'RIDER_NOT_ASSIGNED',
+  /** A rider account that is inactive, on leave or plan-locked (details.status). */
+  RIDER_INACTIVE: 'RIDER_INACTIVE',
+  /** The vendor's plan limit (details.key, details.limit, details.used). */
+  PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
+  /** A home kitchen goes live only after MetroMatrix's food-safety check. */
+  FOOD_SAFETY_CHECK_REQUIRED: 'FOOD_SAFETY_CHECK_REQUIRED',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

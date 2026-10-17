@@ -10,7 +10,7 @@ describe('signin portals', () => {
   it('admits each role on exactly the doors the spec gives it', () => {
     expect(PORTAL_ROLES).toEqual({
       customer: ['customer'],
-      partner: ['partner'],
+      partner: ['partner', 'rider'],
       admin: ['admin', 'super_admin'],
     });
   });
@@ -22,10 +22,11 @@ describe('signin portals', () => {
     expect(isRoleAllowedOnPortal('admin', 'super_admin')).toBe(true);
   });
 
-  it('never admits a rider through any Chunk 1 door', () => {
+  it('admits a rider (Food) only on the partner door', () => {
     for (const portal of SIGNIN_PORTALS) {
-      expect(isRoleAllowedOnPortal(portal, 'rider')).toBe(false);
+      expect(isRoleAllowedOnPortal(portal, 'rider')).toBe(portal === 'partner');
     }
+    expect(wrongPortalMessage('rider')).toMatch(/username/);
   });
 
   it('names the right door for every role', () => {

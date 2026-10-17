@@ -86,7 +86,11 @@ export class AuthService {
     dto: SigninDto,
     client: ClientInfo,
   ): Promise<AuthResult | TotpChallengeResult> {
-    const user = await this.users.findByEmail(dto.email);
+    // `identifier` (username or email) or the original `email` field.
+    const byUsername = !!dto.identifier && !dto.identifier.includes('@');
+    const user = dto.identifier
+      ? await this.users.findByIdentifier(dto.identifier)
+      : await this.users.findByEmail(dto.email!);
     const passwordOk = await this.hasher.verify(
       dto.password,
       user?.passwordHash,
@@ -94,7 +98,9 @@ export class AuthService {
     if (!user || !passwordOk) {
       throw new UnauthorizedException({
         code: ErrorCode.INVALID_CREDENTIALS,
-        message: INVALID_CREDENTIALS_MESSAGE,
+        message: byUsername
+          ? 'Incorrect username or password.'
+          : INVALID_CREDENTIALS_MESSAGE,
       });
     }
 

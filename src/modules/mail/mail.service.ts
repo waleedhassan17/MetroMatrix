@@ -17,6 +17,9 @@ export interface RenderedEmail {
  *   validation requires it there — every email is logged to the console,
  *   OTPs included, so the flows are fully testable locally.
  */
+/** Addresses under the reserved `.invalid` TLD are never sent to. */
+export const isUndeliverable = (to: string) => /\.invalid$/i.test(to.trim());
+
 @Injectable()
 export class MailService implements OnModuleInit {
   private readonly logger = new Logger(MailService.name);
@@ -106,6 +109,9 @@ export class MailService implements OnModuleInit {
 
   /** Never throws: a mail failure must not break the flow that sent it. */
   async send(to: string, email: RenderedEmail): Promise<void> {
+    // Rider accounts (Food) carry a placeholder address under the reserved
+    // `.invalid` TLD (RFC 2606): there is nobody to deliver to.
+    if (isUndeliverable(to)) return;
     const from = this.config.get<string>('mail.from');
     if (!this.transport) {
       if (this.config.get<string>('app.nodeEnv') === 'production') {
