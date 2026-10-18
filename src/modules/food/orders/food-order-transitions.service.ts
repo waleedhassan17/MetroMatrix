@@ -45,8 +45,25 @@ export const orderNotFound = () =>
  * today's portions and the promotion use, settles the payment and frees the
  * rider; handing the food over settles cash.
  */
+export type StatusHook = (
+  m: EntityManager,
+  order: FoodOrder,
+  from: FoodOrderStatus,
+  to: FoodOrderStatus,
+  actor: FoodActor,
+) => Promise<void>;
+
 @Injectable()
 export class FoodOrderTransitionsService {
+  /**
+   * Other sub-domains react to a move inside the same transaction, without
+   * Food importing them (Chunk 5): `beforeStatus` may refuse it (packing
+   * photo), `afterStatus` follows it (stock deducted on accept, put back on
+   * cancel).
+   */
+  readonly beforeStatus: StatusHook[] = [];
+  readonly afterStatus: StatusHook[] = [];
+
   /** Lock one order for this transaction, scoped to its branch, customer or rider. */
   async lock(
     m: EntityManager,
@@ -80,6 +97,7 @@ export class FoodOrderTransitionsService {
   ): Promise<void> {
     const from = order.status;
     assertFoodTransition(from, to, actor.role, order.fulfilment, opts.message);
+    for (const hook of this.beforeStatus) await hook(m, order, from, to, actor);
     const patch: Partial<FoodOrder> = { ...opts.patch, status: to };
     const stamp = STATUS_TIMESTAMP[to] as keyof FoodOrder | undefined;
     if (stamp) (patch as Record<string, unknown>)[stamp] = new Date();
@@ -101,6 +119,7 @@ export class FoodOrderTransitionsService {
       if (next) await this.movePayment(m, order, next, actor);
       if (order.riderId) await this.releaseRider(m, order.riderId);
     }
+    for (const hook of this.afterStatus) await hook(m, order, from, to, actor);
   }
 
   async movePayment(

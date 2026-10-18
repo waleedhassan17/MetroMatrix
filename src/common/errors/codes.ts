@@ -138,6 +138,22 @@ export const ErrorCode = {
   VOICE_UNCLEAR: 'VOICE_UNCLEAR',
   /** Over 30 seconds (or 1 MB). */
   VOICE_TOO_LONG: 'VOICE_TOO_LONG',
+  /** A spoken / scanned ingredient name matches nothing in the kitchen. */
+  UNKNOWN_INGREDIENT: 'UNKNOWN_INGREDIENT',
+  /** A unit of another kind (litres of rice). */
+  UNIT_MISMATCH: 'UNIT_MISMATCH',
+  /** The recipe card can't answer (no lines, or lines without a cost). */
+  RECIPE_INCOMPLETE: 'RECIPE_INCOMPLETE',
+  /** Packing photo required by the vendor's setting before handing over. */
+  PACKING_PHOTO_REQUIRED: 'PACKING_PHOTO_REQUIRED',
+  SURPLUS_SOLD_OUT: 'SURPLUS_SOLD_OUT',
+  SURPLUS_WINDOW_CLOSED: 'SURPLUS_WINDOW_CLOSED',
+  /** Three no-shows: no Bachat Box reservations for 14 days. */
+  SURPLUS_BLOCKED: 'SURPLUS_BLOCKED',
+  TIFFIN_FULL: 'TIFFIN_FULL',
+  TIFFIN_SKIP_CUTOFF_PASSED: 'TIFFIN_SKIP_CUTOFF_PASSED',
+  CATERING_QUOTE_EXPIRED: 'CATERING_QUOTE_EXPIRED',
+  NUTRITION_UNAVAILABLE: 'NUTRITION_UNAVAILABLE',
   /** Delivery needs a saved address with a map pin (lat/lng). */
   ADDRESS_LOCATION_REQUIRED: 'ADDRESS_LOCATION_REQUIRED',
   /** The vendor doesn't offer delivery (or pickup) right now. */

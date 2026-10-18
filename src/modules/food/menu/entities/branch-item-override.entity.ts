@@ -12,6 +12,10 @@ import { MenuItem } from './menu-item.entity';
 @Entity('branch_item_overrides')
 @Index(['branchId', 'itemId'], { unique: true })
 @Check(
+  'CHK_branch_item_overrides_auto_reason',
+  `"auto_reason" IS NULL OR "auto_reason" = 'stock'`,
+)
+@Check(
   'CHK_branch_item_overrides_portions',
   '("daily_limit" IS NULL OR "daily_limit" >= 0) AND ("remaining_today" IS NULL OR "remaining_today" >= 0)',
 )
@@ -35,6 +39,14 @@ export class BranchItemOverride extends BaseEntity {
 
   @Column({ type: 'timestamptz', name: 'unavailable_until', nullable: true })
   unavailableUntil!: Date | null;
+
+  /**
+   * 'stock' when the kitchen's stock made it unavailable (Chunk 5): it comes
+   * back by itself when stock returns. Null = the vendor's own choice, which
+   * nothing undoes automatically.
+   */
+  @Column({ type: 'varchar', length: 12, name: 'auto_reason', nullable: true })
+  autoReason!: 'stock' | null;
 
   @Column({ type: 'int', name: 'daily_limit', nullable: true })
   dailyLimit!: number | null;

@@ -301,6 +301,14 @@ export class FoodOrder extends BaseEntity {
   kitchenRemindedAt!: Date | null;
 
   /** Second nudge before accept_by (jobs). */
+  /** Kitchen stock taken for this order (on accept), once. */
+  @Column({ type: 'timestamptz', name: 'stock_deducted_at', nullable: true })
+  stockDeductedAt!: Date | null;
+
+  /** …and put back when it was cancelled after that, once. */
+  @Column({ type: 'timestamptz', name: 'stock_restored_at', nullable: true })
+  stockRestoredAt!: Date | null;
+
   @Column({ type: 'timestamptz', name: 'accept_nudged_at', nullable: true })
   acceptNudgedAt!: Date | null;
 }

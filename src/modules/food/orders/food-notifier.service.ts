@@ -28,6 +28,10 @@ export class FoodNotifier {
   /** Filled in by the realtime gateway: emit order.new / order.updated. */
   onOrderChanged: (orderId: string, kind: OrderChange) => Promise<void> =
     async () => undefined;
+  /** Other sub-domains' post-commit work for a changed order (kitchen alerts). */
+  readonly afterChange: Array<
+    (orderId: string, kind: OrderChange) => Promise<void>
+  > = [];
 
   constructor(
     private readonly dataSource: DataSource,
@@ -72,6 +76,13 @@ export class FoodNotifier {
       await this.onOrderChanged(orderId, kind);
     } catch (err) {
       this.logger.warn(`realtime emit failed: ${(err as Error).message}`);
+    }
+    for (const after of this.afterChange) {
+      try {
+        await after(orderId, kind);
+      } catch (err) {
+        this.logger.warn(`after-change hook failed: ${(err as Error).message}`);
+      }
     }
   }
 

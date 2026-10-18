@@ -56,6 +56,10 @@ const EVAL = join(ROOT, 'voice-eval');
 const CLIPS = join(EVAL, 'clips');
 const RECORDINGS = join(EVAL, 'recordings');
 const RESULTS = join(EVAL, 'results.json');
+/** Which TTS model made each clip ({ "b01": "gemini-3.8-flash-tts" }). */
+const CLIP_INDEX = join(CLIPS, 'index.json');
+const clipIndex = (): Record<string, string> =>
+  existsSync(CLIP_INDEX) ? JSON.parse(readFileSync(CLIP_INDEX, 'utf8')) : {};
 const DOC = join(ROOT, 'docs', 'VOICE.md');
 
 interface Phrase {
@@ -284,6 +288,10 @@ async function synthesize(p: Phrase, i: number): Promise<string> {
     if (!part) throw new Error('TTS returned no audio');
     const rate = Number(/rate=(\d+)/.exec(part.mimeType)?.[1] ?? 24000);
     writeFileSync(file, wav(Buffer.from(part.data, 'base64'), rate));
+    writeFileSync(
+      CLIP_INDEX,
+      JSON.stringify({ ...clipIndex(), [p.id]: ttsModel }, null, 2),
+    );
     return file;
   }
 }
@@ -338,10 +346,18 @@ function table(rows: Row[], promptLabel: string): string {
   const audio = rows.filter((r) => r.reader === 'audio');
   const real = audio.filter((r) => r.source === 'recording').length;
   const text = rows.filter((r) => r.reader === 'text').length;
+  const index = clipIndex();
+  const voices = [
+    ...new Set(
+      audio
+        .filter((r) => r.source === 'tts')
+        .map((r) => index[r.id] ?? ttsModel),
+    ),
+  ].join(', ');
   return [
     `Measured ${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })}: model ${model}, ${promptLabel}; ` +
       `${text} of ${MANIFEST.phrases.length} phrases read as text, ${audio.length} as audio ` +
-      `(${audio.length - real} clips synthesised with ${ttsModel}, ${real} real recordings).`,
+      `(${audio.length - real} clips synthesised${voices ? ` with ${voices}` : ''}, ${real} real recordings).`,
     '',
     ...lines,
   ].join('\n');
@@ -368,14 +384,21 @@ async function main() {
         if (recordingOf(p.id) || existsSync(join(CLIPS, `${p.id}.wav`)))
           continue;
         process.stdout.write(`clip ${p.id}…`);
-        await synthesize(p, i);
-        console.log(' ok');
+        try {
+          await synthesize(p, i);
+          console.log(' ok');
+        } catch (err) {
+          if (err instanceof QuotaStop) throw err;
+          console.log(` skipped: ${(err as Error).message}`);
+        }
       }
     } catch (err) {
       if (!(err instanceof QuotaStop)) throw err;
       console.log(`\nStopped at ${err.message}.`);
     }
-    console.log(`${readdirSync(CLIPS).length} clips in voice-eval/clips.`);
+    console.log(
+      `${readdirSync(CLIPS).filter((f) => f.endsWith('.wav')).length} clips in voice-eval/clips.`,
+    );
     return;
   }
   const prompts = new PromptRegistry();

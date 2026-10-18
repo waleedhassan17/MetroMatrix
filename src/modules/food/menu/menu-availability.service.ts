@@ -149,7 +149,7 @@ export class MenuAvailabilityService implements OnModuleInit {
           `INSERT INTO branch_item_overrides (branch_id, item_id, is_available, unavailable_until)
            VALUES ($1, $2, $3, $4)
            ON CONFLICT (branch_id, item_id) DO UPDATE SET is_available = EXCLUDED.is_available,
-             unavailable_until = EXCLUDED.unavailable_until, updated_at = now()`,
+             unavailable_until = EXCLUDED.unavailable_until, auto_reason = NULL, updated_at = now()`,
           // Off "until" a time: available after it, so store is_available = true with the until.
           [v.branchId, i.itemId, i.isAvailable || !!until, until],
         );
@@ -225,7 +225,7 @@ export class MenuAvailabilityService implements OnModuleInit {
           await m.query(
             `INSERT INTO branch_item_overrides (branch_id, item_id, is_available) VALUES ($1, $2, $3)
              ON CONFLICT (branch_id, item_id) DO UPDATE SET is_available = EXCLUDED.is_available,
-               unavailable_until = NULL, updated_at = now()`,
+               unavailable_until = NULL, auto_reason = NULL, updated_at = now()`,
             [v.branchId, i.itemId, i.cooking],
           );
         }
