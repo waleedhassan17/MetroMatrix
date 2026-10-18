@@ -17,6 +17,8 @@ class LimitOverridesDto {
   @IsOptional() @IsInt() @Min(0) @Max(500) riders?: number;
   @IsOptional() @IsInt() @Min(0) @Max(10000) menu_items?: number;
   @IsOptional() @IsInt() @Min(0) @Max(100) promotions_active?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(100000) ai_actions_month?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(10000) voice_minutes_month?: number;
 }
 
 class EntitlementOverridesDto {

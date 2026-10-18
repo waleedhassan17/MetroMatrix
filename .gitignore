@@ -9,3 +9,8 @@ postman/*.local.json
 newman/
 npm-debug.log*
 .DS_Store
+
+# Voice eval: synthesised clips, real recordings and results stay local
+voice-eval/clips/
+voice-eval/recordings/
+voice-eval/results.json

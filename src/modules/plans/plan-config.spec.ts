@@ -19,6 +19,8 @@ describe('plan config', () => {
       riders: 25,
       menu_items: 1000,
       promotions_active: 10,
+      ai_actions_month: 300,
+      voice_minutes_month: 120,
     });
     expect(Object.values(p.entitlements).every(Boolean)).toBe(true);
   });

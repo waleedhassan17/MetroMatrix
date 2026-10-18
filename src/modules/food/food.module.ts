@@ -204,6 +204,6 @@ import { AdminFoodController } from './admin/admin-food.controller';
     FoodBannersService,
     AdminFoodService,
   ],
-  exports: [FoodVendorService],
+  exports: [FoodVendorService, VendorGuard],
 })
 export class FoodModule {}

@@ -131,6 +131,25 @@ export const envValidationSchema = Joi.object({
   // Symptom checker model. Optional: without a key the keyword matcher answers.
   GEMINI_API_KEY: Joi.string().optional().allow(''),
   GEMINI_MODEL: Joi.string().empty('').default('gemini-2.5-flash'),
+  GEMINI_TTS_MODEL: Joi.string().empty('').default('gemini-3.8-flash-tts'),
+  AI_MODEL: Joi.string().empty('').default('gemini-3.8-flash'),
+
+  // Kitchen intelligence AI (docs/AI.md). Every feature has a manual path.
+  AI_ENABLED: Joi.boolean().empty('').default(true),
+  AI_FEATURES: Joi.string().empty('').default('all'),
+  AI_TIMEOUT_MS: Joi.number()
+    .integer()
+    .min(1000)
+    .max(60000)
+    .empty('')
+    .default(12000),
+  STT_PROVIDER: Joi.string()
+    .valid('gemini', 'google')
+    .empty('')
+    .default('gemini'),
+  TTS_PROVIDER: Joi.string().valid('none', 'google').empty('').default('none'),
+  /** Only with STT_PROVIDER=google or TTS_PROVIDER=google. */
+  GOOGLE_CLOUD_API_KEY: Joi.string().optional().allow(''),
 
   // seed:shopping only: the four demo partners' password (never in code).
   SEED_DEMO_PASSWORD: Joi.string().optional().allow(''),

@@ -32,6 +32,8 @@ const LIMIT_LABELS: Record<PlanLimitKey, string> = {
   riders: 'active rider',
   menu_items: 'menu item',
   promotions_active: 'active promotion',
+  ai_actions_month: 'AI action per month',
+  voice_minutes_month: 'voice minute per month',
 };
 
 /**

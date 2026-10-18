@@ -41,6 +41,8 @@ import { HealthcareModule } from './modules/healthcare/healthcare.module';
 import { FoodModule } from './modules/food/food.module';
 import { PlansModule } from './modules/plans/plans.module';
 import { HealthModule } from './modules/health/health.module';
+import { AiModule } from './modules/ai/ai.module';
+import { KitchenModule } from './modules/kitchen/kitchen.module';
 
 @Module({
   imports: [
@@ -102,7 +104,9 @@ import { HealthModule } from './modules/health/health.module';
     ShoppingModule,
     HealthcareModule,
     PlansModule,
+    AiModule,
     FoodModule,
+    KitchenModule,
     HealthModule,
   ],
   providers: [

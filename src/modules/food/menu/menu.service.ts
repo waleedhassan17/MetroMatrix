@@ -226,6 +226,7 @@ export class MenuService implements OnModuleInit {
       id: i.id,
       categoryId: i.categoryId,
       name: i.name,
+      nameUr: i.nameUr,
       description: i.description,
       photoUrl: i.photoUrl,
       basePrice: i.basePrice,
@@ -338,6 +339,7 @@ export class MenuService implements OnModuleInit {
           brandId: v.brandId,
           categoryId: dto.categoryId,
           name: dto.name,
+          nameUr: dto.nameUr ?? null,
           description: dto.description ?? null,
           photoUrl: dto.photoUrl ?? null,
           basePrice: dto.basePrice,
@@ -372,6 +374,7 @@ export class MenuService implements OnModuleInit {
         {
           categoryId: dto.categoryId ?? i.categoryId,
           name: dto.name ?? i.name,
+          nameUr: dto.nameUr !== undefined ? dto.nameUr : i.nameUr,
           description:
             dto.description !== undefined ? dto.description : i.description,
           photoUrl: dto.photoUrl !== undefined ? dto.photoUrl : i.photoUrl,
@@ -407,6 +410,7 @@ export class MenuService implements OnModuleInit {
     const copy = await this.createItem(v, {
       categoryId: original.categoryId,
       name: `${original.name} (copy)`.slice(0, 120),
+      nameUr: original.nameUr ?? undefined,
       description: original.description ?? undefined,
       photoUrl: undefined,
       basePrice: original.basePrice,

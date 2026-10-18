@@ -41,6 +41,10 @@ export class MenuItem extends BaseEntity {
   @Column({ type: 'varchar', length: 120 })
   name!: string;
 
+  /** The name in Urdu script ("چکن بریانی"): shown to Urdu readers, matched by voice. */
+  @Column({ type: 'varchar', length: 120, name: 'name_ur', nullable: true })
+  nameUr!: string | null;
+
   @Column({ type: 'text', nullable: true })
   description!: string | null;
 

@@ -40,6 +40,7 @@
     "postman:health": "COLLECTION=health bash scripts/postman-local.sh --delay-request 700",
     "postman:food": "COLLECTION=food bash scripts/postman-local.sh --delay-request 700",
     "socket:food": "node scripts/food-socket-check.mjs",
+    "voice:eval": "ts-node -r tsconfig-paths/register src/scripts/voice-eval.ts",
     "backfill:stores": "ts-node -r tsconfig-paths/register src/database/backfill-stores.ts",
     "backfill:stores:prod": "node dist/database/backfill-stores.js"
   },

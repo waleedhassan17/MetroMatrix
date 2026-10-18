@@ -84,6 +84,13 @@ export const UPLOAD_PURPOSES = {
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
     maxBytes: 8_000_000,
   },
+  /** Voice commands (≤ 30 s). Private; deleted 24 h after upload. */
+  voice_audio: {
+    resourceType: 'video',
+    formats: ['m4a', 'mp4', 'aac', 'webm', 'ogg', 'mp3', 'wav'],
+    maxBytes: 1_000_000,
+    delivery: 'authenticated',
+  },
   /** Files on a doctor's private visit notes. PHI: private. */
   medical_note: {
     resourceType: 'auto',

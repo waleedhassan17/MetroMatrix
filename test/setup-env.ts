@@ -31,6 +31,15 @@ export function applyTestEnv(): void {
   env.CLOUDINARY_API_KEY ??= '123456789012345';
   env.CLOUDINARY_API_SECRET ??= 'test-only-cloudinary-secret';
   env.SENTRY_DSN = '';
+  // No real model, ever: suites that need AI override AiProvider with
+  // FakeAiProvider (test/utils/fake-ai.ts). The switches stay on so the
+  // fake is reached; suites flip AiSettings to test the kill switch.
+  env.GEMINI_API_KEY = '';
+  env.GOOGLE_CLOUD_API_KEY = '';
+  env.AI_ENABLED = 'true';
+  env.AI_FEATURES = 'all';
+  env.STT_PROVIDER = 'gemini';
+  env.TTS_PROVIDER = 'none';
   // Tests replace ExpoPushClient; nothing ever reaches Expo from a test run.
   env.PUSH_ENABLED = 'false';
   // Tests run job methods directly; no cron tick may race them.

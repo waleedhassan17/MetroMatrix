@@ -129,6 +129,15 @@ export const ErrorCode = {
   PROMO_INVALID: 'PROMO_INVALID',
   PROMO_EXPIRED: 'PROMO_EXPIRED',
   PROMO_LIMIT_REACHED: 'PROMO_LIMIT_REACHED',
+  // ── Kitchen intelligence (Chunk 5) ──
+  /** AI is off, failed or timed out; details.manual names the manual way. */
+  AI_UNAVAILABLE: 'AI_UNAVAILABLE',
+  /** This month's AI allowance is used up (details.resetsOn, details.key). */
+  AI_QUOTA_REACHED: 'AI_QUOTA_REACHED',
+  /** The recording couldn't be understood (details.hint). */
+  VOICE_UNCLEAR: 'VOICE_UNCLEAR',
+  /** Over 30 seconds (or 1 MB). */
+  VOICE_TOO_LONG: 'VOICE_TOO_LONG',
   /** Delivery needs a saved address with a map pin (lat/lng). */
   ADDRESS_LOCATION_REQUIRED: 'ADDRESS_LOCATION_REQUIRED',
   /** The vendor doesn't offer delivery (or pickup) right now. */

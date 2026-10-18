@@ -17,6 +17,9 @@ export const PLAN_LIMIT_KEYS = [
   'riders',
   'menu_items',
   'promotions_active',
+  // Chunk 5: AI is metered per business per calendar month (Asia/Karachi).
+  'ai_actions_month',
+  'voice_minutes_month',
 ] as const;
 export type PlanLimitKey = (typeof PLAN_LIMIT_KEYS)[number];
 
@@ -60,6 +63,8 @@ export const PLAN_CONFIG: Record<PlanKey, PlanConfig> = {
       riders: 25,
       menu_items: 1000,
       promotions_active: 10,
+      ai_actions_month: 300,
+      voice_minutes_month: 120,
     },
     entitlements: {
       riders: true,
@@ -69,6 +74,12 @@ export const PLAN_CONFIG: Record<PlanKey, PlanConfig> = {
     },
   },
 };
+
+/**
+ * Customers have no business plan: their AI allowance is this constant
+ * (recipe suggestions, voice search). Voice counts as one action each.
+ */
+export const CUSTOMER_AI_LIMITS = { ai_actions_month: 60 } as const;
 
 /** What an admin may override for one vendor. */
 export interface PlanOverrides {

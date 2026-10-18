@@ -104,6 +104,16 @@ export class ItemDto {
   @Length(2, 120)
   name!: string;
 
+  @ApiPropertyOptional({
+    example: 'چکن کڑاہی',
+    description: 'The name in Urdu script (voice commands match it too).',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Length(1, 120)
+  nameUr?: string;
+
   @IsOptional()
   @Trim()
   @IsString()
@@ -171,6 +181,13 @@ export class ItemDto {
 export class UpdateItemDto {
   @IsOptional() @IsUUID() categoryId?: string;
   @IsOptional() @Trim() @IsString() @Length(2, 120) name?: string;
+
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Length(1, 120)
+  nameUr?: string | null;
 
   @ValidateIf((_, v) => v !== null)
   @IsOptional()
