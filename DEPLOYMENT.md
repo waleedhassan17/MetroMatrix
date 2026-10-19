@@ -334,3 +334,33 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
   environment restored.
 - AI on: the real-model check is `npm run voice:eval` (`docs/VOICE.md`). This key's
   free-tier daily quota was used by the eval that day.
+
+### Chunk 5B (Kitchen Intelligence: growth), same procedure (19 October 2026)
+
+- Image rebuilt and run with `NODE_ENV=production` against an **empty** PostGIS database: host
+  networking, port 3200, SMTP to Mailpit with a login, jobs enabled, push off, dummy Google
+  and Cloudinary keys, `AI_ENABLED=false` and no `GEMINI_API_KEY`, and
+  `STOREFRONT_BASE_URL=https://storefront.rehearsal.test`.
+- `run-migrations.js` applied all 39 migrations. Then `seed:superadmin:prod`,
+  `seed:shopping:prod`, `seed:health:prod` and `seed:food:prod` (`--allow-production
+  --placeholder-images`).
+- `seed:kitchen:prod` refused without `--allow-production`. With it:
+  - part 1 as in 5A (no Bachat Box: the run was after that evening's pickup window);
+  - part 2: 4 calendar events, 1 tiffin plan with 2 subscribers, 1 quoted dawat request,
+    2 kitchen stories, 1 signature dish, 138 QR/storefront orders, 420 anonymous search
+    events → 166 demand cells, and 1 running experiment.
+- Docker HEALTHCHECK `healthy`; `/health` ok; no error-level log lines; the growth and kitchen
+  jobs ran.
+- All green, with the container restarted between collections:
+
+  | Collection | Requests | Assertions |
+  |---|---|---|
+  | `MetroMatrix-Auth` | 40 | 109 |
+  | `MetroMatrix-Shopping` | 89 | 256 |
+  | `MetroMatrix-Health` | 80 | 247 |
+  | `MetroMatrix-Food` | 66 | 204 |
+  | `MetroMatrix-Kitchen` | 103 | 305 |
+
+  `npm run socket:food`: every realtime check passed.
+- Teardown: container removed, database dropped, the env file deleted, the local Postman
+  environment restored.
