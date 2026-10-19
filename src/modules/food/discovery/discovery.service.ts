@@ -50,6 +50,17 @@ interface Candidate extends BranchRow {
   };
 }
 
+/** A look for food, for the demand map: where, what, how many found and open. */
+export interface SearchSignal {
+  kind: 'home' | 'list' | 'search';
+  point: { lat: number; lng: number };
+  q: string | null;
+  cuisine: string | null;
+  results: number;
+  openResults: number;
+  now: Date;
+}
+
 export const vendorNotFound = () =>
   new NotFoundException({
     code: ErrorCode.NOT_FOUND,
@@ -102,6 +113,8 @@ export class FoodDiscoveryService {
   readonly itemExtras: Array<
     (itemId: string, now: Date) => Promise<Record<string, unknown>>
   > = [];
+  /** Told about every home, list and search (the demand map, P8). Never fails the request. */
+  readonly searchSinks: Array<(e: SearchSignal) => Promise<void>> = [];
 
   constructor(
     private readonly dataSource: DataSource,
@@ -218,6 +231,15 @@ export class FoodDiscoveryService {
     });
   }
 
+  private async signal(e: SearchSignal) {
+    for (const sink of this.searchSinks)
+      try {
+        await sink(e);
+      } catch {
+        /* demand data is best-effort */
+      }
+  }
+
   private async badgesFor(brandIds: string[], now: Date) {
     const out = new Map<string, string[]>();
     if (!brandIds.length) return out;
@@ -313,6 +335,15 @@ export class FoodDiscoveryService {
     if (q.offers === 'true') list = list.filter((c) => c.deal);
     if (q.freeDelivery === 'true')
       list = list.filter((c) => c.card.deliveryFee === 0);
+    await this.signal({
+      kind: 'list',
+      point: { lat: q.lat, lng: q.lng },
+      q: q.q ?? null,
+      cuisine: q.cuisine ?? null,
+      results: list.length,
+      openResults: list.filter((c) => c.quote.open.open).length,
+      now,
+    });
     const by = q.sort ?? 'recommended';
     const sorters: Record<
       string,
@@ -364,6 +395,15 @@ export class FoodDiscoveryService {
         ])
       : [{ city: null }];
     const again = userId ? await this.orderAgain(userId) : [];
+    await this.signal({
+      kind: 'home',
+      point,
+      q: null,
+      cuisine: null,
+      results: list.length,
+      openResults: open.length,
+      now,
+    });
     const extra = await this.extraRails(
       list,
       pickupRows,
@@ -550,6 +590,15 @@ export class FoodDiscoveryService {
   ) {
     const rows = await this.candidates(point, { q });
     const list = await this.cards(rows, 'delivery', now);
+    await this.signal({
+      kind: 'search',
+      point,
+      q,
+      cuisine: null,
+      results: list.length,
+      openResults: list.filter((c) => c.quote.open.open).length,
+      now,
+    });
     if (!list.length) return { vendors: [], dishes: [] };
     const like = `%${likeEscape(q)}%`;
     const dishes = await this.dataSource.query(

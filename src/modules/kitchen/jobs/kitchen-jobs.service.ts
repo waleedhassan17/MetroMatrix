@@ -6,6 +6,7 @@ import { KitchenAlertsService } from '../stock/kitchen-alerts.service';
 import { CostingService } from '../costing/costing.service';
 import { ForecastService } from '../forecast/forecast.service';
 import { SurplusService } from '../surplus/surplus.service';
+import { EngineeringService } from '../engineering/engineering.service';
 import { addDays, todayIn } from '../../../common/time/time.util';
 import { display } from '../stock/units';
 
@@ -32,10 +33,19 @@ export class KitchenJobsService {
     private readonly config: ConfigService,
     private readonly forecasts: ForecastService,
     private readonly surplus: SurplusService,
+    private readonly engineering: EngineeringService,
   ) {
     this.nightly.push(
       { name: 'forecasts', run: (now) => this.forecastAll(now) },
       { name: 'cost-snapshots', run: (now) => this.costSnapshots(now) },
+      { name: 'experiments', run: (now) => this.experiments(now) },
+    );
+  }
+
+  /** Menu experiments whose last day has passed: the result, stored once. */
+  async experiments(now = new Date()) {
+    return this.run('kitchen:experiments', (m) =>
+      this.engineering.completeDue(m, now),
     );
   }
 

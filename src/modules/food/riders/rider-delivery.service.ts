@@ -25,6 +25,15 @@ import { paged } from '../../../common/pagination/pagination';
 import { OperationalAuditService } from '../../../common/audit/operational-audit.service';
 import type { VendorRef } from '../vendor/food-vendor.service';
 import type { RiderRef } from '../common/rider.guard';
+import {
+  bearingDeg,
+  bearingDiff,
+  haversineKm,
+} from '../../../common/geo/bearing';
+
+/** Rider batching (Chunk 5): drops this close, in a direction this similar. */
+export const BATCH_MAX_KM = 2;
+export const BATCH_MAX_BEARING = 45;
 
 const rs = (n: number) => `Rs ${n.toLocaleString('en-PK')}`;
 const ASSIGNABLE = ['accepted', 'preparing', 'ready'];
@@ -334,7 +343,60 @@ export class RiderDeliveryService implements OnModuleInit {
           (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity) ||
           a.fullName.localeCompare(b.fullName),
       );
-    return { orderId, items };
+    return { orderId, items, batchWith: await this.batchWith(v, orderId) };
+  }
+
+  /**
+   * Other ready, unassigned delivery orders one rider could take on the same
+   * trip: drops at most BATCH_MAX_KM apart, in a direction from the kitchen
+   * at most BATCH_MAX_BEARING° different. `extraKm` is what the second drop
+   * adds to the trip (nearest drop first). A suggestion only — assignment
+   * stays manual.
+   */
+  async batchWith(v: VendorRef, orderId: string) {
+    const rows: Array<{
+      id: string;
+      code: string;
+      lat: number | null;
+      lng: number | null;
+      blat: number;
+      blng: number;
+    }> = await this.dataSource.query(
+      `SELECT fo.id, fo.code, ST_Y(fo.drop_geo::geometry) AS lat, ST_X(fo.drop_geo::geometry) AS lng,
+              ST_Y(br.geo::geometry) AS blat, ST_X(br.geo::geometry) AS blng
+         FROM food_orders fo JOIN branches br ON br.id = fo.branch_id
+        WHERE fo.branch_id = $1 AND fo.fulfilment = 'delivery' AND fo.drop_geo IS NOT NULL
+          AND (fo.id = $2 OR (fo.status = 'ready' AND fo.rider_id IS NULL))
+        ORDER BY fo.created_at`,
+      [v.branchId, orderId],
+    );
+    const self = rows.find((r) => r.id === orderId);
+    if (!self || self.lat === null) return [];
+    const kitchen = { lat: self.blat, lng: self.blng };
+    const a = { lat: self.lat, lng: self.lng! };
+    const toA = haversineKm(kitchen, a);
+    const headingA = bearingDeg(kitchen, a);
+    return rows
+      .filter((r) => r.id !== orderId)
+      .map((r) => {
+        const b = { lat: r.lat!, lng: r.lng! };
+        const toB = haversineKm(kitchen, b);
+        const apart = haversineKm(a, b);
+        const diff = bearingDiff(headingA, bearingDeg(kitchen, b));
+        const thisFirst = toA <= toB;
+        return {
+          orderId: r.id,
+          code: r.code,
+          dropsApartKm: Math.round(apart * 10) / 10,
+          bearingDiff: Math.round(diff),
+          extraKm: Math.round((Math.min(toA, toB) + apart - toA) * 10) / 10,
+          dropSequence: thisFirst ? [self.code, r.code] : [r.code, self.code],
+          ok: apart <= BATCH_MAX_KM && diff <= BATCH_MAX_BEARING,
+        };
+      })
+      .filter((x) => x.ok)
+      .sort((x, y) => x.extraKm - y.extraKm || x.bearingDiff - y.bearingDiff)
+      .map(({ ok: _ok, ...x }) => x);
   }
 
   /** Riders on the map: duty, live location, what they're carrying. */

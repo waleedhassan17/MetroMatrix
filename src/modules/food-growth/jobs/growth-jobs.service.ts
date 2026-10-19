@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { TiffinService } from '../tiffin/tiffin.service';
 import { CateringService } from '../catering/catering.service';
+import { DemandService } from '../demand/demand.service';
 
 /**
  * Food-growth scheduled work. Advisory-locked and idempotent like every job;
@@ -18,6 +19,7 @@ export class GrowthJobsService {
     private readonly tiffin: TiffinService,
     private readonly config: ConfigService,
     private readonly cateringService: CateringService,
+    private readonly demandService: DemandService,
   ) {}
 
   private get enabled(): boolean {
@@ -63,6 +65,16 @@ export class GrowthJobsService {
     });
     if (result) await this.tiffin.announce(result);
     return counts;
+  }
+
+  @Cron('45 2 * * *', { name: 'growth-demand', timeZone: 'Asia/Karachi' })
+  async cronDemand() {
+    if (this.enabled) await this.demand();
+  }
+
+  /** demand_cells for this week and last (rebuilt, so a rerun is harmless); old search events purged. */
+  async demand(now = new Date()) {
+    return this.run('growth:demand', (m) => this.demandService.rebuild(m, now));
   }
 
   async daily(now = new Date()) {

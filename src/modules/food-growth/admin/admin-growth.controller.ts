@@ -25,8 +25,10 @@ import {
 } from '../story/dto/story.dto';
 import { RamadanService } from '../ramadan/ramadan.service';
 import { StoryService } from '../story/story.service';
+import { DemandService } from '../demand/demand.service';
+import { AdminDemandMapQueryDto } from '../demand/dto/demand.dto';
 
-/** Staff: the calendar, hygiene verification and signature moderation (Chunk 5, P7). Every write is audited. */
+/** Staff: the calendar, hygiene verification, signature moderation (P7) and the demand map (P8). Every write is audited. */
 @ApiTags('admin · food growth')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
@@ -35,7 +37,26 @@ export class AdminGrowthController {
   constructor(
     private readonly ramadan: RamadanService,
     private readonly stories: StoryService,
+    private readonly demand: DemandService,
   ) {}
+
+  @Get('demand-map')
+  @ApiOperation({
+    summary:
+      '?city&cuisineId&hour&week — the platform view of a city’s demand cells (same k = 5 threshold as vendors).',
+  })
+  demandMap(@Query() q: AdminDemandMapQueryDto) {
+    const { city, ...rest } = q;
+    return this.demand.map({ city, ...rest });
+  }
+
+  @Get('demand-map/cities')
+  @ApiOperation({
+    summary: 'Cities with demand data: latest week and searches.',
+  })
+  demandCities() {
+    return this.demand.cities();
+  }
 
   @Get('calendar-events')
   @ApiOperation({ summary: '?kind&from&city&page — Ramadan, Eid, holidays.' })

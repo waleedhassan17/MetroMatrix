@@ -37,6 +37,10 @@ import {
 } from './storefront/storefront.controller';
 import { GrowthDiscoveryService } from './discovery/growth-discovery.service';
 import { AdminGrowthController } from './admin/admin-growth.controller';
+import { SearchEvent } from './demand/entities/search-event.entity';
+import { DemandCell } from './demand/entities/demand-cell.entity';
+import { DemandService } from './demand/demand.service';
+import { VendorDemandController } from './demand/demand.controller';
 
 /**
  * Food Court growth (Chunk 5, milestone 5B): tiffin subscriptions, catering,
@@ -54,6 +58,8 @@ import { AdminGrowthController } from './admin/admin-growth.controller';
       CateringQuote,
       RamadanSettings,
       KitchenStory,
+      SearchEvent,
+      DemandCell,
     ]),
     FoodModule,
     KitchenModule,
@@ -70,6 +76,7 @@ import { AdminGrowthController } from './admin/admin-growth.controller';
     PublicStorefrontController,
     VendorStorefrontController,
     AdminGrowthController,
+    VendorDemandController,
   ],
   providers: [
     TiffinService,
@@ -79,6 +86,7 @@ import { AdminGrowthController } from './admin/admin-growth.controller';
     StoryService,
     StorefrontService,
     GrowthDiscoveryService,
+    DemandService,
   ],
   exports: [
     TiffinService,
@@ -86,6 +94,7 @@ import { AdminGrowthController } from './admin/admin-growth.controller';
     CateringService,
     RamadanService,
     StoryService,
+    DemandService,
   ],
 })
 export class FoodGrowthModule {}
