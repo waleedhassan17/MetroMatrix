@@ -15,6 +15,15 @@ import {
   VendorTiffinController,
 } from './tiffin/tiffin.controller';
 import { GrowthJobsService } from './jobs/growth-jobs.service';
+import {
+  CateringQuote,
+  CateringRequest,
+} from './catering/entities/catering.entity';
+import { CateringService } from './catering/catering.service';
+import {
+  CustomerCateringController,
+  VendorCateringController,
+} from './catering/catering.controller';
 
 /**
  * Food Court growth (Chunk 5, milestone 5B): tiffin subscriptions, catering,
@@ -24,14 +33,25 @@ import { GrowthJobsService } from './jobs/growth-jobs.service';
  */
 @Module({
   imports: [
-    TypeOrmModule.forFeature([TiffinPlan, TiffinSubscription, TiffinDelivery]),
+    TypeOrmModule.forFeature([
+      TiffinPlan,
+      TiffinSubscription,
+      TiffinDelivery,
+      CateringRequest,
+      CateringQuote,
+    ]),
     FoodModule,
     KitchenModule,
     NotificationsModule,
     MediaModule,
   ],
-  controllers: [VendorTiffinController, CustomerTiffinController],
-  providers: [TiffinService, GrowthJobsService],
-  exports: [TiffinService, GrowthJobsService],
+  controllers: [
+    VendorTiffinController,
+    CustomerTiffinController,
+    VendorCateringController,
+    CustomerCateringController,
+  ],
+  providers: [TiffinService, GrowthJobsService, CateringService],
+  exports: [TiffinService, GrowthJobsService, CateringService],
 })
 export class FoodGrowthModule {}

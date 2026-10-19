@@ -61,6 +61,10 @@ export interface PromotionSnapshot {
  * impossible (total = subtotal − discount + delivery_fee).
  * Status and payment status change only through FoodOrderTransitionsService.
  */
+@Check(
+  'CHK_food_orders_prepaid',
+  '"prepaid_amount" >= 0 AND "prepaid_amount" <= "total"',
+)
 @Entity('food_orders')
 @Index(['code'], { unique: true })
 @Index('IDX_food_orders_branch_status', ['branchId', 'status', 'createdAt'])

@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Cron } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { TiffinService } from '../tiffin/tiffin.service';
+import { CateringService } from '../catering/catering.service';
 
 /**
  * Food-growth scheduled work. Advisory-locked and idempotent like every job;
@@ -16,6 +17,7 @@ export class GrowthJobsService {
     private readonly dataSource: DataSource,
     private readonly tiffin: TiffinService,
     private readonly config: ConfigService,
+    private readonly cateringService: CateringService,
   ) {}
 
   private get enabled(): boolean {
@@ -24,7 +26,27 @@ export class GrowthJobsService {
 
   @Cron('0 */5 * * * *', { name: 'growth-tiffin' })
   async cronTiffin() {
-    if (this.enabled) await this.generateTiffin();
+    if (!this.enabled) return;
+    await this.generateTiffin();
+    await this.catering();
+  }
+
+  /** Catering: event-day orders (once each) and expired quotes. */
+  async catering(now = new Date()) {
+    let orders: string[] = [];
+    let expired: Array<{ user_id: string; code: string }> = [];
+    const counts = await this.run('growth:catering', async (m) => {
+      orders = await this.cateringService.eventDayOrders(m, now);
+      const e = await this.cateringService.expire(m, now);
+      expired = e.quotes;
+      return {
+        orders: orders.length,
+        expired: e.quotes.length,
+        stale: e.stale,
+      };
+    });
+    await this.cateringService.announce(orders, expired);
+    return counts;
   }
 
   @Cron('10 0 * * *', { name: 'growth-daily', timeZone: 'Asia/Karachi' })
