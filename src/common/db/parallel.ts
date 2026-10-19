@@ -41,3 +41,16 @@ export function returned<T = Record<string, unknown>>(res: unknown): T[] {
     return res[0] as T[];
   return (Array.isArray(res) ? res : []) as T[];
 }
+
+/**
+ * A `date` column read through `m.query`: node-postgres parses it as a Date at
+ * **local** midnight, so `toISOString()` shifts it a day back on any server
+ * not running in UTC. This reads it back as "YYYY-MM-DD" either way.
+ */
+export function pgDate(d: unknown): string | null {
+  if (d === null || d === undefined) return null;
+  if (typeof d === 'string') return d.slice(0, 10);
+  const x = d as Date;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`;
+}

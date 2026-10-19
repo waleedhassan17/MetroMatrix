@@ -1,14 +1,20 @@
 # MetroMatrix API — Chunk 5 contract (Food Court Kitchen Intelligence)
 
 This file is the contract the Kitchen Intelligence app chunk is built from. It ships in three
-milestones; this edition covers **5A, vendor operations** (stock, recipes, purchases,
-costing, price watch, waste, forecast and prep, smart ETA, outage pause, Bachat Box,
-packing proof, voice and the AI layer). 5B (growth) and 5C (AI assistants, nutrition,
-My Kitchen) extend it.
+milestones; this edition covers:
+
+- **5A, vendor operations** (§1–18): stock, recipes, purchases, costing, price watch, waste,
+  forecast and prep, smart ETA, outage pause, Bachat Box, packing proof, voice and the AI
+  layer;
+- **5B, growth** (§19–30): tiffin, catering, Ramadan mode, the storefront and order sources,
+  kitchen story and hygiene, signature recipes, home rails and badges, the demand map and
+  curve, menu engineering and experiments, rider batching.
+
+5C (AI assistants, nutrition, My Kitchen) extends it.
 
 Everything here is enforced by the e2e suite:
 
-- `test/kitchen-*.e2e-spec.ts` and `test/ai-voice.e2e-spec.ts`;
+- `test/kitchen-*.e2e-spec.ts`, `test/growth-*.e2e-spec.ts` and `test/ai-voice.e2e-spec.ts`;
 - the release gate `test/qa-matrix-kitchen.e2e-spec.ts` (one test per QA row).
 
 Voice is in `docs/VOICE.md`; the AI layer (prompts, schemas, quotas, fallbacks, cost) is in
@@ -19,11 +25,12 @@ flows: `npm run postman:kitchen` (needs `seed:food` and `seed:kitchen`).
 
 | Who | Prefix | Account |
 |---|---|---|
-| Vendor | `/food/vendor/kitchen`, plus `/food/vendor/pause` | `@FoodVendor()`: partner, food business approved |
+| Vendor | `/food/vendor/kitchen`, plus `/food/vendor/pause`; 5B: `/food/vendor/{tiffin,catering,ramadan,story,storefront,demand-map,demand-curve}` | `@FoodVendor()`: partner, food business approved |
 | Rider | `/food/rider/orders/:id/packing-proof` | role `rider` |
-| Customer | `/food/surplus` (nearby boxes: signed out works) | customer, verified email |
+| Customer | `/food/surplus` (nearby boxes: signed out works); 5B: `/food/tiffin`, `/food/catering`, `/food/vendors/:idOrSlug/tiffin-plans` | customer, verified email |
+| Public | 5B: `/public/food/store/:slug` | none |
 | Voice | `/ai/voice`, `/ai/announce`, `/ai/usage` | partner or customer, by screen |
-| Staff | `/admin/kitchen` | `admin` / `super_admin`, every write audited |
+| Staff | `/admin/kitchen`; 5B: `/admin/food/{calendar-events,hygiene,signatures,demand-map}` | `admin` / `super_admin`, every write audited |
 
 **Rules this chunk adds.**
 
@@ -404,7 +411,8 @@ no CSV or API. Staff transcribe the rows they need into this template, for examp
 | `SURPLUS_SOLD_OUT` | 409 | Someone got the last box first. |
 | `SURPLUS_WINDOW_CLOSED` | 409 | The pickup window has closed (reserve or cancel). |
 | `SURPLUS_BLOCKED` | 403 | Three no-shows. `details.until`. |
-| `RECIPE_INCOMPLETE`, `TIFFIN_FULL`, `TIFFIN_SKIP_CUTOFF_PASSED`, `CATERING_QUOTE_EXPIRED`, `NUTRITION_UNAVAILABLE` | | Reserved for 5B and 5C. |
+| `TIFFIN_FULL`, `TIFFIN_SKIP_CUTOFF_PASSED`, `CATERING_QUOTE_EXPIRED` | | 5B — see §28. |
+| `RECIPE_INCOMPLETE`, `NUTRITION_UNAVAILABLE` | | Reserved for 5C. |
 
 ## 15. Notifications (`type`)
 
@@ -449,8 +457,8 @@ minute job as a safety net, so a rolled-back accept never notifies.
 - **Packaging lines** are deducted and costed but never make a dish sold out.
 - **The smart-ETA stats** live with Food's availability code (`prep_time_stats`), because
   quotes read them. The computation is in Food's nightly job.
-- **`calendar_events`** is created now (the forecast needs it); its staff CRUD comes with
-  Ramadan mode (5B, P7).
+- **`calendar_events`** is created in 5A (the forecast needs it); its staff CRUD came with
+  Ramadan mode (§21).
 - **The PBS SPI importer takes a documented CSV template** (§13).
 - **Expired batches are flagged, never written off** — a person logs the waste.
 
@@ -468,4 +476,337 @@ Qandeel Karahi House and Khala Rukhsana's Kitchen. Each has:
 - price-watch mappings to an 8-week SPI sample for Lahore and Karachi (13 items, generated);
 - forecasts and cost snapshots. Zafran also gets tonight's Bachat Box.
 
+**Part 2 (5B)** adds:
+
+- the calendar: Ramadan 1448 and Eid ul Fitr (expected dates; staff confirm them after the
+  moon sighting) and two public holidays;
+- Zafran's sehri and iftar windows (iftar on pre-order only);
+- "Office lunch — weekdays" at Khala Rukhsana's, with two Karachi subscribers (one cash
+  period confirmed);
+- a 60-guest dawat request from Ayesha at Qandeel, quoted twice (accept v2);
+- self-declared kitchen stories for Zafran and Khala Rukhsana (the staff queue verifies
+  them);
+- Qandeel's signature karahi;
+- about 12% of Zafran's and Qandeel's history as QR and storefront orders;
+- three weeks of synthetic anonymous searches around Gulberg, DHA and Johar Town (Lahore)
+  and Clifton and Gulshan (Karachi), rolled into `demand_cells`;
+- a running 14-day menu experiment at Zafran.
+
 The data is idempotent and needs no uploads, and no model is called.
+
+---
+
+# Milestone 5B — growth
+
+Module `src/modules/food-growth/` (tiffin, catering, ramadan, story, storefront, discovery,
+demand, admin, jobs). Menu engineering and experiments live in `kitchen/engineering/`, and
+rider batching in Food's `riders/`. Orders this milestone writes (tiffin, catering) go through
+Food's `FoodOrderWriter` and `FoodOrderTransitionsService`, so the board, riders, realtime,
+stock deduction and reviews see ordinary orders. **Zero commission still holds:** a tiffin
+period, a catering advance and the balance are paid straight to the vendor.
+
+## 19. Tiffin subscriptions
+
+**Plan** (`/food/vendor/tiffin/plans`, `GET` list · `POST` · `GET /:id` · `PUT /:id`):
+
+```
+{ name, description?, meal: breakfast|lunch|dinner, days: [0–6] (0 = Sunday),
+  period: weekly|monthly, pricePerPeriod, deliveryMode: delivery|pickup|both,
+  deliveryWindowFrom: "12:30", deliveryWindowTo: "13:30", capacity (1–1000),
+  skipCutoffHour? (default 20 = 8 PM the evening before),
+  rotation: [{ weekday, menuItemIds: [uuid], note? }], isActive? }
+```
+
+- Every served day needs a rotation entry; a dish of another kitchen is `404`.
+- The view adds `mealValue` (the period price spread over its meals), `seatsLeft`,
+  `subscribers` (active + paused) and `requests`.
+- `capacity` can't go below the seated subscribers (`400`).
+
+**Subscription states:** `requested → active ⇄ paused → cancelled | ended`, or
+`requested → declined`.
+
+| Who | Route | |
+|---|---|---|
+| Customer | `GET /food/vendors/:idOrSlug/tiffin-plans` | Active plans with `seatsLeft` and `full`. |
+| Customer | `POST /food/tiffin/subscribe` + `Idempotency-Key` | `{ planId, startsOn, paymentMethod: cash_weekly\|transfer_per_period, fulfilment: delivery\|pickup, addressId? }` → `requested`. `409 TIFFIN_FULL` when no seat is left. |
+| Customer | `GET /food/tiffin/subscriptions` | An array. |
+| Customer | `POST …/:id/skip` · `…/unskip` `{ date }` | Before the date's cut-off only, else `409 TIFFIN_SKIP_CUTOFF_PASSED` (`details.date`). |
+| Customer | `POST …/:id/pause` `{ until }` | Every served day up to `until` whose cut-off is still open becomes a skip; days already closed are cooked as planned. |
+| Customer | `POST …/:id/cancel` | |
+| Customer | `POST …/:id/payment-proof` `{ proofUrl, ref? }` | A `payment_proof` upload → `proof_submitted`. |
+| Vendor | `GET /food/vendor/tiffin/subscriptions?status&planId` | An array (plans and subscriptions are bounded by capacity). |
+| Vendor | `POST …/:id/approve` | `requested → active` while a seat is free (else `409 TIFFIN_FULL`). |
+| Vendor | `POST …/:id/decline` · `…/end` `{ reason }` · `…/pause` `{ until }` | |
+| Vendor | `POST …/:id/payment/confirm` · `…/payment/reject` `{ reason }` | The period is `paid`, or back to `due`. |
+| Vendor | `GET /food/vendor/tiffin/tomorrow?date` | Meals per plan, skips, what to cook, `cutoffAt`. |
+
+**The daily orders.** Every 5 minutes a job looks at each served day whose cut-off has passed
+(today and tomorrow, once the evening cut-off is past). For each subscriber not skipping, it:
+
+1. claims the day in `tiffin_deliveries` (unique per subscription and date, so it runs once);
+2. writes a scheduled `food_orders` row at the start of the delivery window, with
+   `source = tiffin`, `payment_method = subscription` (already `paid` — the period covers it)
+   and the rotation's dishes at the meal value;
+3. accepts it as the system, so stock is deducted and it is on the board.
+
+The delivery follows its order: `ready → prepared`, `delivered`/`picked_up → delivered`, a
+cancel → `missed`. Tomorrow's meals feed the prep sheet and shopping list as certain demand
+(`ForecastService.extraDemand`). The 00:10 job rolls periods over (a new period is `due`)
+and resumes pauses that have ended.
+
+## 20. Catering (dawat)
+
+**Request states:** `requested → quoted → accepted → advance_proof → confirmed → completed`;
+`declined`, `expired` and `cancelled` end it early.
+
+| Who | Route | |
+|---|---|---|
+| Customer | `POST /food/catering` | `{ vendorId, eventDate, eventTime, guests, eventType: dawat\|wedding\|office\|birthday\|milad\|other, requestedItems: [{ menuItemId?, name, qty? }], budget?, fulfilment: delivery\|pickup\|on_site, addressId?, notes? }` → a `CT-XXXXXX` code. |
+| Customer | `GET /food/catering` (an array) · `GET /:id` | |
+| Customer | `POST /:id/accept` `{ version }` | Only the **newest** version and only before `validUntil`. An older one is `409 INVALID_TRANSITION` with `details: { version, latestVersion }`; an expired one `409 CATERING_QUOTE_EXPIRED`. With `advancePct: 0` it is `confirmed` straight away. |
+| Customer | `POST /:id/advance-proof` `{ proofUrl, ref? }` | A `payment_proof` upload: `accepted → advance_proof`. |
+| Customer | `POST /:id/cancel` `{ reason }` | Until confirmed. |
+| Vendor | `GET /food/vendor/catering?status` · `GET /:id` | The list is an array (by event date, at most 200), each with `customer: { name, phone }`. |
+| Vendor | `POST /:id/quote` | `{ lines: [{ menuItemId?, name, qty, unitPrice }], deliveryFee?, advancePct (0–100), validUntil? (3 days), notes? }` — a new version every time, editable until accepted. `total = Σ lines + deliveryFee`; `advance = round(total × advancePct / 100)`. |
+| Vendor | `POST /:id/decline` `{ reason }` | |
+| Vendor | `POST /:id/advance/confirm` · `/advance/reject` `{ reason }` | The advance reached your account → `confirmed`, or back to `accepted`. |
+
+A request carries `quote` (the newest version), `versions` (newest first), `acceptedVersion`,
+`advance`, `hasAdvanceProof` and, once written, `foodOrderId`.
+
+**The event-day order.** On the event date (branch time) the 5-minute job writes the
+scheduled order once, at the event time: `source = catering`, `payment_method = catering`,
+`prepaid_amount` = the advance (a CHECK keeps it ≤ total), the balance paid to the vendor at
+the event. Delivering it completes the request. Quote lines with a `menuItemId` feed that
+date's prep sheet and shopping list. Unanswered quotes past `validUntil`, and requests whose
+day passed unconfirmed, expire.
+
+## 21. Ramadan mode and the calendar
+
+**Staff calendar** (`/admin/food/calendar-events`, audited `calendar_event.create|update|delete`):
+`GET ?kind&from&city&page` · `POST { kind: ramadan|eid|public_holiday|other, name, startsOn,
+endsOn, city? }` (null = everywhere; at most 45 days; `endsOn ≥ startsOn`) · `PATCH /:id` ·
+`DELETE /:id`. Every event feeds the forecast's event factor (last Ramadan's ratio when there
+is history).
+
+**Kitchen settings** — `GET/PUT /food/vendor/ramadan`:
+
+```
+{ enabled, sehriFrom?, sehriTo?, iftarFrom?, iftarTo? ("HH:mm"; both ends or neither),
+  iftarPreorderOnly?, notes? }
+→ { settings, events: [Ramadan for your city, now or ahead], activeToday,
+    today: { event, sehri, iftar, iftarPreorderOnly } | null }
+```
+
+- **Only on dates inside a `ramadan` event** for the branch's city (or everywhere), and only
+  while `enabled`, the sehri and iftar windows **replace** the weekly hours. On every other
+  date — and as soon as the event is removed — the weekly hours apply. Open state, discovery,
+  the cart, checkout and scheduled orders all follow it (`BranchStateService.dateOverrides`
+  → `openIntervals(…, byDate)`).
+- A window may cross midnight (`closes < opens`). Sehri `02:00–04:45` is the morning of that
+  date.
+- `iftarPreorderOnly`: an order for the iftar window must be placed **before it opens**.
+  Ordering for a running iftar window (now, or scheduled into it) is
+  `400 SLOT_INVALID` with `details: { iftarPreorderOnly: true, windowStart, windowEnd }`.
+- The vendor page carries `ramadan` (today's block, or null); the home gets `iftarNearYou`.
+
+## 22. Storefront and order sources
+
+- **Public page:** `GET /public/food/store/:slug` — no sign-in, 300/min. It is the vendor page
+  (info, open state, menu, story, badges, Ramadan) plus
+  `storefront: { url, sources: [storefront, qr] }`. Unknown or hidden kitchens are `404`;
+  paused ones still open, with their message. It is meant for the Expo web storefront at
+  `STOREFRONT_BASE_URL/s/:slug`.
+- **Attribution:** `POST /food/checkout` takes `source?: app|storefront|qr` (default `app`) and
+  `campaign?` (`[A-Za-z0-9_.-]{1,40}`), from the link's `?src=` and `?c=`. Other sources
+  (`tiffin`, `catering`, `surplus`) are set only by the system (`400` from checkout).
+- **Vendor:** `GET /food/vendor/storefront?days` (7–90, default 30):
+
+```
+{ slug, url, links: { storefront, qr, campaignExample }, qr: { payload: "<url>?src=qr" },
+  ordersYouBrought: { days, orders, revenue, customers, newCustomers, share (% of all orders),
+                      storefront: { orders, revenue }, qr: { orders, revenue },
+                      campaigns: [{ source, campaign, orders, revenue }] },
+  bySource: { app|storefront|qr|tiffin|catering|surplus: { orders, revenue } } }
+```
+
+  Rejected and cancelled orders don't count. `newCustomers`: their first order with you came
+  through your link or QR. The app renders the QR from `qr.payload`.
+
+## 23. Kitchen story, hygiene badge, signature recipes
+
+**Story** — `GET/PUT /food/vendor/story` (the whole story; omitted fields are cleared):
+
+```
+{ story? (≤ 2000), cookName?, videoUrl? (a kitchen_video upload), photos? (≤ 6 kitchen_story uploads),
+  hygieneChecklist?: { gloves, hairnet, cleanWater, separateBoards, fridgeTempLog, pestControlOn } }
+→ … + { hygieneStatus: null|self_declared|verified, badge, checklistComplete, declaredAt, verifiedAt }
+```
+
+- **Complete** = every box ticked and a pest-control date in the last 12 months (not in the
+  future) → `self_declared`, badge `hygiene_self_declared` ("Hygiene self-declared").
+- **Only staff verify**, after a visit or a video call → `verified`, badge `hygiene_verified`.
+  Any later change to the checklist drops it back to `self_declared` (an incomplete one to
+  null); a new story text with the same checklist keeps it.
+- Staff (`/admin/food/hygiene`, audited `hygiene.verify` / `hygiene.revoke`, the vendor is
+  told): `GET ?status=self_declared` (the queue, oldest first) `| verified` ·
+  `POST /:brandId/verify { method: visit|video_call, note? }` (`409 INVALID_TRANSITION`
+  unless self-declared) · `POST /:brandId/revoke { reason }`.
+
+**Signature recipe** — `PUT /food/vendor/kitchen/items/:itemId/signature?variantId`
+`{ isSignature, by? (default the kitchen's name), since? (default today) }`.
+
+- It needs the dish's recipe card (`404` otherwise).
+- Customers see `signature: { badge, label: "Signature recipe", by, since }` on the item sheet,
+  `signatureDishes` on the vendor page and the `signature` badge on the card.
+- Staff (`/admin/food/signatures`, audited `signature.remove`, the vendor is told):
+  `GET ?status=claimed|removed` · `POST /:recipeCardId/remove { reason }`. A removed claim
+  can be made again; it comes back to the list.
+
+## 24. Discovery additions
+
+- **Vendor cards** gain `badges: string[]` — `signature`, `hygiene_self_declared` |
+  `hygiene_verified`, `bachat_box` (a box to collect right now).
+- **Home rails**, each up to 10 cards, open first, present only when not empty:
+  - `iftarNearYou` — kitchens with an iftar window today (inside a Ramadan event), best rated
+    first;
+  - `surplusNearYou` — a live Bachat Box, soonest pickup first; pickup-only reach counts;
+  - `tiffinNearYou` — an active plan with a free seat, cheapest first.
+
+  `homeKitchens` was already there (Chunk 4).
+- **Vendor page** gains `story`, `signatureDishes` and `ramadan`; the **item sheet** gains
+  `signature`.
+- Sub-domains add these through `FoodDiscoveryService.badgeSources` / `railSources` /
+  `vendorExtras` / `itemExtras` (lists set in `onModuleInit`).
+
+## 25. Demand map and demand curve
+
+**What is logged.** Every home, vendor list and search writes one `search_events` row:
+
+- `kind`, the **geohash6 cell** (≈ 1.2 × 0.6 km), and the city of the nearest kitchen within
+  30 km;
+- the cleaned query (lower case, punctuation out; runs of 4+ digits and email-like text
+  removed);
+- the cuisine filter, how many kitchens were found and how many were open, and the hour and
+  weekday in Pakistan time.
+
+There is **no user, device or IP column**, and no exact point. Rows are kept 26 weeks.
+
+**Nightly (02:45 PKT)** `demand_cells` is rebuilt for this week and last, per week (Monday),
+city and cell:
+
+- dimensions `all`, per cuisine and per query, each for the whole day and per hour;
+- `searches`, `zero_results`, `closed_results` (found kitchens, none open) and `orders`
+  dropped in the cell.
+
+| Route | |
+|---|---|
+| `GET /food/vendor/demand-map?cuisineId&hour&week` | Your city's cells: `{ geohash6, center, bounds, searches, zeroResultShare, closedShare, unmetSearches, orders, distanceKm, inYourZone }`, most unmet first. Also `topQueries` (city-wide, unmet first), `weeks` (the last 8 with a cell to show; the default `week` is the newest of them), `k: 5` and `hidden`. |
+| `GET /food/vendor/demand-curve?weeks` (4–26, default 8) | Orders per weekday (0 = Sunday) × hour: `own: { orders, peaks }`, and `area: { kitchens, orders, perKitchen, peaks }` — the city's other kitchens sharing a cuisine with you, **only when there are at least 3** (else `null` with `areaNote`). |
+| `GET /admin/food/demand-map?city&cuisineId&hour&week` · `GET /admin/food/demand-map/cities` | The platform view (same threshold). |
+
+**k = 5:** a cell, query or hour with fewer than 5 searches is never returned; `hidden` only
+counts them.
+
+## 26. Menu engineering and experiments
+
+**Matrix** — `GET /food/vendor/kitchen/menu-engineering` (the last 30 days of accepted-onward
+orders):
+
+- *Popular* = quantity ≥ the median; *profitable* = contribution margin (price − recipe cost,
+  weighted by the sizes sold) ≥ the median.
+- Both medians are over the dishes that have a recipe card.
+- Quadrants and actions: **Star** (`feature`), **Plowhorse** (`reprice`), **Puzzle**
+  (`redescribe_or_bundle`), **Dog** (`remove`). Each item carries `quadrant`, `action`,
+  `label` and `advice`, plus `price`, `cost`, `foodCostPct`, `qty`, `margin`.
+- Dishes without a card are under `needsRecipe` ("Add a recipe card to analyse").
+- The rules are pure: `kitchen/engineering/menu-engineering.ts`.
+
+**Experiments** — `/food/vendor/kitchen/experiments`:
+
+| Route | |
+|---|---|
+| `POST` | `{ itemId, days (3–60), startsOn? (today; at most 7 days back), notes? }`. One running experiment per dish (`409 CONFLICT`). |
+| `GET ?status=planned\|running\|completed\|cancelled` · `GET /:id` | |
+| `PATCH /:id` `{ endsOn?, notes? }` | |
+| `POST /:id/end` | End early: the result through yesterday is kept (`409` before it has started). |
+| `DELETE /:id` | Cancel. |
+
+The `result` (live while running, stored once by the kitchen nightly job after the last day)
+contains:
+
+- `days`, `sold` and `itemDaily`;
+- `categoryMedianDaily` (the median of the category's other dishes) and
+  `salesIndex = itemDaily ÷ that median`;
+- `forecast`, `vsForecast`, `foodCostPct`, `margin` and the target;
+- `recommendation` and `reasons`:
+  - **keep** — `salesIndex ≥ 1` and food cost on target;
+  - **drop** — `salesIndex < 0.5`, unless it beat its forecast (≥ 0.8);
+  - **adjust** — anything else;
+  - `null` before 3 days.
+
+## 27. Rider batching
+
+`GET /food/vendor/riders/suggest?orderId` adds `batchWith`. It lists other **ready, unassigned
+delivery** orders of the same kitchen that pass both tests:
+
+- their drop is **≤ 2 km** from this order's drop;
+- the bearing from the kitchen differs by **≤ 45°**.
+
+Each entry is `{ orderId, code, dropsApartKm, bearingDiff, extraKm, dropSequence }`.
+`extraKm` is what the second drop adds to the trip, nearest drop first. The list is sorted
+by `extraKm`. Assignment stays manual. The geometry is `common/geo/bearing.ts` (haversine and
+initial bearing).
+
+## 28. Error codes and notifications added in 5B
+
+| Code | Status | When |
+|---|---|---|
+| `TIFFIN_FULL` | 409 | No seat on the plan (subscribe or approve). |
+| `TIFFIN_SKIP_CUTOFF_PASSED` | 409 | Skip or unskip after the date's cut-off. `details.date`. |
+| `CATERING_QUOTE_EXPIRED` | 409 | Accepting a quote past `validUntil`. |
+| `INVALID_TRANSITION` (reused) | 409 | An older quote version (`details.latestVersion`), a hygiene verify that isn't pending, a finished experiment. |
+| `SLOT_INVALID` (reused) | 400 | An iftar window taken only as pre-orders (`details.iftarPreorderOnly`). |
+| `CONFLICT` (reused) | 409 | A second running experiment for a dish. |
+
+The notifications:
+
+- Tiffin: `food.tiffin.approved` / `declined` / `ended` / `payment_rejected` (customer);
+  `kitchen.tiffin.requested` / `payment_proof` / `orders` (vendor).
+- Catering: `food.catering.quoted` / `declined` / `confirmed` / `expired` /
+  `advance_rejected` (customer); `kitchen.catering.requested` / `accepted` / `advance`
+  (vendor).
+- Story: `kitchen.story` (hygiene verified or revoked, signature removed).
+
+## 29. Scheduled jobs added in 5B
+
+| Job | When | What |
+|---|---|---|
+| `growth-tiffin` | every 5 min | Tiffin orders for days whose cut-off passed (once per subscription and day); catering event-day orders (once) and expiry. |
+| `growth-daily` | 00:10 PKT | Tiffin period rollover; pauses that ended. |
+| `growth-demand` | 02:45 PKT | `demand_cells` for this week and last (rebuilt); search events older than 26 weeks deleted. |
+| `kitchen-nightly` step `experiments` | 02:30 PKT | Experiments past their last day → completed, the result stored once. |
+
+## 30. Decisions in 5B (adaptations)
+
+- **Tiffin pause is skips.** A pause turns every open day up to `until` into a skip, so the
+  cut-off rule is the same for both.
+- **System-written orders use the shared writer and are accepted as `system`**
+  (`placed>accepted` allows `system`), so stock is deducted once, as for any order.
+- **Payment methods `subscription` and `catering`** are written only by the system;
+  customers choose from `cod`, `transfer` and `pay_at_pickup` as before.
+- **Ramadan hours are a per-date override in the open-state code**, not stored hours, so
+  removing or editing the event changes the hours at once. Iftar pre-order-only is enforced by
+  the checkout planner.
+- **The hygiene status is null until the checklist is complete** (the spec's enum has only
+  `self_declared | verified`). Staff verification records `verified_method` and
+  `verified_note`.
+- **Signature moderation** keeps `signature_removed_at` / `signature_removed_reason` on the
+  card.
+- **Demand rows carry `kind` (home, list, search)**. The city is the nearest kitchen's (no
+  reverse geocoding). The geohash matches PostGIS `ST_GeoHash`.
+- **The area curve needs 3 other kitchens**, so no single competitor's hours can be read off
+  it.
+- **The kitchen story video is a `kitchen_video` upload** (files never pass through the API;
+  outside links are refused like any foreign URL).
+- **Menu engineering is per dish.** Sizes are folded in by the quantity sold of each.

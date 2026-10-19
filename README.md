@@ -7,7 +7,9 @@ Backend for MetroMatrix — a zero-commission community marketplace with three s
   admin), [`docs/API_SHOPPING.md`](docs/API_SHOPPING.md) (Shopping) and
   [`docs/API_HEALTH.md`](docs/API_HEALTH.md) (Healthcare; video in [`docs/VIDEO.md`](docs/VIDEO.md)) and
   [`docs/API_FOOD.md`](docs/API_FOOD.md) (Food Court, including the Socket.IO channel; paid plans
-  later in [`docs/SUBSCRIPTIONS_LATER.md`](docs/SUBSCRIPTIONS_LATER.md))
+  later in [`docs/SUBSCRIPTIONS_LATER.md`](docs/SUBSCRIPTIONS_LATER.md)) and
+  [`docs/API_KITCHEN.md`](docs/API_KITCHEN.md) (Kitchen Intelligence: vendor operations and
+  growth; the AI layer in [`docs/AI.md`](docs/AI.md), voice in [`docs/VOICE.md`](docs/VOICE.md))
 - Architecture and conventions: [`CLAUDE.md`](CLAUDE.md)
 - Deploying to Heroku: [`DEPLOYMENT.md`](DEPLOYMENT.md)
 
@@ -24,7 +26,7 @@ npm run seed:superadmin     # needs SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in 
 npm run seed:shopping       # optional demo stores; needs SEED_DEMO_PASSWORD (see seed/assets/shopping)
 npm run seed:health         # optional demo doctors, patients, visits and reviews (same password)
 npm run seed:food           # optional demo food vendors, riders, customers, orders (same password)
-npm run seed:kitchen        # optional kitchens for three of them (stock, recipes, forecasts; after seed:food)
+npm run seed:kitchen        # optional kitchens for three of them (stock, recipes, forecasts, tiffin, catering, demand data; after seed:food)
 npm run start:dev           # http://localhost:3000/api/v1 · Swagger at /api/docs
 ```
 

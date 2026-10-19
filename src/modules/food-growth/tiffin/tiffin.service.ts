@@ -1,3 +1,4 @@
+import { pgDate } from '../../../common/db/parallel';
 import {
   BadRequestException,
   ConflictException,
@@ -643,9 +644,7 @@ export class TiffinService implements OnModuleInit {
           },
         );
       const skips = new Set<string>(
-        (s.skips ?? []).map((d: string | Date) =>
-          typeof d === 'string' ? d : d.toISOString().slice(0, 10),
-        ),
+        (s.skips ?? []).map((d: string | Date) => pgDate(d)!),
       );
       if (on) skips.add(date);
       else skips.delete(date);
@@ -925,9 +924,7 @@ export class TiffinService implements OnModuleInit {
         { until },
       );
     const skips = new Set<string>(
-      (s.skips ?? []).map((d: string | Date) =>
-        typeof d === 'string' ? d.slice(0, 10) : d.toISOString().slice(0, 10),
-      ),
+      (s.skips ?? []).map((d: string | Date) => pgDate(d)!),
     );
     for (const d of days) skips.add(d);
     await m.query(
@@ -967,10 +964,7 @@ export class TiffinService implements OnModuleInit {
     today: string,
     startsOn: string | Date,
   ): string | null {
-    const start =
-      typeof startsOn === 'string'
-        ? startsOn.slice(0, 10)
-        : startsOn.toISOString().slice(0, 10);
+    const start = pgDate(startsOn)!;
     let d = start > today ? start : today;
     for (let i = 0; i < 8; i++, d = addDays(d, 1))
       if (serves(mask, d)) return d;
@@ -978,12 +972,7 @@ export class TiffinService implements OnModuleInit {
   }
 
   private subView(r: any) {
-    const day = (x: unknown) =>
-      x === null || x === undefined
-        ? null
-        : typeof x === 'string'
-          ? x.slice(0, 10)
-          : (x as Date).toISOString().slice(0, 10);
+    const day = pgDate;
     return {
       id: r.id,
       planId: r.plan_id,

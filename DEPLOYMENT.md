@@ -175,10 +175,20 @@ are Unsplash food photos (`src/database/seeds/food/CREDITS.md`).
 
 `seed:kitchen` gives three of those vendors a working kitchen: ingredients, recipe cards,
 60 days of orders, purchases, waste, a sample of the PBS weekly prices for Lahore and
-Karachi, forecasts and tonight's Bachat Box. No uploads and no AI calls:
+Karachi, forecasts and tonight's Bachat Box. Part 2 adds the growth demo:
+
+- the Ramadan/Eid calendar (expected dates — confirm them after the moon sighting);
+- a tiffin plan with subscribers and a quoted dawat request;
+- kitchen stories, a signature dish and QR/storefront orders;
+- anonymous demand data and a menu experiment.
+
+No uploads and no AI calls:
 ```bash
 heroku run -a metromatrix-api npm run seed:kitchen:prod -- --allow-production
 ```
+
+Set `STOREFRONT_BASE_URL` to the web storefront's address (the vendor's shareable link and
+QR are `<base>/s/<slug>`); it defaults to `http://localhost:8081`.
 
 ### Kitchen AI (optional)
 

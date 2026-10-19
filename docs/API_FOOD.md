@@ -6,6 +6,14 @@ enforced by the e2e suite:
 - `test/food-*.e2e-spec.ts`;
 - the release gate `test/qa-matrix-food.e2e-spec.ts` (28 rows).
 
+**Chunk 5 additions** are marked *(Chunk 5)* here and specified in `docs/API_KITCHEN.md`:
+
+- order `source` / `campaign` at checkout;
+- card `badges` and the home rails `iftarNearYou`, `surplusNearYou` and `tiffinNearYou`;
+- `story`, `signatureDishes` and `ramadan` on the vendor page, and `signature` on the item
+  sheet;
+- the pause `reason` / `minutes`, the smart ETA and Ramadan hours.
+
 The live schema is at `GET /api/docs-json`; Swagger UI is at `/api/docs` where it is enabled.
 The conventions in `docs/API_AUTH.md` (envelope, tokens, `X-Request-Id`) all apply. The
 realtime channel is §5. Runnable flows: `npm run postman:food` and `npm run socket:food`.
@@ -84,9 +92,13 @@ Insights days are branch-local days.
   "dealLabel": "10% off over Rs 3,000",
   "fulfilment": { "delivery": true, "pickup": true },
   "preorderOnly": false,
-  "openState": { "open": false, "paused": false, "label": "Opens 12:00 PM", "opensAt": "2026-10-18T07:00:00.000Z" }
+  "openState": { "open": false, "paused": false, "label": "Opens 12:00 PM", "opensAt": "2026-10-18T07:00:00.000Z" },
+  "badges": ["signature", "hygiene_verified", "bachat_box"]
 }
 ```
+
+- `badges` *(Chunk 5)*: `signature` (a signature-recipe dish), `hygiene_self_declared` or
+  `hygiene_verified`, `bachat_box` (a Bachat Box to collect now). Empty when none apply.
 
 - `etaRange`: `prep + busy extra + ceil(km ÷ 22 × 60) + 5` minutes, shown as a 10-minute
   range. Pickup ("ready in") is prep (+ busy) only.
@@ -111,6 +123,9 @@ A `VendorCard` plus:
 | `ratingSummary` | `{ ratingAvg, ratingCount, distribution: { "5": n, …, "1": n }, topTags: [{ tag, count }], recent: [Review ×3] }` |
 | `menu` | Categories in order: `{ id, name, availableFrom, availableTo, availableNow, items: [MenuCard] }`. Items 86'd today and dishes not on today's weekly menu are left out. |
 | `popular` | Up to 6 `MenuCard`s by `sold30d`. |
+| `story` *(Chunk 5)* | `{ story, cookName, videoUrl, photos, hygiene: { status, badge, label, checklist, verifiedAt, verifiedMethod } \| null }`, or `null`. |
+| `signatureDishes` *(Chunk 5)* | `[{ itemId, name, by, since }]` |
+| `ramadan` *(Chunk 5)* | Today inside a Ramadan event with the kitchen's windows on: `{ event, sehri, iftar, iftarPreorderOnly }`; otherwise `null`. Those dates' `openState` follows the windows. |
 
 `MenuCard`: `{ id, name, description, photoUrl, tags, isDeal, serves, fromPrice, hasVariants, hasOptions, available, unavailableReason, soldOut, remainingToday, remainingLabel, sold30d }`.
 `fromPrice` is the cheapest size. `remainingLabel` is "6 left today" when ≤ 10 portions remain.
@@ -318,7 +333,7 @@ needs the order `ready` (else `409 INVALID_TRANSITION`) and moves it to `on_the_
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/food/home?lat&lng` | `{ coverage: { delivering, message, pickupNearby }, cuisines, banners, orderAgain (signed in), offers, homeKitchens, topRated, fastest, newOnFoodCourt, freeDelivery }`. Far from every vendor: `message: "Not delivering here yet"`. |
+| GET | `/food/home?lat&lng` | `{ coverage: { delivering, message, pickupNearby }, cuisines, banners, orderAgain (signed in), offers, homeKitchens, topRated, fastest, newOnFoodCourt, freeDelivery }`, plus *(Chunk 5)* `iftarNearYou`, `surplusNearYou` and `tiffinNearYou` when they have cards. Far from every vendor: `message: "Not delivering here yet"`. Home, list and search are logged anonymously for the demand map (`docs/API_KITCHEN.md` §25). |
 | GET | `/food/vendors?lat&lng` | **Required** `lat`/`lng`. Filters: `q` (vendor, cuisine or dish), `cuisine` (slug or id), `freeDelivery`, `offers`, `minRating`, `pickup` (vendors you can collect from within 25 km, whatever their zone), `homeKitchen`, `openNow`, `priceLevel` (1–3). `sort=recommended` (default) · `distance` · `rating` · `delivery_time` · `delivery_fee`. Open vendors come first in every sort. Paused and out-of-zone vendors are left out. |
 | GET | `/food/vendors/:slugOrId?lat&lng` | `VendorPage`. Unknown, not live or suspended: `404`. |
 | GET | `/food/vendors/:id/reviews` | Visible reviews, newest first (paged). |
@@ -338,7 +353,7 @@ needs the order `ready` (else `409 INVALID_TRANSITION`) and moves it to `on_the_
 | PATCH | `/food/cart/items/:id` | `{ quantity?, variantId?, optionIds?, notes? }` (re-validated) |
 | DELETE | `/food/cart/items/:id` | |
 | POST | `/food/cart/preview` | `{ addressId?, promoCode?, paymentMethod?, cutlery?, note?, building?, floor?, riderInstructions? }` → `Preview` (200 even when not ok). |
-| POST | `/food/checkout` | Same body with `paymentMethod` required, **plus `Idempotency-Key`** → `201 CustomerOrder`. Refusals are `issues[0]`, with every issue in `details.issues`. |
+| POST | `/food/checkout` | Same body with `paymentMethod` required, **plus `Idempotency-Key`** → `201 CustomerOrder`. Refusals are `issues[0]`, with every issue in `details.issues`. *(Chunk 5)* `source?: app\|storefront\|qr` (default `app`) and `campaign?` (`[A-Za-z0-9_.-]{1,40}`) from the storefront link's `?src=` / `?c=`. |
 | GET | `/food/orders?status=active\|past` | Paged order cards `{ code, status, statusLabel, vendor, itemCount, total, placedAt, scheduledFor }`. |
 | GET | `/food/orders/:code` | `CustomerOrder` |
 | GET | `/food/orders/:code/tracking` | `Tracking` |
@@ -375,7 +390,7 @@ discount, total and per-customer limits, first order with this vendor. Discounts
 | Area | Endpoints |
 |---|---|
 | Setup | `GET /setup` → `{ subType, items: [{ key, label, required, done }], percent, missing, ready, isLive }` (profile, location, hours, zones, payment, menu; home kitchens: portions or slots, and `food_safety`). `POST /go-live` → `422 PROFILE_INCOMPLETE { missing }` or `422 FOOD_SAFETY_CHECK_REQUIRED` (home kitchens wait for staff's check). |
-| Profile | `GET/PATCH /profile` (`name, tagline, logoUrl, coverUrl, cuisineIds, priceLevel, brandColor`; `onBrandColor` is computed). `POST /pause { message? }`, `POST /resume`, `POST /busy { extraMinutes (0–60; 0 clears), until? (≤ 6 h; default 1 h) }`. |
+| Profile | `GET/PATCH /profile` (`name, tagline, logoUrl, coverUrl, cuisineIds, priceLevel, brandColor`; `onBrandColor` is computed). `POST /pause { message?, reason? (gas\|electricity\|weather\|staff\|stock\|other), minutes? (5–720, auto-resume) }` *(reason/minutes: Chunk 5; customers never see the reason)*, `POST /resume`, `POST /busy { extraMinutes (0–60; 0 clears), until? (≤ 6 h; default 1 h) }`. |
 | Settings | `GET/PATCH /settings` (address, `lat`/`lng` together, phone, `prepMinutes`, `acceptsDelivery`, `acceptsPickup`, `acceptsCod`, `codLimit`, `transferConfirmBeforePrep`, `autoRejectMinutes` 3–10, `maxRadiusKm`, `freeDeliveryOver`, `preorderOnly` (home kitchens)). `GET/PUT /hours` — `[{ weekday (0 = Sunday), opensAt, closesAt }]`, several ranges a day; `closesAt ≤ opensAt` runs past midnight; `24:00` allowed; overlaps `400 { conflict }`. `GET/PUT /fee-bands` — `[{ fromKm, toKm, fee, minOrder }]` from 0, contiguous, ≤ 6. `GET/POST /closures`, `DELETE /closures/:id`. |
 | Payment accounts | `GET/POST /payment-accounts`, `PATCH/DELETE /payment-accounts/:id` (Raast / JazzCash / Easypaisa / bank, ≤ 4 active). |
 | Menu | `GET/POST /menu/categories` (`availableFrom/To` daily window), `PATCH/DELETE /menu/categories/:id`, `PUT /menu/categories/reorder`. `GET/POST /menu/items`, `GET/PATCH/DELETE /menu/items/:id`, `PUT /menu/items/reorder`, `POST /menu/items/:id/duplicate`, `PUT /menu/items/:id/variants`, `PUT /menu/items/:id/option-groups` (`[{ groupId, variantId? }]`). `GET/POST /menu/option-groups`, `GET/PUT/DELETE /menu/option-groups/:id` (reusable; `min ≤ max ≤ options`). |

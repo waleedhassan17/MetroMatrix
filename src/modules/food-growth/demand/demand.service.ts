@@ -157,11 +157,13 @@ export class DemandService implements OnModuleInit {
   }) {
     const weeks: string[] = (
       await this.dataSource.query(
-        `SELECT DISTINCT to_char(week, 'YYYY-MM-DD') AS week FROM demand_cells
-          WHERE lower(city) = lower($1) ORDER BY week DESC LIMIT 8`,
+        `SELECT to_char(week, 'YYYY-MM-DD') AS week FROM demand_cells
+          WHERE lower(city) = lower($1) GROUP BY week
+         HAVING max(searches) >= ${DEMAND_K} ORDER BY week DESC LIMIT 8`,
         [opts.city],
       )
     ).map((r: { week: string }) => r.week);
+    // Default: the newest week with something to show (a Monday has little yet).
     const week = opts.week ?? weeks[0] ?? null;
     const base = {
       city: opts.city,

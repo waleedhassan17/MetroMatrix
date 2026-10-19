@@ -10,6 +10,7 @@ describe('search query normalisation', () => {
     expect(normalizeQuery('بریانی')).toBe('بریانی');
     expect(normalizeQuery('2 naan')).toBe('2 naan');
     expect(normalizeQuery('call 03001234567 karahi')).toBe('call karahi');
+    expect(normalizeQuery('karahi ali.khan@example.com')).toBe('karahi');
   });
 
   it('nothing useful → null; at most 60 characters', () => {

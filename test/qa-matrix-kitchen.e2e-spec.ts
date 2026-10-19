@@ -34,6 +34,8 @@ import { FoodJobsService } from '../src/modules/food/jobs/food-jobs.service';
 import { AiJobsService } from '../src/modules/ai/ai-jobs.service';
 import { ServiceabilityService } from '../src/modules/food/availability/serviceability.service';
 import { BranchStateService } from '../src/modules/food/availability/branch-state.service';
+import { GrowthJobsService } from '../src/modules/food-growth/jobs/growth-jobs.service';
+import { encodeGeohash } from '../src/common/geo/geohash';
 
 /** Abbottabad: only this suite puts vendors here. */
 const ATD = { lat: 34.1688, lng: 73.2215 };
@@ -53,7 +55,7 @@ const answer = (
 
 /**
  * Chunk 5's release gate: one test per row of the Kitchen Intelligence QA
- * matrix (spec §8). Milestone 5A: rows 1–19 and 36–38. Add rows; never
+ * matrix (spec §8). Milestone 5A: rows 1–19 and 36–38; 5B: rows 20–28. Add rows; never
  * delete them. Tests never call a real model (FakeAiProvider).
  */
 describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
@@ -749,6 +751,416 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
       (await sql(`SELECT status FROM food_orders WHERE id = $1`, [o.id]))[0]
         .status,
     ).toBe('on_the_way');
+  });
+
+  // ── Milestone 5B: growth ─────────────────────────────────────────────
+
+  const ALL_DAYS = [0, 1, 2, 3, 4, 5, 6];
+  const pkDay = (n: number) =>
+    DateTime.now().setZone(TZ).plus({ days: n }).toISODate()!;
+  /** The tiffin skip cut-off for a date: 20:00 PKT the day before. */
+  const tiffinCutoff = (date: string) =>
+    DateTime.fromISO(date, { zone: TZ })
+      .minus({ days: 1 })
+      .set({ hour: 20 })
+      .toJSDate();
+
+  async function tiffinSubscriber(v: Vendor) {
+    const karahi = await itemId(t, v);
+    const p = await expectStatus(
+      await v.api.post('/food/vendor/tiffin/plans', {
+        name: 'QA lunch',
+        meal: 'lunch',
+        days: ALL_DAYS,
+        period: 'weekly',
+        pricePerPeriod: 2100,
+        deliveryMode: 'delivery',
+        deliveryWindowFrom: '12:30',
+        deliveryWindowTo: '13:30',
+        capacity: 3,
+        rotation: ALL_DAYS.map((weekday) => ({
+          weekday,
+          menuItemIds: [karahi],
+        })),
+      }),
+      201,
+    );
+    const c = await foodCustomer(t, ATD);
+    const s = await expectStatus(
+      await c.api
+        .post('/food/tiffin/subscribe', {
+          planId: p.id,
+          startsOn: pkDay(0),
+          paymentMethod: 'cash_weekly',
+          fulfilment: 'delivery',
+          addressId: c.addressId,
+        })
+        .set('Idempotency-Key', `qa-tiffin-${Date.now()}-${++seq}`),
+      201,
+    );
+    await expectStatus(
+      await v.api.post(`/food/vendor/tiffin/subscriptions/${s.id}/approve`),
+      200,
+    );
+    return { c, s };
+  }
+
+  it('QA #20 a tiffin skip after the cut-off → TIFFIN_SKIP_CUTOFF_PASSED', async () => {
+    const v = await kitchen('QA Tiffin Skip');
+    const { c, s } = await tiffinSubscriber(v);
+    // Today's cut-off was 8 PM yesterday; the day after tomorrow's is still open.
+    const late = await c.api.post(`/food/tiffin/subscriptions/${s.id}/skip`, {
+      date: pkDay(0),
+    });
+    expect(late.status).toBe(409);
+    expect(late.body.error).toMatchObject({
+      code: 'TIFFIN_SKIP_CUTOFF_PASSED',
+      details: { date: pkDay(0) },
+    });
+    const ok = await expectStatus(
+      await c.api.post(`/food/tiffin/subscriptions/${s.id}/skip`, {
+        date: pkDay(2),
+      }),
+      200,
+    );
+    expect(ok.skips).toEqual([pkDay(2)]);
+  });
+
+  it('QA #21 tiffin daily generation run twice → one order per delivery', async () => {
+    const v = await kitchen('QA Tiffin Twice');
+    const { s } = await tiffinSubscriber(v);
+    const jobs = t.app.get(GrowthJobsService);
+    const at = new Date(tiffinCutoff(pkDay(2)).getTime() + 60_000);
+    await jobs.generateTiffin(at);
+    await jobs.generateTiffin(at);
+    const rows = await sql(
+      `SELECT to_char(d.date, 'YYYY-MM-DD') AS date, d.food_order_id,
+              (SELECT count(*)::int FROM food_orders o WHERE o.id = d.food_order_id) AS orders
+         FROM tiffin_deliveries d WHERE d.subscription_id = $1 ORDER BY d.date`,
+      [s.id],
+    );
+    expect(rows.map((r: any) => [r.date, r.orders])).toEqual([
+      [pkDay(1), 1],
+      [pkDay(2), 1],
+    ]);
+    const [{ n }] = await sql(
+      `SELECT count(*)::int AS n FROM food_orders WHERE brand_id = $1 AND source = 'tiffin'`,
+      [v.brandId],
+    );
+    expect(n).toBe(2);
+  });
+
+  it('QA #22 accepting an older catering quote → refused', async () => {
+    const v = await kitchen('QA Catering Quote');
+    const c = await foodCustomer(t, ATD);
+    const r = await expectStatus(
+      await c.api.post('/food/catering', {
+        vendorId: v.brandId,
+        eventDate: pkDay(6),
+        eventTime: '20:00',
+        guests: 40,
+        eventType: 'dawat',
+        requestedItems: [{ name: 'Chicken Karahi', qty: 10 }],
+        fulfilment: 'delivery',
+        addressId: c.addressId,
+      }),
+      201,
+    );
+    const lines = [{ name: 'Chicken Karahi (full)', qty: 10, unitPrice: 2600 }];
+    for (const deliveryFee of [500, 0])
+      await expectStatus(
+        await v.api.post(`/food/vendor/catering/${r.id}/quote`, {
+          lines,
+          deliveryFee,
+          advancePct: 30,
+        }),
+        200,
+      );
+    const old = await c.api.post(`/food/catering/${r.id}/accept`, {
+      version: 1,
+    });
+    expect(old.status).toBe(409);
+    expect(old.body.error).toMatchObject({
+      code: 'INVALID_TRANSITION',
+      details: { version: 1, latestVersion: 2 },
+    });
+    const latest = await expectStatus(
+      await c.api.post(`/food/catering/${r.id}/accept`, { version: 2 }),
+      200,
+    );
+    expect(latest.status).toBe('accepted');
+  });
+
+  it('QA #23 Ramadan outside the event dates → the normal hours', async () => {
+    const v = await foodVendor(t, admin, 'restaurant', 'QA Ramadan Kitchen');
+    await setUpVendor(t, v, {
+      at: ATD,
+      settings: { city: 'Abbottabad' },
+      hours: ALL_DAYS.map((weekday) => ({
+        weekday,
+        opensAt: '12:00',
+        closesAt: '23:00',
+      })),
+    });
+    await expectStatus(
+      await v.api.put('/food/vendor/ramadan', {
+        enabled: true,
+        sehriFrom: '02:00',
+        sehriTo: '05:00',
+        iftarFrom: '17:00',
+        iftarTo: '22:00',
+      }),
+      200,
+    );
+    const e = await expectStatus(
+      await admin.api.post('/admin/food/calendar-events', {
+        kind: 'ramadan',
+        name: 'Ramadan (QA)',
+        startsOn: pkDay(1),
+        endsOn: pkDay(2),
+        city: 'Abbottabad',
+      }),
+      201,
+    );
+    const c = await foodCustomer(t, ATD);
+    await expectStatus(
+      await c.api.post('/food/cart/items', {
+        vendorId: v.brandId,
+        itemId: await itemId(t, v),
+        quantity: 1,
+      }),
+      201,
+    );
+    const schedule = (d: string, time: string) =>
+      c.api.patch('/food/cart', { scheduledFor: `${d}T${time}:00+05:00` });
+    // Outside the event: the weekly hours (open at 1 PM, closed at 3:30 AM).
+    expect((await schedule(pkDay(4), '13:00')).status).toBe(200);
+    expect((await schedule(pkDay(4), '03:30')).body.error.code).toBe(
+      'VENDOR_CLOSED',
+    );
+    // Inside it: sehri and iftar only.
+    expect((await schedule(pkDay(1), '13:00')).body.error.code).toBe(
+      'VENDOR_CLOSED',
+    );
+    expect((await schedule(pkDay(1), '03:30')).status).toBe(200);
+    const page = await expectStatus(
+      await anon().get(`/food/vendors/${v.brandId}`),
+      200,
+    );
+    expect(page.ramadan).toBeNull();
+    // The event removed: the weekly hours on those dates too.
+    await expectStatus(
+      await admin.api.delete(`/admin/food/calendar-events/${e.id}`),
+      200,
+    );
+    expect((await schedule(pkDay(1), '13:00')).status).toBe(200);
+  });
+
+  it('QA #24 a QR order → source qr, counted in "Orders you brought"', async () => {
+    const v = await kitchen('QA Storefront');
+    const c = await foodCustomer(t, ATD);
+    await expectStatus(
+      await c.api.post('/food/cart/items', {
+        vendorId: v.brandId,
+        itemId: await itemId(t, v),
+        quantity: 1,
+      }),
+      201,
+    );
+    const o = await expectStatus(
+      await checkout(c, { source: 'qr', campaign: 'counter' }),
+      201,
+    );
+    const [row] = await sql(
+      `SELECT source, campaign, total FROM food_orders WHERE id = $1`,
+      [o.id],
+    );
+    expect(row).toMatchObject({ source: 'qr', campaign: 'counter' });
+    const s = await expectStatus(
+      await v.api.get('/food/vendor/storefront'),
+      200,
+    );
+    expect(s.ordersYouBrought).toMatchObject({
+      orders: 1,
+      qr: { orders: 1, revenue: row.total },
+      storefront: { orders: 0 },
+      customers: 1,
+      newCustomers: 1,
+      campaigns: [{ source: 'qr', campaign: 'counter', orders: 1 }],
+    });
+    expect(s.qr.payload).toMatch(/\/s\/[^?]+\?src=qr$/);
+  });
+
+  it('QA #25 a demand cell with 3 searches → hidden', async () => {
+    // South of the other QA kitchens, so searches near it are placed in its city.
+    const KM = 0.008993;
+    const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+    const home = { lat: r6(ATD.lat - 4 * KM), lng: ATD.lng };
+    const v = await foodVendor(t, admin, 'restaurant', 'QA Demand Kitchen');
+    await setUpVendor(t, v, { at: home, settings: { city: 'Abbottabad' } });
+    const few = { lat: r6(home.lat + 1.2 * KM), lng: ATD.lng };
+    const many = { lat: r6(home.lat - 1.2 * KM), lng: ATD.lng };
+    for (let i = 0; i < 3; i++)
+      await expectStatus(
+        await anon().get(`/food/search?q=sushi&lat=${few.lat}&lng=${few.lng}`),
+        200,
+      );
+    for (let i = 0; i < 5; i++)
+      await expectStatus(
+        await anon().get(
+          `/food/search?q=sushi&lat=${many.lat}&lng=${many.lng}`,
+        ),
+        200,
+      );
+    await t.app.get(GrowthJobsService).demand();
+    const fewCell = encodeGeohash(few.lat, few.lng);
+    const manyCell = encodeGeohash(many.lat, many.lng);
+    const [stored] = await sql(
+      `SELECT searches FROM demand_cells WHERE geohash6 = $1 AND dimension = 'all' AND hour IS NULL`,
+      [fewCell],
+    );
+    expect(stored.searches).toBe(3);
+    const map = await expectStatus(
+      await v.api.get('/food/vendor/demand-map'),
+      200,
+    );
+    const shown = map.cells.map((x: any) => x.geohash6);
+    expect(shown).toContain(manyCell);
+    expect(shown).not.toContain(fewCell);
+    expect(map.hidden).toBeGreaterThanOrEqual(1);
+    const platform = await expectStatus(
+      await admin.api.get('/admin/food/demand-map?city=Abbottabad'),
+      200,
+    );
+    expect(platform.cells.map((x: any) => x.geohash6)).not.toContain(fewCell);
+  });
+
+  it('QA #26 search_events → no user id column, nothing about the user stored', async () => {
+    const cols = (
+      await sql(
+        `SELECT column_name FROM information_schema.columns WHERE table_name = 'search_events' ORDER BY column_name`,
+      )
+    ).map((r: any) => r.column_name);
+    expect(cols).toEqual([
+      'at',
+      'city',
+      'cuisine_id',
+      'geohash6',
+      'hour',
+      'id',
+      'kind',
+      'open_results_count',
+      'query_norm',
+      'results_count',
+      'weekday',
+    ]);
+    const c = await foodCustomer(t, ATD);
+    const before = new Date();
+    await expectStatus(
+      await c.api.get(
+        `/food/search?q=karahi%20${encodeURIComponent(c.email)}&lat=${ATD.lat}&lng=${ATD.lng}`,
+      ),
+      200,
+    );
+    const rows = await sql(
+      `SELECT row_to_json(s)::text AS j FROM search_events s WHERE at >= $1`,
+      [before],
+    );
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    for (const r of rows) {
+      expect(r.j).not.toContain(c.userId);
+      expect(r.j).not.toContain(c.email.split('@')[0]);
+      expect(r.j).not.toContain(String(ATD.lat));
+    }
+  });
+
+  it('QA #27 menu engineering → quadrants match the seed calculation', async () => {
+    const v = await kitchen('QA Engineering', { codLimit: 50000 });
+    const mix = await ingredient(v, {
+      name: 'QA mix',
+      openingStock: { qty: 10, unit: 'kg', totalCost: 10000 },
+    });
+    const make = async (name: string, price: number, grams: number) => {
+      const d = await dish(v, `${name} QA ${++seq}`, price);
+      await recipe(v, d.id, [{ ingredientId: mix.id, qty: grams, unit: 'g' }]);
+      return d;
+    };
+    // Seed: qty 12, 9, 4, 2 (median 6.5); margin 300, 150, 420, 100 (median 225).
+    const star = await make('Karahi', 500, 200);
+    const plow = await make('Daal', 250, 100);
+    const puzzle = await make('Pulao', 600, 180);
+    const dog = await make('Roll', 150, 50);
+    const c = await foodCustomer(t, ATD);
+    for (const [d, quantity] of [
+      [star, 12],
+      [plow, 9],
+      [puzzle, 4],
+      [dog, 2],
+    ] as const)
+      await expectStatus(
+        await c.api.post('/food/cart/items', {
+          vendorId: v.brandId,
+          itemId: d.id,
+          quantity,
+        }),
+        201,
+      );
+    const o = await expectStatus(await checkout(c), 201);
+    await sql(`UPDATE food_orders SET status = 'delivered' WHERE id = $1`, [
+      o.id,
+    ]);
+    const m = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/menu-engineering'),
+      200,
+    );
+    expect(m).toMatchObject({ medianQty: 6.5, medianMargin: 225 });
+    expect(
+      Object.fromEntries(m.items.map((i: any) => [i.itemId, i.quadrant])),
+    ).toEqual({
+      [star.id]: 'star',
+      [plow.id]: 'plowhorse',
+      [puzzle.id]: 'puzzle',
+      [dog.id]: 'dog',
+    });
+  });
+
+  it('QA #28 a rider batch suggestion → only within 2 km and 45°', async () => {
+    const v = await kitchen('QA Batching');
+    const item = await itemId(t, v);
+    const KM_LAT = 0.008993;
+    const KM_LNG = KM_LAT / Math.cos((ATD.lat * Math.PI) / 180);
+    const r6 = (x: number) => Math.round(x * 1e6) / 1e6;
+    const pt = (n: number, e: number) => ({
+      lat: r6(ATD.lat + n * KM_LAT),
+      lng: r6(ATD.lng + e * KM_LNG),
+    });
+    const place = async (p: { lat: number; lng: number }) => {
+      const c = await foodCustomer(t, p);
+      await expectStatus(
+        await c.api.post('/food/cart/items', {
+          vendorId: v.brandId,
+          itemId: item,
+          quantity: 1,
+        }),
+        201,
+      );
+      return expectStatus(await checkout(c), 201);
+    };
+    const a = await place(pt(2, 0)); // north
+    const near = await place(pt(2, 1)); // 1 km from A, ≈ 27° off
+    const far = await place(pt(4.2, 0)); // same heading, 2.2 km beyond A
+    const wide = await place(pt(1.2, 1.5)); // 1.7 km from A, ≈ 51° off
+    await sql(
+      `UPDATE food_orders SET status = 'ready' WHERE id = ANY($1::uuid[])`,
+      [[a.id, near.id, far.id, wide.id]],
+    );
+    const s = await expectStatus(
+      await v.api.get(`/food/vendor/riders/suggest?orderId=${a.id}`),
+      200,
+    );
+    expect(s.batchWith.map((x: any) => x.orderId)).toEqual([near.id]);
+    expect(s.batchWith[0].dropsApartKm).toBeLessThanOrEqual(2);
+    expect(s.batchWith[0].bearingDiff).toBeLessThanOrEqual(45);
   });
 
   it('QA #36 a voice recording is deleted after 24 h', async () => {

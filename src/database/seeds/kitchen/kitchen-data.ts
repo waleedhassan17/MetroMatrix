@@ -475,3 +475,166 @@ export const SPI_CITY_FACTOR: Record<string, number> = {
   Lahore: 1,
   Karachi: 1.06,
 };
+
+// ── Part 2 (5B) ──────────────────────────────────────────────────────
+
+/**
+ * The demo calendar. Ramadan and Eid are the expected dates; staff confirm
+ * them after the moon sighting (PATCH /admin/food/calendar-events/:id).
+ */
+export const DEMO_CALENDAR: Array<{
+  kind: 'ramadan' | 'eid' | 'public_holiday' | 'other';
+  name: string;
+  startsOn: string;
+  endsOn: string;
+}> = [
+  {
+    kind: 'public_holiday',
+    name: 'Quaid-e-Azam Day',
+    startsOn: '2026-12-25',
+    endsOn: '2026-12-25',
+  },
+  {
+    kind: 'ramadan',
+    name: 'Ramadan 1448 (expected dates — confirm after the moon sighting)',
+    startsOn: '2027-02-08',
+    endsOn: '2027-03-09',
+  },
+  {
+    kind: 'eid',
+    name: 'Eid ul Fitr 1448 (expected)',
+    startsOn: '2027-03-10',
+    endsOn: '2027-03-12',
+  },
+  {
+    kind: 'public_holiday',
+    name: 'Pakistan Day',
+    startsOn: '2027-03-23',
+    endsOn: '2027-03-23',
+  },
+];
+
+/** Kitchen stories for two demo vendors; the checklists are complete, so staff can verify them. */
+export const DEMO_STORIES = [
+  {
+    key: 'zafran',
+    cookName: 'Ustad Zafran (fictional)',
+    story:
+      'A demo kitchen: our biryani is layered and sealed the old way, on a slow fire. Every story on demo vendors is fictional.',
+    pestControlDaysAgo: 40,
+  },
+  {
+    key: 'rukhsana',
+    cookName: 'Khala Rukhsana (fictional)',
+    story:
+      'A demo home kitchen: weekday lunches cooked in a home kitchen in Clifton, the way they are at home. Fictional, for the demo.',
+    pestControlDaysAgo: 20,
+  },
+];
+
+/**
+ * Synthetic, anonymous searches for the demand map (three weeks). Each line
+ * is a neighbourhood centre, a query (null = opening the home) and how often
+ * nothing was found — enough that some cells pass the k = 5 threshold and
+ * some don't.
+ */
+export const DEMO_SEARCHES: Array<{
+  city: 'Lahore' | 'Karachi';
+  lat: number;
+  lng: number;
+  query: string | null;
+  count: number;
+  zeroShare: number;
+  hours: number[];
+}> = [
+  {
+    city: 'Lahore',
+    lat: 31.5204,
+    lng: 74.3587,
+    query: null,
+    count: 80,
+    zeroShare: 0,
+    hours: [13, 20, 21],
+  },
+  {
+    city: 'Lahore',
+    lat: 31.5204,
+    lng: 74.3587,
+    query: 'breakfast',
+    count: 18,
+    zeroShare: 0.8,
+    hours: [7, 8],
+  },
+  {
+    city: 'Lahore',
+    lat: 31.4697,
+    lng: 74.4097,
+    query: 'sushi',
+    count: 28,
+    zeroShare: 1,
+    hours: [20, 21, 22],
+  },
+  {
+    city: 'Lahore',
+    lat: 31.4697,
+    lng: 74.4097,
+    query: null,
+    count: 60,
+    zeroShare: 0.4,
+    hours: [20, 21, 22],
+  },
+  {
+    city: 'Lahore',
+    lat: 31.4697,
+    lng: 74.2728,
+    query: 'healthy salad',
+    count: 24,
+    zeroShare: 0.9,
+    hours: [12, 13],
+  },
+  {
+    city: 'Lahore',
+    lat: 31.4697,
+    lng: 74.2728,
+    query: 'biryani',
+    count: 36,
+    zeroShare: 0,
+    hours: [13, 20],
+  },
+  {
+    city: 'Lahore',
+    lat: 31.4834,
+    lng: 74.3343,
+    query: 'pizza',
+    count: 32,
+    zeroShare: 0.2,
+    hours: [21, 22, 23],
+  },
+  {
+    city: 'Karachi',
+    lat: 24.8138,
+    lng: 67.0299,
+    query: null,
+    count: 70,
+    zeroShare: 0,
+    hours: [13, 21],
+  },
+  {
+    city: 'Karachi',
+    lat: 24.918,
+    lng: 67.0971,
+    query: 'nihari',
+    count: 22,
+    zeroShare: 0.6,
+    hours: [7, 8, 9],
+  },
+  {
+    city: 'Karachi',
+    lat: 24.918,
+    lng: 67.0971,
+    query: null,
+    count: 50,
+    zeroShare: 0.7,
+    hours: [20, 21],
+  },
+];

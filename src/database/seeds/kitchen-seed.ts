@@ -8,7 +8,11 @@
  * Qandeel Karahi House, Khala Rukhsana's Kitchen): ingredients, recipe cards
  * for every dish, 60 days of orders, 8 weeks of purchases, waste, a stock
  * take, a sample of the PBS weekly SPI for Lahore and Karachi, price-watch
- * mappings, forecasts, prep stats and tonight's Bachat Box. Idempotent.
+ * mappings, forecasts, prep stats and tonight's Bachat Box. Part 2 (5B):
+ * the Ramadan/Eid calendar and Zafran's windows, a tiffin plan with
+ * subscribers, a quoted dawat request, kitchen stories, a signature dish,
+ * QR/storefront attribution, anonymous demand data and an experiment.
+ * Idempotent.
  *
  * It boots the API's own application context, so stock, costing and
  * forecasts are written by the same services as the API. Jobs and real AI
@@ -24,6 +28,7 @@ import { NestFactory } from '@nestjs/core';
 import { DataSource } from 'typeorm';
 import { AppModule } from '../../app.module';
 import { seedKitchen } from './kitchen/seed-kitchen';
+import { seedGrowth } from './kitchen/seed-growth';
 
 /* eslint-disable no-console */
 async function main() {
@@ -47,6 +52,10 @@ async function main() {
     console.log(`[seed] created: ${JSON.stringify(result.created)}`);
     for (const v of result.vendors)
       console.log(`[seed] ${v.name}${v.skipped ? ' (already seeded)' : ''}`);
+    const growth = await seedGrowth(app, {
+      log: (line) => console.log(`[seed] ${line}`),
+    });
+    console.log(`[seed] growth: ${JSON.stringify(growth.created)}`);
   } finally {
     await app.close();
   }

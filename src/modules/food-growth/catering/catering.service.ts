@@ -1,3 +1,4 @@
+import { pgDate } from '../../../common/db/parallel';
 import {
   BadRequestException,
   ConflictException,
@@ -55,12 +56,7 @@ const transition = (from: string, to: string) =>
   );
 
 const rs = (n: number) => `Rs ${n.toLocaleString('en-PK')}`;
-const iso = (d: unknown) =>
-  d === null || d === undefined
-    ? null
-    : typeof d === 'string'
-      ? d.slice(0, 10)
-      : (d as Date).toISOString().slice(0, 10);
+const iso = pgDate;
 
 /**
  * Dawat and catering bookings. Request → the vendor quotes (each change is a

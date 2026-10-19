@@ -309,7 +309,9 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   - `src/modules/ai/` — the AI layer and voice;
   - `src/modules/kitchen/` — stock, recipes, purchases, costing, price watch, waste, insight
     cards, forecast and prep, Bachat Box, packing proof;
-  - later `food-growth/`, `nutrition/` and `my-kitchen/`.
+  - `src/modules/food-growth/` (5B) — tiffin, catering, Ramadan, story and hygiene,
+    storefront, discovery rails and badges, demand map and curve;
+  - later `nutrition/` and `my-kitchen/`.
 
   Contracts: `docs/API_KITCHEN.md`, `docs/AI.md`, `docs/VOICE.md`.
 - **AI is optional and never trusted blindly.** Every call goes through `AiService.run`:
@@ -350,10 +352,23 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   a customer for 14 days.
 - **Jobs** (`kitchen/jobs/kitchen-jobs.service.ts`) are advisory-locked and idempotent, and
   tests call them directly. `KitchenJobsService.nightly[]` takes more steps.
-- `test/qa-matrix-kitchen.e2e-spec.ts` is Chunk 5's release gate: rows 1–19 and 36–38 now.
+- **Growth (5B):**
+  - Orders the system writes (tiffin, catering) go through `FoodOrderWriter` and are accepted
+    as `system`. They run once: a `tiffin_deliveries` unique key, and
+    `catering_requests.food_order_id`.
+  - Ramadan hours are `BranchStateService.dateOverrides` → `openIntervals(…, byDate)`, only
+    on dates inside a `ramadan` `calendar_events` row. Never store them as hours.
+  - Discovery extensions are lists on `FoodDiscoveryService`: `badgeSources`,
+    `railSources`, `vendorExtras`, `itemExtras`, `searchSinks`.
+  - `search_events` is anonymous: no user, device, IP or exact point; geohash6 only
+    (`common/geo`). Never add a user column. Demand output is k-thresholded (`DEMAND_K` = 5).
+  - Hygiene `verified` is set only by staff (`/admin/food/hygiene`).
+  - Menu engineering rules are pure (`kitchen/engineering/menu-engineering.ts`).
+- `test/qa-matrix-kitchen.e2e-spec.ts` is Chunk 5's release gate: rows 1–28 and 36–38 now.
   Helpers live in `test/utils/kitchen.ts` and `test/utils/fake-ai.ts`.
 - **`seed:kitchen`** (after `seed:food`) boots the app context, so demo data goes through the
-  same services. History orders are inserted as already deducted.
+  same services. History orders are inserted as already deducted. Part 2 (5B) adds a tiffin
+  plan with subscribers, a catering request, a Ramadan event, a story and search events.
 
 ## Keep in sync when the API changes
 
