@@ -103,6 +103,12 @@ export const UPLOAD_PURPOSES = {
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
     maxBytes: 8_000_000,
   },
+  /** A short kitchen video on the story (public). */
+  kitchen_video: {
+    resourceType: 'video',
+    formats: ['mp4', 'mov', 'webm'],
+    maxBytes: 40_000_000,
+  },
   /** A customer's grocery receipt for My Kitchen (private). */
   pantry_receipt: {
     resourceType: 'image',

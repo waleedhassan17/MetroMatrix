@@ -146,7 +146,9 @@ export class FoodScheduleService {
         },
         slot: null,
       };
-    if (!isWithinHours(schedule.hours, schedule.closures, tz, at))
+    if (
+      !isWithinHours(schedule.hours, schedule.closures, tz, at, schedule.byDate)
+    )
       return {
         issue: {
           code: ErrorCode.VENDOR_CLOSED,

@@ -32,3 +32,7 @@ export const ORDER_SOURCES = [
   'surplus',
 ] as const;
 export type OrderSource = (typeof ORDER_SOURCES)[number];
+
+/** The sources a customer's own checkout may claim (`?src=` on the storefront link). */
+export const CHECKOUT_SOURCES = ['app', 'storefront', 'qr'] as const;
+export type CheckoutSource = (typeof CHECKOUT_SOURCES)[number];

@@ -8,6 +8,7 @@ import { kitchenNotFound } from '../common/errors';
 import { StockAvailabilityService } from '../stock/stock-availability.service';
 import { KitchenAlertsService } from '../stock/kitchen-alerts.service';
 import { round4, toBase } from '../stock/units';
+import { todayIn } from '../../../common/time/time.util';
 
 /**
  * Recipe cards: what a dish (or one size of it) uses. Saving a card
@@ -141,6 +142,53 @@ export class RecipesService {
     return this.get(v, itemId, variantId);
   }
 
+  /**
+   * The signature badge on a dish (Chunk 5, P7): the vendor's own recipe,
+   * by whom and since when. It needs the recipe card; a new claim clears a
+   * staff removal (and goes back on the staff moderation list).
+   */
+  async signature(
+    v: VendorRef,
+    itemId: string,
+    variantId: string | undefined,
+    dto: { isSignature: boolean; by?: string | null; since?: string | null },
+    now = new Date(),
+  ) {
+    const m = this.dataSource.manager;
+    await this.ownedItem(m, v, itemId, variantId);
+    const card = await m.findOne(RecipeCard, {
+      where: {
+        menuItemId: itemId,
+        variantId: variantId ?? (null as unknown as undefined),
+      },
+    });
+    if (!card) throw kitchenNotFound('Recipe card');
+    if (dto.isSignature) {
+      const [b] = await m.query(
+        `SELECT fb.name, br.timezone FROM food_brands fb JOIN branches br ON br.id = $2 WHERE fb.id = $1`,
+        [v.brandId, v.branchId],
+      );
+      await m.update(
+        RecipeCard,
+        { id: card.id },
+        {
+          isSignature: true,
+          signatureBy: dto.by ?? card.signatureBy ?? b.name,
+          signatureSince:
+            dto.since ?? card.signatureSince ?? todayIn(b.timezone, now),
+          signatureRemovedAt: null,
+          signatureRemovedReason: null,
+        },
+      );
+    } else
+      await m.update(
+        RecipeCard,
+        { id: card.id },
+        { isSignature: false, signatureBy: null, signatureSince: null },
+      );
+    return this.get(v, itemId, variantId);
+  }
+
   async remove(v: VendorRef, itemId: string, variantId?: string) {
     await this.ownedItem(this.dataSource.manager, v, itemId, variantId);
     const res = await this.dataSource.manager.delete(RecipeCard, {
@@ -210,6 +258,8 @@ export class RecipesService {
       isSignature: card.isSignature,
       signatureBy: card.signatureBy,
       signatureSince: card.signatureSince,
+      signatureRemovedAt: card.signatureRemovedAt,
+      signatureRemovedReason: card.signatureRemovedReason,
       lines: viewLines,
       /** Base lines (add-ons excluded), at today's average cost; rupees. */
       costPerServing: Math.round(

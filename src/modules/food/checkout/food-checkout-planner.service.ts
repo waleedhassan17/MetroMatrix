@@ -5,6 +5,7 @@ import {
   formatTime12,
   localDate,
   shortDateLabel,
+  toZonedIso,
 } from '../../../common/time/time.util';
 import { Address } from '../../addresses/entities/address.entity';
 import { FoodCart } from '../cart/entities/food-cart.entity';
@@ -430,6 +431,23 @@ export class FoodCheckoutPlanner {
         ),
       );
     }
+    // Ramadan: an iftar window taken only as pre-orders placed before it opens.
+    const window = schedule.preorderWindows?.find(
+      (w) =>
+        at.getTime() >= w.start.getTime() && at.getTime() < w.end.getTime(),
+    );
+    if (window && now.getTime() >= window.start.getTime())
+      issues.push(
+        issue(
+          ErrorCode.SLOT_INVALID,
+          `${vendor.name} takes iftar orders in advance — order before ${formatTime12(window.start, tz)} for that day’s iftar.`,
+          {
+            iftarPreorderOnly: true,
+            windowStart: toZonedIso(window.start, tz),
+            windowEnd: toZonedIso(window.end, tz),
+          },
+        ),
+      );
     for (const l of plan.lines) if (l.error) issues.push(l.error);
 
     if (fulfilment === 'delivery' && point && quote.serviceable) {

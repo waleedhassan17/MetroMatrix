@@ -249,3 +249,30 @@ export class VariantQueryDto {
   @IsUUID()
   variantId?: string;
 }
+
+/** PUT /food/vendor/kitchen/items/:itemId/signature */
+export class SignatureDto {
+  @IsBoolean() isSignature!: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'Ammi Jaan',
+    description: 'Whose recipe it is (default: the kitchen’s cook).',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @Trim()
+  @IsString()
+  @Length(2, 120)
+  by?: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '2019-03-01',
+    description: 'Since when (default: today).',
+  })
+  @IsOptional()
+  @ValidateIf((_, v) => v !== null)
+  @IsISO8601({ strict: true })
+  since?: string | null;
+}

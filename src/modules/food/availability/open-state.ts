@@ -44,8 +44,14 @@ export function rangesOf(
 }
 
 /**
+ * Hours for particular dates that replace the weekly hours on those dates
+ * (Chunk 5: Ramadan's sehri and iftar windows). Minutes from midnight.
+ */
+export type DateHours = Map<string, Array<{ opens: number; closes: number }>>;
+
+/**
  * Open intervals (instants) for local dates `from-1` … `from+days`, closures
- * subtracted, contiguous stretches merged. The day before is included so an
+ * subtracted, contiguous stretches merged; `byDate` replaces a date's weekly hours. The day before is included so an
  * overnight range that started yesterday still counts at 01:00 today.
  */
 export function openIntervals(
@@ -54,12 +60,14 @@ export function openIntervals(
   tz: string,
   fromDate: string,
   days: number,
+  byDate?: DateHours,
 ): Interval[] {
   const raw: Interval[] = [];
   for (let i = -1; i <= days; i++) {
     const date = addDays(fromDate, i);
     const wd = weekdayOf(date);
-    for (const r of hours.filter((h) => h.weekday === wd)) {
+    const ranges = byDate?.get(date) ?? hours.filter((h) => h.weekday === wd);
+    for (const r of ranges) {
       const endMinutes = r.closes > r.opens ? r.closes : r.closes + 1440;
       const start = wallTimeToInstant(date, r.opens, tz);
       const end = wallTimeToInstant(date, endMinutes, tz);
@@ -102,9 +110,17 @@ export function openState(opts: {
   now: Date;
   paused?: boolean;
   pauseMessage?: string | null;
+  byDate?: DateHours;
 }): OpenState {
   const today = localDate(opts.now, opts.tz);
-  const intervals = openIntervals(opts.hours, opts.closures, opts.tz, today, 7);
+  const intervals = openIntervals(
+    opts.hours,
+    opts.closures,
+    opts.tz,
+    today,
+    7,
+    opts.byDate,
+  );
   const t = opts.now.getTime();
   const current = intervals.find(
     (iv) => iv.start.getTime() <= t && t < iv.end.getTime(),
@@ -154,9 +170,10 @@ export function isWithinHours(
   closures: Interval[],
   tz: string,
   at: Date,
+  byDate?: DateHours,
 ): boolean {
   const date = localDate(at, tz);
-  return openIntervals(hours, closures, tz, date, 1).some(
+  return openIntervals(hours, closures, tz, date, 1, byDate).some(
     (iv) =>
       iv.start.getTime() <= at.getTime() && at.getTime() < iv.end.getTime(),
   );

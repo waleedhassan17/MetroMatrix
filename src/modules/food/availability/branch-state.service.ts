@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import {
+  DateHours,
   HoursRange,
   Interval,
   OpenState,
@@ -14,7 +15,17 @@ export interface BranchSchedule {
   hours: HoursRange[];
   closures: Interval[];
   bands: FeeBand[];
+  /** Dates whose hours replace the weekly ones (Ramadan windows). */
+  byDate?: DateHours;
+  /** Stretches taken only as pre-orders placed before they start (iftar). */
+  preorderWindows?: Interval[];
 }
+
+export type DateOverrides = (
+  m: EntityManager,
+  branchIds: string[],
+  now: Date,
+) => Promise<Map<string, { byDate: DateHours; preorderWindows: Interval[] }>>;
 
 /** The fields of a branch the open-state and quote logic need. */
 export interface BranchCore {
@@ -34,6 +45,9 @@ export interface BranchCore {
  */
 @Injectable()
 export class BranchStateService {
+  /** Filled in by food-growth (Chunk 5): Ramadan's sehri and iftar windows on event dates. */
+  dateOverrides: DateOverrides = async () => new Map();
+
   constructor(private readonly dataSource: DataSource) {}
 
   async schedules(
@@ -83,6 +97,12 @@ export class BranchStateService {
         fee: b.fee,
         minOrder: b.min_order,
       });
+    for (const [id, o] of await this.dateOverrides(m, branchIds, now))
+      if (o.byDate.size && out.has(id))
+        Object.assign(out.get(id)!, {
+          byDate: o.byDate,
+          preorderWindows: o.preorderWindows,
+        });
     return out;
   }
 
@@ -101,6 +121,7 @@ export class BranchStateService {
       now,
       paused: b.is_paused,
       pauseMessage: b.pause_message,
+      byDate: s.byDate,
     });
   }
 }

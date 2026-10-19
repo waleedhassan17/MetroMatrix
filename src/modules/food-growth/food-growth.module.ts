@@ -24,6 +24,19 @@ import {
   CustomerCateringController,
   VendorCateringController,
 } from './catering/catering.controller';
+import { RamadanSettings } from './ramadan/entities/ramadan-settings.entity';
+import { RamadanService } from './ramadan/ramadan.service';
+import { VendorRamadanController } from './ramadan/ramadan.controller';
+import { KitchenStory } from './story/entities/kitchen-story.entity';
+import { StoryService } from './story/story.service';
+import { VendorStoryController } from './story/story.controller';
+import { StorefrontService } from './storefront/storefront.service';
+import {
+  PublicStorefrontController,
+  VendorStorefrontController,
+} from './storefront/storefront.controller';
+import { GrowthDiscoveryService } from './discovery/growth-discovery.service';
+import { AdminGrowthController } from './admin/admin-growth.controller';
 
 /**
  * Food Court growth (Chunk 5, milestone 5B): tiffin subscriptions, catering,
@@ -39,6 +52,8 @@ import {
       TiffinDelivery,
       CateringRequest,
       CateringQuote,
+      RamadanSettings,
+      KitchenStory,
     ]),
     FoodModule,
     KitchenModule,
@@ -50,8 +65,27 @@ import {
     CustomerTiffinController,
     VendorCateringController,
     CustomerCateringController,
+    VendorRamadanController,
+    VendorStoryController,
+    PublicStorefrontController,
+    VendorStorefrontController,
+    AdminGrowthController,
   ],
-  providers: [TiffinService, GrowthJobsService, CateringService],
-  exports: [TiffinService, GrowthJobsService, CateringService],
+  providers: [
+    TiffinService,
+    GrowthJobsService,
+    CateringService,
+    RamadanService,
+    StoryService,
+    StorefrontService,
+    GrowthDiscoveryService,
+  ],
+  exports: [
+    TiffinService,
+    GrowthJobsService,
+    CateringService,
+    RamadanService,
+    StoryService,
+  ],
 })
 export class FoodGrowthModule {}

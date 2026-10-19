@@ -52,4 +52,20 @@ export class RecipeCard extends BaseEntity {
 
   @Column({ type: 'date', name: 'signature_since', nullable: true })
   signatureSince!: string | null;
+
+  /** Staff removed the claim (P7 moderation): when and why; a new claim clears it. */
+  @Column({
+    type: 'timestamptz',
+    name: 'signature_removed_at',
+    nullable: true,
+  })
+  signatureRemovedAt!: Date | null;
+
+  @Column({
+    type: 'varchar',
+    length: 300,
+    name: 'signature_removed_reason',
+    nullable: true,
+  })
+  signatureRemovedReason!: string | null;
 }

@@ -11,6 +11,9 @@ export default registerAs('app', () => ({
   port: parseInt(process.env.PORT ?? '3000', 10),
   apiPrefix: process.env.API_PREFIX ?? 'api/v1',
   appUrl: process.env.APP_URL ?? 'http://localhost:3000',
+  storefrontBaseUrl: (
+    process.env.STOREFRONT_BASE_URL || 'http://localhost:8081'
+  ).replace(/\/+$/, ''),
   corsOrigins: list(process.env.CORS_ORIGINS),
   logLevel: process.env.LOG_LEVEL ?? 'info',
   bcryptRounds: parseInt(process.env.BCRYPT_ROUNDS ?? '12', 10),

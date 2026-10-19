@@ -77,6 +77,31 @@ export class FoodDiscoveryService {
     async () => [];
   /** Filled in by reviews (P7): rating summary for a vendor page. */
   reviewSummary: (brandId: string) => Promise<unknown> = async () => null;
+  /**
+   * Chunk 5 additions, each a list so several sub-domains can add to them:
+   * badges on vendor cards (signature, hygiene, Bachat Box), extra home
+   * rails (rail → brand ids, best first), blocks on a vendor page and fields
+   * on an item sheet.
+   */
+  readonly badgeSources: Array<
+    (brandIds: string[], now: Date) => Promise<Map<string, string[]>>
+  > = [];
+  readonly railSources: Array<
+    (ctx: {
+      brandIds: string[];
+      city: string | null;
+      now: Date;
+    }) => Promise<Record<string, string[]>>
+  > = [];
+  readonly vendorExtras: Array<
+    (
+      v: { brandId: string; branchId: string; timezone: string },
+      now: Date,
+    ) => Promise<Record<string, unknown>>
+  > = [];
+  readonly itemExtras: Array<
+    (itemId: string, now: Date) => Promise<Record<string, unknown>>
+  > = [];
 
   constructor(
     private readonly dataSource: DataSource,
@@ -163,16 +188,15 @@ export class FoodDiscoveryService {
     fulfilment: 'delivery' | 'pickup',
     now: Date,
   ) {
-    const [schedules, deals, cuisines] = await Promise.all([
+    const brandIds = rows.map((r) => r.brand.id);
+    const [schedules, deals, cuisines, badges] = await Promise.all([
       this.state.schedules(
         rows.map((r) => r.id),
         now,
       ),
-      this.dealsFor(
-        rows.map((r) => r.brand.id),
-        now,
-      ),
+      this.dealsFor(brandIds, now),
       this.cuisineNames([...new Set(rows.flatMap((r) => r.brand.cuisine_ids))]),
+      this.badgesFor(brandIds, now),
     ]);
     return rows.map((r) => {
       const quote = this.serviceability.quote(
@@ -186,9 +210,23 @@ export class FoodDiscoveryService {
         row: r,
         quote,
         deal,
-        card: this.card(r, quote, deal, cuisines, now),
+        card: {
+          ...this.card(r, quote, deal, cuisines, now),
+          badges: badges.get(r.brand.id) ?? [],
+        },
       };
     });
+  }
+
+  private async badgesFor(brandIds: string[], now: Date) {
+    const out = new Map<string, string[]>();
+    if (!brandIds.length) return out;
+    for (const m of await Promise.all(
+      this.badgeSources.map((f) => f(brandIds, now)),
+    ))
+      for (const [id, list] of m)
+        out.set(id, [...(out.get(id) ?? []), ...list]);
+    return out;
   }
 
   private card(
@@ -326,6 +364,12 @@ export class FoodDiscoveryService {
         ])
       : [{ city: null }];
     const again = userId ? await this.orderAgain(userId) : [];
+    const extra = await this.extraRails(
+      list,
+      pickupRows,
+      city?.city ?? null,
+      now,
+    );
     return {
       coverage: {
         delivering: rows.length > 0,
@@ -348,7 +392,54 @@ export class FoodDiscoveryService {
       fastest: top([...open].sort((a, b) => a.quote.eta.min - b.quote.eta.min)),
       newOnFoodCourt: top(list.filter((c) => c.card.isNew)),
       freeDelivery: top(open.filter((c) => c.card.deliveryFee === 0)),
+      ...extra,
     };
+  }
+
+  /**
+   * Rails other sub-domains add to the home (iftarNearYou, surplusNearYou,
+   * tiffinNearYou). Vendors you can only collect from (a Bachat Box) get
+   * pickup cards; everything keeps the order the rail gave, open first.
+   */
+  private async extraRails(
+    list: Awaited<ReturnType<FoodDiscoveryService['cards']>>,
+    pickupRows: Candidate[],
+    city: string | null,
+    now: Date,
+  ): Promise<Record<string, unknown[]>> {
+    if (!this.railSources.length) return {};
+    const brandIds = [
+      ...new Set([
+        ...list.map((c) => c.card.id),
+        ...pickupRows.map((r) => r.brand.id),
+      ]),
+    ];
+    const rails = Object.assign(
+      {},
+      ...(await Promise.all(
+        this.railSources.map((f) => f({ brandIds, city, now })),
+      )),
+    ) as Record<string, string[]>;
+    const pool = new Map(list.map((c) => [c.card.id, c]));
+    const missing = new Set(
+      Object.values(rails)
+        .flat()
+        .filter((id) => !pool.has(id)),
+    );
+    if (missing.size)
+      for (const c of await this.cards(
+        pickupRows.filter((r) => missing.has(r.brand.id)),
+        'pickup',
+        now,
+      ))
+        pool.set(c.card.id, c);
+    const out: Record<string, unknown[]> = {};
+    for (const [name, ids] of Object.entries(rails)) {
+      const cs = ids.map((id) => pool.get(id)).filter((c) => !!c);
+      cs.sort((a, b) => Number(b.quote.open.open) - Number(a.quote.open.open));
+      out[name] = cs.slice(0, 10).map((c) => c.card);
+    }
+    return out;
   }
 
   /** A vendor's own page: open state (even when paused), fulfilment, quote, deals, rating, full menu. */
@@ -379,10 +470,16 @@ export class FoodDiscoveryService {
     } as Candidate;
     const [{ card, quote }] = await this.cards([candidate], 'delivery', now);
     const pickup = (await this.cards([candidate], 'pickup', now))[0].quote;
-    const [menu, rating, deals] = await Promise.all([
+    const [menu, rating, deals, ...extras] = await Promise.all([
       this.menu.customerMenu(brand.id, row.id, branch.timezone, now),
       this.reviewSummary(brand.id),
       this.dealsFor([brand.id], now),
+      ...this.vendorExtras.map((f) =>
+        f(
+          { brandId: brand.id, branchId: row.id, timezone: branch.timezone },
+          now,
+        ),
+      ),
     ]);
     return {
       ...card,
@@ -421,6 +518,7 @@ export class FoodDiscoveryService {
       ratingSummary: rating,
       menu: menu.categories,
       popular: menu.popular,
+      ...Object.assign({}, ...extras),
     };
   }
 
@@ -437,7 +535,11 @@ export class FoodDiscoveryService {
         code: ErrorCode.NOT_FOUND,
         message: 'Dish not found.',
       });
-    return this.menu.itemSheet(itemId, row.branch_id, row.timezone, now);
+    const [sheet, ...extras] = await Promise.all([
+      this.menu.itemSheet(itemId, row.branch_id, row.timezone, now),
+      ...this.itemExtras.map((f) => f(itemId, now)),
+    ]);
+    return sheet && Object.assign(sheet, ...extras);
   }
 
   /** Vendors by name/cuisine, and dishes grouped by the vendor that cooks them. */

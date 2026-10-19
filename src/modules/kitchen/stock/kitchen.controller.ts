@@ -21,6 +21,7 @@ import {
   IngredientDto,
   IngredientsQueryDto,
   RecipeDto,
+  SignatureDto,
   StockCountDto,
   StockQueryDto,
   UpdateIngredientDto,
@@ -187,6 +188,20 @@ export class KitchenStockController {
     @Query() q: VariantQueryDto,
   ) {
     return this.recipes.remove(v, itemId, q.variantId);
+  }
+
+  @Put('items/:itemId/signature')
+  @ApiOperation({
+    summary:
+      '{ isSignature, by? (default: the kitchen), since? (default: today) } (?variantId) — the "Signature recipe" badge on the dish. Needs the recipe card; staff can remove a false claim.',
+  })
+  signature(
+    @CurrentVendor() v: VendorRef,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Query() q: VariantQueryDto,
+    @Body() dto: SignatureDto,
+  ) {
+    return this.recipes.signature(v, itemId, q.variantId, dto);
   }
 
   @Get('items/:itemId/servings')

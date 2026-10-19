@@ -6,11 +6,14 @@ import {
   IsString,
   IsUUID,
   Length,
+  Matches,
   MaxLength,
   ValidateIf,
 } from 'class-validator';
 import { Trim } from '../../../../common/validation/transforms';
 import {
+  CHECKOUT_SOURCES,
+  CheckoutSource,
   FOOD_PAYMENT_METHODS,
   CustomerPaymentMethod as FoodPaymentMethod,
 } from '../../common/food-types';
@@ -79,4 +82,27 @@ export class FoodCheckoutDto extends OrderDetailsDto {
   @ApiProperty({ enum: FOOD_PAYMENT_METHODS })
   @IsIn(FOOD_PAYMENT_METHODS)
   paymentMethod!: FoodPaymentMethod;
+
+  @ApiPropertyOptional({
+    enum: CHECKOUT_SOURCES,
+    default: 'app',
+    description:
+      'Where the customer came from: the storefront link (`?src=storefront`) or the shop’s QR (`?src=qr`). Counted in the vendor’s "Orders you brought".',
+  })
+  @IsOptional()
+  @IsIn(CHECKOUT_SOURCES)
+  source?: CheckoutSource;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: 'flyer-oct',
+    description: 'The `?c=` campaign tag on the link.',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_.-]{1,40}$/, {
+    message: 'campaign is letters, digits, dot, dash or underscore (≤ 40)',
+  })
+  campaign?: string;
 }

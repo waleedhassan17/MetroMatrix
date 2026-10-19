@@ -140,6 +140,40 @@ describe('open state', () => {
       ),
     ).toBeNull();
   });
+
+  it('per-date hours (Ramadan) replace the weekly hours on those dates only', () => {
+    const lunch = rangesOf(
+      EVERY_DAY.map((weekday) => ({
+        weekday,
+        opensAt: '12:00',
+        closesAt: '23:00',
+      })),
+    );
+    const byDate = new Map([
+      [
+        '2026-10-17',
+        [
+          { opens: 120, closes: 300 }, // sehri 02:00–05:00
+          { opens: 1020, closes: 1320 }, // iftar 17:00–22:00
+        ],
+      ],
+    ]);
+    const at = (d: string, t: string) =>
+      isWithinHours(lunch, [], TZ, pkt(d, t), byDate);
+    expect(at('2026-10-17', '03:00')).toBe(true);
+    expect(at('2026-10-17', '13:00')).toBe(false);
+    expect(at('2026-10-17', '18:00')).toBe(true);
+    expect(at('2026-10-18', '13:00')).toBe(true);
+    expect(at('2026-10-18', '03:00')).toBe(false);
+    const s = openState({
+      hours: lunch,
+      closures: [],
+      tz: TZ,
+      now: pkt('2026-10-17', '13:00'),
+      byDate,
+    });
+    expect(s).toMatchObject({ open: false, label: 'Opens 5:00 PM' });
+  });
 });
 
 describe('delivery quote and ETA', () => {

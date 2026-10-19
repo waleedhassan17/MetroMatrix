@@ -151,6 +151,12 @@ export const envValidationSchema = Joi.object({
   /** Only with STT_PROVIDER=google or TTS_PROVIDER=google. */
   GOOGLE_CLOUD_API_KEY: Joi.string().optional().allow(''),
 
+  // The web storefront the vendor shares (`<base>/s/:slug`, QR adds ?src=qr).
+  STOREFRONT_BASE_URL: Joi.string()
+    .uri({ scheme: ['http', 'https'] })
+    .empty('')
+    .default('http://localhost:8081'),
+
   // seed:shopping only: the four demo partners' password (never in code).
   SEED_DEMO_PASSWORD: Joi.string().optional().allow(''),
 

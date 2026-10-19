@@ -239,6 +239,8 @@ export class FoodCheckoutService {
         scheduledFor ?? new Date(now.getTime() + quote.eta.max * 60_000),
       acceptBy: new Date(now.getTime() + branch.auto_reject_minutes * 60_000),
       portionDate,
+      source: dto.source ?? 'app',
+      campaign: dto.campaign ?? null,
     };
     return this.writer.write(
       m,
