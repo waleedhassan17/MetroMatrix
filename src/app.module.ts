@@ -44,6 +44,7 @@ import { HealthModule } from './modules/health/health.module';
 import { AiModule } from './modules/ai/ai.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
 import { FoodGrowthModule } from './modules/food-growth/food-growth.module';
+import { NutritionModule } from './modules/nutrition/nutrition.module';
 
 @Module({
   imports: [
@@ -109,6 +110,7 @@ import { FoodGrowthModule } from './modules/food-growth/food-growth.module';
     FoodModule,
     KitchenModule,
     FoodGrowthModule,
+    NutritionModule,
     HealthModule,
   ],
   providers: [

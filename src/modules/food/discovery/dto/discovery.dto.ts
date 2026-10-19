@@ -103,6 +103,28 @@ export class VendorQueryDto extends PaginationQueryDto {
   minRating?: number;
 
   @ApiPropertyOptional({
+    minimum: 100,
+    maximum: 3000,
+    description:
+      'Chunk 5: vendors with at least one dish at or under this many kcal per serving (estimated nutrition).',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(100)
+  @Max(3000)
+  maxKcal?: number;
+
+  @ApiPropertyOptional({
+    enum: bool,
+    description:
+      'Chunk 5: vendors with a high-protein dish (≥ 25 g a serving).',
+  })
+  @IsOptional()
+  @IsIn(bool)
+  highProtein?: 'true' | 'false';
+
+  @ApiPropertyOptional({
     enum: bool,
     description:
       'Pickup: vendors you can collect from nearby, whatever their delivery zone.',

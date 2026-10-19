@@ -113,6 +113,10 @@ export class FoodDiscoveryService {
   readonly itemExtras: Array<
     (itemId: string, now: Date) => Promise<Record<string, unknown>>
   > = [];
+  /** Narrow the vendor list (nutrition filters, P10): allowed brand ids, or null for no filter. */
+  readonly brandFilters: Array<
+    (q: VendorQueryDto) => Promise<string[] | null>
+  > = [];
   /** Told about every home, list and search (the demand map, P8). Never fails the request. */
   readonly searchSinks: Array<(e: SearchSignal) => Promise<void>> = [];
 
@@ -319,6 +323,14 @@ export class FoodDiscoveryService {
 
   async list(q: VendorQueryDto, now = new Date()) {
     const pickup = q.pickup === 'true';
+    let brandIds: string[] | undefined;
+    for (const f of this.brandFilters) {
+      const allowed = await f(q);
+      if (allowed === null) continue;
+      brandIds = brandIds
+        ? brandIds.filter((id) => allowed.includes(id))
+        : allowed;
+    }
     const rows = await this.candidates(
       { lat: q.lat, lng: q.lng },
       {
@@ -328,6 +340,7 @@ export class FoodDiscoveryService {
         minRating: q.minRating,
         homeKitchen: q.homeKitchen === 'true',
         priceLevel: q.priceLevel,
+        brandIds,
       },
     );
     let list = await this.cards(rows, pickup ? 'pickup' : 'delivery', now);

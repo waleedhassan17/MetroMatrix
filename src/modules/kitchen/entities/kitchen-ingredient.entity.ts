@@ -1,4 +1,5 @@
 import { Check, Column, Entity, Index, JoinColumn, ManyToOne } from 'typeorm';
+import { NutritionFood } from '../../nutrition/entities/nutrition-food.entity';
 import { BaseEntity } from '../../../common/base/base.entity';
 import { Branch } from '../../food/vendor/entities/branch.entity';
 import { numeric } from '../common/numeric';
@@ -94,4 +95,19 @@ export class KitchenIngredient extends BaseEntity {
   /** Set when on_hand went below zero and the "log your purchase" alert was sent; cleared when back ≥ 0. */
   @Column({ type: 'timestamptz', name: 'negative_alerted_at', nullable: true })
   negativeAlertedAt!: Date | null;
+
+  /** The reference food for nutrition (Chunk 5, P10): suggested, then confirmed by the vendor. */
+  @Column({ type: 'uuid', name: 'nutrition_food_id', nullable: true })
+  nutritionFoodId!: string | null;
+
+  @ManyToOne(() => NutritionFood, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'nutrition_food_id' })
+  nutritionFood?: NutritionFood;
+
+  @Column({ type: 'boolean', name: 'nutrition_confirmed', default: false })
+  nutritionConfirmed!: boolean;
+
+  /** Grams per piece for an ingredient counted in pieces (overrides the food's typical weight). */
+  @Column({ ...numeric(7, 1), name: 'nutrition_piece_grams', nullable: true })
+  nutritionPieceGrams!: number | null;
 }

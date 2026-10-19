@@ -157,6 +157,7 @@ import { ReviewInsightsService } from './reviews/review-insights.service';
     ForecastService,
     KitchenJobsService,
     EngineeringService,
+    RecipesService,
   ],
 })
 export class KitchenModule {}

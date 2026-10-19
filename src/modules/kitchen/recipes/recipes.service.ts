@@ -17,6 +17,9 @@ import { todayIn } from '../../../common/time/time.util';
  */
 @Injectable()
 export class RecipesService {
+  /** Told after a card is saved or removed (nutrition recomputes, P10). Never fails the save. */
+  readonly saved: Array<(v: VendorRef, itemId: string) => Promise<void>> = [];
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly availability: StockAvailabilityService,
@@ -139,7 +142,17 @@ export class RecipesService {
       await this.availability.syncItems(m, v.branchId, [item]);
     });
     await this.alerts.flush(v.branchId);
+    await this.tellSaved(v, itemId);
     return this.get(v, itemId, variantId);
+  }
+
+  private async tellSaved(v: VendorRef, itemId: string) {
+    for (const f of this.saved)
+      try {
+        await f(v, itemId);
+      } catch {
+        /* the card is saved either way */
+      }
   }
 
   /**
@@ -196,6 +209,7 @@ export class RecipesService {
       variantId: variantId ?? (null as unknown as undefined),
     });
     if (!res.affected) throw kitchenNotFound('Recipe card');
+    await this.tellSaved(v, itemId);
     return { removed: true };
   }
 
