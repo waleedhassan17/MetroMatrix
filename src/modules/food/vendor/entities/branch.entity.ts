@@ -23,6 +23,16 @@ export interface GeoPoint {
  * DROP that unique index when chains launch; orders and menus already point
  * at the brand/branch, so nothing else moves.
  */
+export const PAUSE_REASONS = [
+  'gas',
+  'electricity',
+  'weather',
+  'staff',
+  'stock',
+  'other',
+] as const;
+export type PauseReason = (typeof PAUSE_REASONS)[number];
+
 @Entity('branches')
 @Index(['businessId'], { unique: true })
 @Index(['brandId'])
@@ -165,6 +175,20 @@ export class Branch extends BaseEntity {
 
   @Column({ type: 'text', name: 'food_safety_note', nullable: true })
   foodSafetyNote!: string | null;
+
+  /** Why it is paused (Chunk 5 outage quick-pause) — never shown to customers. */
+  @Column({
+    type: 'enum',
+    enum: PAUSE_REASONS,
+    enumName: 'branch_pause_reason',
+    name: 'pause_reason',
+    nullable: true,
+  })
+  pauseReason!: PauseReason | null;
+
+  /** A timed pause ends by itself (the minute job resumes it). */
+  @Column({ type: 'timestamptz', name: 'auto_resume_at', nullable: true })
+  autoResumeAt!: Date | null;
 
   /** Kitchen (Chunk 5): the food cost % a dish should stay under (alerts above it). */
   @Column({ type: 'smallint', name: 'target_food_cost_pct', default: 35 })

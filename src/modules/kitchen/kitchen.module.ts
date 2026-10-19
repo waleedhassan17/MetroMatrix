@@ -40,6 +40,13 @@ import { InsightCardsService } from './insights/insight-cards.service';
 import { KitchenMoneyController } from './purchases/kitchen-money.controller';
 import { AdminKitchenController } from './admin/admin-kitchen.controller';
 import { MediaModule } from '../media/media.module';
+import {
+  DemandForecast,
+  ForecastAccuracy,
+} from './entities/demand-forecast.entity';
+import { ForecastService } from './forecast/forecast.service';
+import { PrepService } from './forecast/prep.service';
+import { KitchenForecastController } from './forecast/forecast.controller';
 
 /**
  * Kitchen intelligence for Food Court vendors (Chunk 5): voice on the
@@ -64,6 +71,8 @@ import { MediaModule } from '../media/media.module';
       ReferenceItem,
       ReferencePrice,
       ItemCostSnapshot,
+      DemandForecast,
+      ForecastAccuracy,
     ]),
     FoodModule,
     NotificationsModule,
@@ -74,6 +83,7 @@ import { MediaModule } from '../media/media.module';
     KitchenStockController,
     KitchenMoneyController,
     AdminKitchenController,
+    KitchenForecastController,
   ],
   providers: [
     KitchenVendors,
@@ -94,6 +104,8 @@ import { MediaModule } from '../media/media.module';
     PriceWatchService,
     WasteService,
     InsightCardsService,
+    ForecastService,
+    PrepService,
   ],
   exports: [
     KitchenVendors,
@@ -104,6 +116,8 @@ import { MediaModule } from '../media/media.module';
     LineResolver,
     CostingService,
     InsightCardsService,
+    ForecastService,
+    KitchenJobsService,
   ],
 })
 export class KitchenModule {}

@@ -4,6 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { DataSource, EntityManager } from 'typeorm';
 import { KitchenAlertsService } from '../stock/kitchen-alerts.service';
 import { CostingService } from '../costing/costing.service';
+import { ForecastService } from '../forecast/forecast.service';
 
 type Work = (m: EntityManager) => Promise<Record<string, number>>;
 
@@ -26,10 +27,32 @@ export class KitchenJobsService {
     private readonly alerts: KitchenAlertsService,
     private readonly costing: CostingService,
     private readonly config: ConfigService,
+    private readonly forecasts: ForecastService,
   ) {
-    this.nightly.push({
-      name: 'cost-snapshots',
-      run: (now) => this.costSnapshots(now),
+    this.nightly.push(
+      { name: 'forecasts', run: (now) => this.forecastAll(now) },
+      { name: 'cost-snapshots', run: (now) => this.costSnapshots(now) },
+    );
+  }
+
+  /** Every live kitchen: yesterday's accuracy, then the next 7 days. One lock per kitchen. */
+  async forecastAll(now = new Date()) {
+    const branches: Array<{ id: string }> = await this.dataSource.query(
+      `SELECT id FROM branches WHERE status = 'active' ORDER BY id`,
+    );
+    let rows = 0;
+    for (const b of branches) {
+      const r = await this.forecastBranch(b.id, now);
+      rows += typeof r.rows === 'number' ? r.rows : 0;
+    }
+    return { branches: branches.length, rows };
+  }
+
+  async forecastBranch(branchId: string, now = new Date()) {
+    return this.run(`kitchen:forecast:${branchId}`, async (m) => {
+      const mape = await this.forecasts.accuracy(m, branchId, now);
+      const rows = await this.forecasts.generate(m, branchId, now);
+      return { rows, scored: mape === null ? 0 : 1 };
     });
   }
 

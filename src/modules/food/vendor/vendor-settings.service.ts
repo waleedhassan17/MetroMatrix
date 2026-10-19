@@ -144,6 +144,8 @@ export class VendorSettingsService {
         foodSafetyCheckedAt: branch.foodSafetyCheckedAt,
         isPaused: branch.isPaused,
         pauseMessage: branch.pauseMessage,
+        pauseReason: branch.pauseReason,
+        autoResumeAt: branch.autoResumeAt,
         busy: busy
           ? {
               extraMinutes: branch.busyExtraMinutes,
@@ -420,23 +422,43 @@ export class VendorSettingsService {
     return { removed: true };
   }
 
-  async pause(v: VendorRef, dto: PauseDto) {
+  /**
+   * Paused: out of lists, the page says so. With `minutes` it resumes by
+   * itself (outage quick-pause) and customers see "Temporarily paused ·
+   * back around 4:30 PM" — the reason is for the vendor and staff only.
+   */
+  async pause(v: VendorRef, dto: PauseDto, now = new Date()) {
+    const b = await this.branch(this.dataSource.manager, v);
+    const resumeAt = dto.minutes
+      ? new Date(now.getTime() + dto.minutes * 60_000)
+      : null;
     await this.dataSource.manager.update(
       Branch,
       { id: v.branchId },
       {
         isPaused: true,
-        pauseMessage: dto.message ?? null,
+        pauseMessage:
+          dto.message ??
+          (resumeAt
+            ? `Temporarily paused · back around ${formatTime12(resumeAt, b.timezone)}`
+            : null),
+        pauseReason: dto.reason ?? null,
+        autoResumeAt: resumeAt,
       },
     );
-    return this.profile(v);
+    return this.profile(v, now);
   }
 
   async resume(v: VendorRef) {
     await this.dataSource.manager.update(
       Branch,
       { id: v.branchId },
-      { isPaused: false, pauseMessage: null },
+      {
+        isPaused: false,
+        pauseMessage: null,
+        pauseReason: null,
+        autoResumeAt: null,
+      },
     );
     return this.profile(v);
   }

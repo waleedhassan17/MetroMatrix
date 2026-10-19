@@ -351,6 +351,9 @@ export class FoodCheckoutPlanner {
     const quote = this.serviceability.quote(branch, schedule, fulfilment, {
       subtotal: plan.subtotal,
       now,
+      items: plan.lines
+        .filter((l) => !l.error)
+        .reduce((s, l) => s + l.quantity, 0),
     });
     plan.quote = quote;
 

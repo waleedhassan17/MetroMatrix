@@ -97,6 +97,9 @@ import { VendorInsightsController } from './insights/insights.controller';
 import { FoodBannersService } from './admin/food-banners.service';
 import { AdminFoodService } from './admin/admin-food.service';
 import { AdminFoodController } from './admin/admin-food.controller';
+import { PrepTimeStat } from './availability/entities/prep-time-stat.entity';
+import { PrepStatsService } from './availability/prep-stats.service';
+import { CalendarEvent } from './reference/entities/calendar-event.entity';
 
 /**
  * MetroMatrix Food Court. Sub-domains live in their own folders (reference,
@@ -138,6 +141,8 @@ import { AdminFoodController } from './admin/admin-food.controller';
       RiderCashEntry,
       FoodReview,
       FoodBanner,
+      PrepTimeStat,
+      CalendarEvent,
     ]),
     MediaModule,
     BusinessesModule,
@@ -203,6 +208,7 @@ import { AdminFoodController } from './admin/admin-food.controller';
     FoodInsightsService,
     FoodBannersService,
     AdminFoodService,
+    PrepStatsService,
   ],
   exports: [
     FoodVendorService,
@@ -210,6 +216,10 @@ import { AdminFoodController } from './admin/admin-food.controller';
     FoodOrderTransitionsService,
     FoodNotifier,
     MenuAvailabilityService,
+    ServiceabilityService,
+    BranchStateService,
+    PrepStatsService,
+    FoodJobsService,
   ],
 })
 export class FoodModule {}

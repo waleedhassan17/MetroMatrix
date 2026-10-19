@@ -7,6 +7,11 @@ import {
 } from './branch-state.service';
 import { deliveryQuote, etaLabel, etaMinutes } from './delivery-quote';
 import { OpenState } from './open-state';
+import { sizeBucketOf } from './entities/prep-time-stat.entity';
+import { localMinutes } from '../../../common/time/time.util';
+
+const localHour = (now: Date, tz: string) =>
+  Math.floor(localMinutes(now, tz) / 60);
 
 export interface BranchRow extends BranchCore {
   business_id: string;
@@ -25,6 +30,8 @@ export interface BranchRow extends BranchCore {
   lng: number | null;
   /** Metres from the customer's point (null when no point was given). */
   distance_m: number | null;
+  /** Learned prep times: { "13:1-2": 24 } — p75 minutes per local hour and size, buckets with ≥ 20 samples. */
+  prep_stats?: Record<string, number> | null;
 }
 
 export interface Quote {
@@ -38,8 +45,14 @@ export interface Quote {
   freeDeliveryOver: number | null;
   eta: { min: number; max: number };
   etaLabel: string;
+  /** Kitchen minutes used: learned (p75 of real prep times) or the vendor's setting. */
+  prepMinutes: number;
+  prepSource: 'learned' | 'configured';
   open: OpenState;
 }
+
+/** Smart ETA (Chunk 5): enough real samples for this hour and size → their p75. */
+export const LEARNED_PREP_MIN_SAMPLES = 20;
 
 /** SELECT list for a branch row, with the distance to a point ($lat/$lng as params) when given. */
 export const branchColumns = (latParam?: string, lngParam?: string) => `
@@ -47,6 +60,8 @@ export const branchColumns = (latParam?: string, lngParam?: string) => `
   br.busy_extra_minutes, br.prep_minutes, br.accepts_delivery, br.accepts_pickup, br.accepts_cod,
   br.cod_limit, br.max_radius_km, br.free_delivery_over, br.preorder_only, br.transfer_confirm_before_prep,
   br.auto_reject_minutes, br.status,
+  (SELECT jsonb_object_agg(ps.hour_bucket || ':' || ps.size_bucket, ps.p75_minutes)
+     FROM prep_time_stats ps WHERE ps.branch_id = br.id AND ps.samples >= ${LEARNED_PREP_MIN_SAMPLES}) AS prep_stats,
   ST_Y(br.geo::geometry) AS lat, ST_X(br.geo::geometry) AS lng,
   ${
     latParam
@@ -89,9 +104,14 @@ export class ServiceabilityService {
     b: BranchRow,
     s: BranchSchedule,
     fulfilment: 'delivery' | 'pickup',
-    opts: { subtotal?: number; now?: Date } = {},
+    opts: { subtotal?: number; now?: Date; items?: number } = {},
   ): Quote {
     const now = opts.now ?? new Date();
+    const learned =
+      b.prep_stats?.[
+        `${localHour(now, b.timezone)}:${sizeBucketOf(opts.items ?? 1)}`
+      ];
+    const prepMinutes = learned ?? b.prep_minutes;
     const km =
       b.distance_m === null
         ? null
@@ -114,7 +134,7 @@ export class ServiceabilityService {
           })
         : { fee: 0, baseFee: 0, minOrder: 0, freeDeliveryOver: null };
     const eta = etaMinutes({
-      prepMinutes: b.prep_minutes,
+      prepMinutes,
       busyExtraMinutes: this.state.busyExtra(b, now),
       km: km ?? 0,
       fulfilment,
@@ -129,6 +149,8 @@ export class ServiceabilityService {
       freeDeliveryOver: q.freeDeliveryOver,
       eta,
       etaLabel: etaLabel(eta),
+      prepMinutes,
+      prepSource: learned !== undefined ? 'learned' : 'configured',
       open: this.state.state(b, s, now),
     };
   }

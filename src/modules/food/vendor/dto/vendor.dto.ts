@@ -1,3 +1,4 @@
+import { PAUSE_REASONS, PauseReason } from '../entities/branch.entity';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 import {
@@ -219,6 +220,27 @@ export class PauseDto {
   @IsString()
   @MaxLength(200)
   message?: string;
+
+  @ApiPropertyOptional({
+    enum: PAUSE_REASONS,
+    description:
+      'Why (gas, electricity…) — for you and staff only; customers never see it.',
+  })
+  @IsOptional()
+  @IsIn(PAUSE_REASONS)
+  reason?: PauseReason;
+
+  @ApiPropertyOptional({
+    minimum: 5,
+    maximum: 720,
+    description:
+      'Resume by itself after this long; customers see “back around 4:30 PM”.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(5)
+  @Max(720)
+  minutes?: number;
 }
 
 export class BusyDto {

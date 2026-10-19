@@ -12,6 +12,7 @@ import { FoodAggregatesService } from '../reviews/food-aggregates.service';
 import { RiderLocationService } from '../riders/rider-location.service';
 import { LOCATION_RETENTION_DAYS } from '../riders/presence';
 import { formatTime12 } from '../../../common/time/time.util';
+import { PrepStatsService } from '../availability/prep-stats.service';
 
 const BATCH = 200;
 export const AUTO_REJECT_REASON = 'The restaurant didn’t respond in time.';
@@ -43,7 +44,10 @@ export class FoodJobsService {
     private readonly config: ConfigService,
     private readonly aggregates: FoodAggregatesService,
     private readonly locations: RiderLocationService,
-  ) {}
+    private readonly prepStats: PrepStatsService,
+  ) {
+    this.nightly.push((now) => this.recomputePrepStats(now));
+  }
 
   private get enabled(): boolean {
     return this.config.get<boolean>('jobs.enabled') ?? true;
@@ -61,6 +65,34 @@ export class FoodJobsService {
     if (!this.enabled) return;
     await this.kitchenReminders();
     await this.acceptNudges();
+    await this.autoResume();
+  }
+
+  /** Timed pauses (outage quick-pause) end by themselves. Idempotent. */
+  async autoResume(now = new Date()) {
+    return this.run('food:auto-resume', async (m) => {
+      const rows = await m.query(
+        `UPDATE branches SET is_paused = false, pause_message = NULL, pause_reason = NULL,
+                auto_resume_at = NULL, updated_at = now()
+          WHERE is_paused AND auto_resume_at IS NOT NULL AND auto_resume_at <= $1
+        RETURNING id`,
+        [now],
+      );
+      return {
+        counts: { resumed: rows[0]?.length ?? rows.length ?? 0 },
+        notices: [],
+        changed: [],
+      };
+    });
+  }
+
+  /** Smart ETA: real prep times per hour and order size (last 30 days). */
+  async recomputePrepStats(now = new Date()) {
+    return this.run('food:prep-stats', async (m) => ({
+      counts: await this.prepStats.recompute(m, now),
+      notices: [],
+      changed: [],
+    }));
   }
 
   @Cron('5 0 * * *', { name: 'food-daily-reset', timeZone: 'Asia/Karachi' })
