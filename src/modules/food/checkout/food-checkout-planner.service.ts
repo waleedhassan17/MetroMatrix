@@ -27,7 +27,10 @@ import { PromotionsService } from '../promotions/promotions.service';
 import { PromotionRule, bestPromotion } from '../promotions/best-promotion';
 import { VendorSettingsService } from '../vendor/vendor-settings.service';
 import { FoodScheduleService, SlotChoice } from './food-schedule.service';
-import type { FoodPaymentMethod, Fulfilment } from '../common/food-types';
+import type {
+  CustomerPaymentMethod as FoodPaymentMethod,
+  Fulfilment,
+} from '../common/food-types';
 
 export interface PlanIssue {
   code: string;

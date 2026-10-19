@@ -99,6 +99,7 @@ import { AdminFoodService } from './admin/admin-food.service';
 import { AdminFoodController } from './admin/admin-food.controller';
 import { PrepTimeStat } from './availability/entities/prep-time-stat.entity';
 import { PrepStatsService } from './availability/prep-stats.service';
+import { FoodOrderWriter } from './orders/food-order-writer.service';
 import { CalendarEvent } from './reference/entities/calendar-event.entity';
 
 /**
@@ -209,6 +210,7 @@ import { CalendarEvent } from './reference/entities/calendar-event.entity';
     FoodBannersService,
     AdminFoodService,
     PrepStatsService,
+    FoodOrderWriter,
   ],
   exports: [
     FoodVendorService,
@@ -223,6 +225,8 @@ import { CalendarEvent } from './reference/entities/calendar-event.entity';
     VendorSettingsService,
     FoodOrderViewsService,
     RiderGuard,
+    FoodOrderWriter,
+    FoodDiscoveryService,
   ],
 })
 export class FoodModule {}

@@ -10,7 +10,8 @@ export const HISTORY_DAYS = 56;
 export const FORECAST_DAYS = 7;
 
 /** Orders that count as sold: everything except refused or cancelled ones. */
-const SOLD = `o.status NOT IN ('rejected', 'auto_rejected', 'cancelled')`;
+/** Tiffin and catering are certain demand (extraDemand), not part of the pattern. */
+const SOLD = `o.status NOT IN ('rejected', 'auto_rejected', 'cancelled') AND o.source NOT IN ('tiffin', 'catering')`;
 
 export type ExtraDemand = (
   m: EntityManager,

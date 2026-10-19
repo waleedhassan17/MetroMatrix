@@ -54,7 +54,8 @@ export const FOOD_ORDER_STATUS = stateMachine<FoodOrderStatus>({
 const ACTORS: Partial<
   Record<`${FoodOrderStatus}>${FoodOrderStatus}`, readonly FoodActorRole[]>
 > = {
-  'placed>accepted': ['vendor'],
+  // The system accepts the orders it writes for an accepted tiffin or catering booking.
+  'placed>accepted': ['vendor', 'system'],
   'placed>rejected': ['vendor'],
   'placed>auto_rejected': ['system'],
   'placed>cancelled': ['customer', 'system', 'admin'],

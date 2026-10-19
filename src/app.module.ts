@@ -43,6 +43,7 @@ import { PlansModule } from './modules/plans/plans.module';
 import { HealthModule } from './modules/health/health.module';
 import { AiModule } from './modules/ai/ai.module';
 import { KitchenModule } from './modules/kitchen/kitchen.module';
+import { FoodGrowthModule } from './modules/food-growth/food-growth.module';
 
 @Module({
   imports: [
@@ -107,6 +108,7 @@ import { KitchenModule } from './modules/kitchen/kitchen.module';
     AiModule,
     FoodModule,
     KitchenModule,
+    FoodGrowthModule,
     HealthModule,
   ],
   providers: [

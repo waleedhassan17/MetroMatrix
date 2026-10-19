@@ -8,7 +8,9 @@ import { FoodPromotion } from '../../promotions/entities/food-promotion.entity';
 import { PreorderSlot } from '../../menu/entities/preorder-slot.entity';
 import { RIDER_STEPS, RiderStep } from '../../riders/rider-steps';
 import {
-  FOOD_PAYMENT_METHODS,
+  ORDER_PAYMENT_METHODS,
+  ORDER_SOURCES,
+  OrderSource,
   FULFILMENTS,
   FoodPaymentMethod,
   Fulfilment,
@@ -131,7 +133,7 @@ export class FoodOrder extends BaseEntity {
 
   @Column({
     type: 'enum',
-    enum: FOOD_PAYMENT_METHODS,
+    enum: ORDER_PAYMENT_METHODS,
     enumName: 'food_payment_method',
     name: 'payment_method',
   })
@@ -301,6 +303,22 @@ export class FoodOrder extends BaseEntity {
   kitchenRemindedAt!: Date | null;
 
   /** Second nudge before accept_by (jobs). */
+  @Column({
+    type: 'enum',
+    enum: ORDER_SOURCES,
+    enumName: 'food_order_source',
+    default: 'app',
+  })
+  source!: OrderSource;
+
+  /** `?c=` from a storefront / QR link (Chunk 5): "Orders you brought". */
+  @Column({ type: 'varchar', length: 40, nullable: true })
+  campaign!: string | null;
+
+  /** Rupees already paid to the vendor before the day (a catering advance). */
+  @Column({ type: 'int', name: 'prepaid_amount', default: 0 })
+  prepaidAmount!: number;
+
   /** Kitchen stock taken for this order (on accept), once. */
   @Column({ type: 'timestamptz', name: 'stock_deducted_at', nullable: true })
   stockDeductedAt!: Date | null;

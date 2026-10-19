@@ -78,6 +78,10 @@ export const INITIAL_PAYMENT: Record<FoodPaymentMethod, FoodPaymentStatus> = {
   cod: 'cod_pending',
   pay_at_pickup: 'unpaid',
   transfer: 'awaiting_transfer',
+  /** A tiffin meal: covered by the subscription's period payment. */
+  subscription: 'paid',
+  /** A catering order: the advance is prepaid; the rest is cash on the day. */
+  catering: 'cod_pending',
 };
 
 /** Where a cancel leaves the payment. */

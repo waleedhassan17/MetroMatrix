@@ -10,16 +10,14 @@ import { FoodCheckoutPlanner, FoodPlan } from './food-checkout-planner.service';
 import { FoodCheckoutDto } from './dto/checkout.dto';
 import { FoodCart } from '../cart/entities/food-cart.entity';
 import { FoodOrder } from '../orders/entities/food-order.entity';
-import { FoodOrderItem } from '../orders/entities/food-order-item.entity';
-import { FoodOrderEvent } from '../orders/entities/food-order-event.entity';
 import {
   INITIAL_PAYMENT,
   TRANSFER_WINDOW_MINUTES,
 } from '../orders/food-payment-status';
 import { FoodOrderViewsService } from '../orders/food-order-views.service';
 import { FoodNotifier } from '../orders/food-notifier.service';
+import { FoodOrderWriter } from '../orders/food-order-writer.service';
 import { ErrorCode } from '../../../common/errors/codes';
-import { newCode } from '../../../common/utils/codes';
 import { formatTime12, todayIn } from '../../../common/time/time.util';
 
 /**
@@ -78,6 +76,7 @@ export class FoodCheckoutService {
     private readonly notifier: FoodNotifier,
     @Inject(FOOD_CHECKOUT_FAULT_INJECTOR)
     private readonly faults: FoodCheckoutFaultInjector,
+    private readonly writer: FoodOrderWriter,
   ) {}
 
   async checkout(userId: string, dto: FoodCheckoutDto) {
@@ -196,7 +195,6 @@ export class FoodCheckoutService {
       fulfilment: plan.cart!.fulfilment,
       scheduledFor,
       slotId: plan.slot?.slotId ?? null,
-      status: 'placed',
       paymentMethod: dto.paymentMethod,
       paymentStatus: INITIAL_PAYMENT[dto.paymentMethod],
       paymentAccountSnapshot: transfer ? plan.accounts : null,
@@ -242,31 +240,10 @@ export class FoodCheckoutService {
       acceptBy: new Date(now.getTime() + branch.auto_reject_minutes * 60_000),
       portionDate,
     };
-    let orderId: string | null = null;
-    for (let attempt = 0; attempt < 5 && !orderId; attempt++) {
-      // ON CONFLICT DO NOTHING on the code: a collision leaves the transaction usable.
-      const res = await m
-        .createQueryBuilder()
-        .insert()
-        .into(FoodOrder)
-        .values({ ...values, code: newCode('FC') })
-        .orIgnore()
-        .returning('id')
-        .execute();
-      if (res.raw.length) orderId = res.raw[0].id;
-    }
-    if (!orderId)
-      throw new Error('Could not allocate an order code after 5 attempts');
-    if (a)
-      await m.query(
-        `UPDATE food_orders SET drop_geo = ST_SetSRID(ST_MakePoint($2::float8, $3::float8), 4326)::geography WHERE id = $1`,
-        [orderId, a.lng, a.lat],
-      );
-    await m.insert(
-      FoodOrderItem,
-      plan.lines.map((l, i) => ({
-        orderId: orderId!,
-        lineNo: i + 1,
+    return this.writer.write(
+      m,
+      values,
+      plan.lines.map((l) => ({
         itemId: l.itemId,
         variantId: l.variant?.id ?? null,
         itemName: l.name,
@@ -274,23 +251,11 @@ export class FoodCheckoutService {
         options: l.options,
         unitPrice: l.unitPrice,
         quantity: l.quantity,
-        lineTotal: l.lineTotal,
         notes: l.notes,
         portionsTaken: l.portioned ? l.quantity : 0,
       })),
+      { role: 'customer', userId },
+      plan.promotion ? { promotionId: plan.promotion.id } : null,
     );
-    await m.save(
-      m.create(FoodOrderEvent, {
-        orderId,
-        kind: 'status',
-        from: null,
-        to: 'placed',
-        actorRole: 'customer',
-        actorUserId: userId,
-        note: null,
-        data: plan.promotion ? { promotionId: plan.promotion.id } : null,
-      }),
-    );
-    return m.findOneByOrFail(FoodOrder, { id: orderId });
   }
 }

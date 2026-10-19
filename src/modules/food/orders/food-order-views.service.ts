@@ -31,6 +31,10 @@ export function paymentInstructions(o: FoodOrder, tz: string): string | null {
       return o.paymentStatus === 'proof_submitted'
         ? 'Waiting for the vendor to confirm your transfer.'
         : `Transfer ${rs(o.total)} to one of the vendor’s accounts${o.payBy ? ` by ${formatTime12(o.payBy, tz)}` : ''}, then upload the receipt.`;
+    case 'subscription':
+      return 'Covered by your tiffin subscription.';
+    case 'catering':
+      return `Pay the rest, ${rs(o.total - o.prepaidAmount)}, in cash on the day (${rs(o.prepaidAmount)} advance paid).`;
   }
 }
 

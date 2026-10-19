@@ -12,7 +12,7 @@ import {
 import { Trim } from '../../../../common/validation/transforms';
 import {
   FOOD_PAYMENT_METHODS,
-  FoodPaymentMethod,
+  CustomerPaymentMethod as FoodPaymentMethod,
 } from '../../common/food-types';
 
 /** What both preview and checkout take, apart from the payment method. */
