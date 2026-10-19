@@ -7,6 +7,7 @@ import type { FoodOrder } from '../../food/orders/entities/food-order.entity';
 import { KitchenStockService, StockLine } from './kitchen-stock.service';
 import { KitchenAlertsService } from './kitchen-alerts.service';
 import { round3 } from './units';
+import { returned } from '../../../common/db/parallel';
 
 /**
  * Orders and stock: accepting deducts what the recipe cards say (add-on
@@ -72,11 +73,13 @@ export class OrderStockService implements OnModuleInit {
     order: FoodOrder,
     actorUserId: string | null,
   ): Promise<void> {
-    const [claim] = await m.query(
-      `UPDATE food_orders SET stock_deducted_at = now() WHERE id = $1 AND stock_deducted_at IS NULL RETURNING id`,
-      [order.id],
+    const claim = returned(
+      await m.query(
+        `UPDATE food_orders SET stock_deducted_at = now() WHERE id = $1 AND stock_deducted_at IS NULL RETURNING id`,
+        [order.id],
+      ),
     );
-    if (!claim) return;
+    if (!claim.length) return;
     const need = await this.needs(m, order.id);
     const lines: StockLine[] = [...need].map(([ingredientId, qty]) => ({
       ingredientId,
@@ -97,12 +100,14 @@ export class OrderStockService implements OnModuleInit {
     order: FoodOrder,
     actorUserId: string | null,
   ): Promise<void> {
-    const [claim] = await m.query(
-      `UPDATE food_orders SET stock_restored_at = now()
-        WHERE id = $1 AND stock_deducted_at IS NOT NULL AND stock_restored_at IS NULL RETURNING id`,
-      [order.id],
+    const claim = returned(
+      await m.query(
+        `UPDATE food_orders SET stock_restored_at = now()
+          WHERE id = $1 AND stock_deducted_at IS NOT NULL AND stock_restored_at IS NULL RETURNING id`,
+        [order.id],
+      ),
     );
-    if (!claim) return;
+    if (!claim.length) return;
     await this.stock.restoreRef(
       m,
       order.branchId,

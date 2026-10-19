@@ -24,3 +24,20 @@ export async function parallel(
   for (const f of fns) out.push(await f());
   return out;
 }
+
+/**
+ * The rows of an `UPDATE … RETURNING` / `DELETE … RETURNING`: TypeORM's pg
+ * driver gives `[rows, affected]` for those (and plain rows for SELECT), so
+ * `const [first] = await m.query(...)` would be the row *array*, never
+ * undefined.
+ */
+export function returned<T = Record<string, unknown>>(res: unknown): T[] {
+  if (
+    Array.isArray(res) &&
+    res.length === 2 &&
+    Array.isArray(res[0]) &&
+    typeof res[1] === 'number'
+  )
+    return res[0] as T[];
+  return (Array.isArray(res) ? res : []) as T[];
+}

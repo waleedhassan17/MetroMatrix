@@ -485,7 +485,16 @@ async function main() {
           if (done('audio', p.id)) continue;
           const rec = recordingOf(p.id);
           process.stdout.write(`audio ${p.id}${rec ? ' (recording)' : ''}…`);
-          const file = rec ?? (await synthesize(p, i));
+          let file = rec;
+          if (!file) {
+            try {
+              file = await synthesize(p, i);
+            } catch (err) {
+              // No clip and no TTS quota left today: measure the others.
+              console.log(` skipped (no clip: ${(err as Error).message})`);
+              continue;
+            }
+          }
           const ext = file.split('.').pop()!.toLowerCase();
           push(
             p,

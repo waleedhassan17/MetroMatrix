@@ -395,16 +395,16 @@ export class KitchenStockService {
     held: Map<string, Held>,
   ) {
     for (const h of held.values()) {
-      const [row] = await m.query(
+      await m.query(
         `UPDATE kitchen_ingredients
             SET on_hand = $2::numeric, avg_cost = $3::numeric, last_cost = $4::numeric, updated_at = now(),
                 negative_alerted_at = CASE WHEN $2::numeric >= 0 THEN NULL
                                            ELSE coalesce(negative_alerted_at, now()) END
-          WHERE id = $1
-          RETURNING id`,
+          WHERE id = $1`,
         [h.id, h.onHand, h.avg, h.lastCost],
       );
-      if (h.onHand < 0 && !h.wasNegative && row) {
+      // Below zero for the first time since it was last ≥ 0: one alert.
+      if (h.onHand < 0 && !h.wasNegative) {
         const d = display(h.onHand, h.baseUnit);
         await this.alerts.queue(
           m,
