@@ -20,8 +20,8 @@ import {
 } from './utils/fake-ai';
 import { AiJobsService } from '../src/modules/ai/ai-jobs.service';
 
-/** Multan: only this suite puts vendors here. */
-const MULTAN = { lat: 30.1575, lng: 71.5249 };
+/** Peshawar: only this suite puts vendors here. */
+const PESHAWAR = { lat: 34.0151, lng: 71.5805 };
 
 const answer = (
   intent: string,
@@ -51,13 +51,13 @@ describe('AI foundation — voice, quotas, kill switch (Chunk 5 P0)', () => {
 
   async function liveVendor(name: string) {
     const v = await foodVendor(t, admin, 'restaurant', name);
-    expect((await setUpVendor(t, v, { at: MULTAN }))!.status).toBe(200);
+    expect((await setUpVendor(t, v, { at: PESHAWAR }))!.status).toBe(200);
     const karahi = await itemId(t, v);
     return { v, karahi };
   }
 
   async function placed(v: Vendor, item: string) {
-    const c = await foodCustomer(t, MULTAN);
+    const c = await foodCustomer(t, PESHAWAR);
     await expectStatus(
       await c.api.post('/food/cart/items', {
         vendorId: v.brandId,
@@ -476,7 +476,7 @@ describe('AI foundation — voice, quotas, kill switch (Chunk 5 P0)', () => {
 
   it('customers speak a food search; vendor screens are refused to them and customer screens to vendors', async () => {
     const { v } = await liveVendor('Voice Roles Kitchen');
-    const c = await foodCustomer(t, MULTAN);
+    const c = await foodCustomer(t, PESHAWAR);
     f.ai.answer(answer('search', { query: 'biryani' }));
     const out = await expectStatus(
       await voice(c, { context: 'food_search', text: 'mujhe biryani chahiye' }),
