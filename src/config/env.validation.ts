@@ -132,7 +132,7 @@ export const envValidationSchema = Joi.object({
   GEMINI_API_KEY: Joi.string().optional().allow(''),
   GEMINI_MODEL: Joi.string().empty('').default('gemini-2.5-flash'),
   GEMINI_TTS_MODEL: Joi.string().empty('').default('gemini-3.8-flash-tts'),
-  AI_MODEL: Joi.string().empty('').default('gemini-3.8-flash'),
+  AI_MODEL: Joi.string().empty('').default('gemini-3.5-flash'),
 
   // Kitchen intelligence AI (docs/AI.md). Every feature has a manual path.
   AI_ENABLED: Joi.boolean().empty('').default(true),

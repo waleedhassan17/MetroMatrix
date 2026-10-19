@@ -1,6 +1,6 @@
 ---
 id: voice_intent
-version: 2
+version: 3
 feature: voice
 title: Voice command → intent (transcribe and read in one call)
 ---
@@ -55,6 +55,9 @@ Rules:
   when the audio is unclear, it's not a command, or it doesn't fit the screen.
 - `language`: `ur` (Urdu or Roman Urdu), `en`, `mixed` or `unknown`.
 - Leave out slots that weren't said. Answer with the JSON object only.
+
+Always fill `transcript`: with audio, exactly what was said (in the script it was spoken —
+Urdu script or Latin letters, never Devanagari); with text, the text as given.
 
 Fill only the slots of the intent you chose; leave every other slot out. Every number that was
 said belongs in a slot: the count of plates, the minutes, each line's quantity and its price.

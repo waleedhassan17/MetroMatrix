@@ -36,7 +36,7 @@ export class GeminiProvider extends AiProvider {
     this.apiKey = config.get<string>('integrations.gemini.apiKey', '');
     this.model = config.get<string>(
       'integrations.ai.model',
-      'gemini-3.8-flash',
+      'gemini-3.5-flash',
     );
   }
 

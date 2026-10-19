@@ -171,6 +171,25 @@ heroku run -a metromatrix-api \
 Every brand is made up and says so; logos are generated monograms; dish and cover photos
 are Unsplash food photos (`src/database/seeds/food/CREDITS.md`).
 
+### Demo kitchens (optional, after the food seed)
+
+`seed:kitchen` gives three of those vendors a working kitchen: ingredients, recipe cards,
+60 days of orders, purchases, waste, a sample of the PBS weekly prices for Lahore and
+Karachi, forecasts and tonight's Bachat Box. No uploads and no AI calls:
+```bash
+heroku run -a metromatrix-api npm run seed:kitchen:prod -- --allow-production
+```
+
+### Kitchen AI (optional)
+
+The kitchen's smart features (voice, receipt scan, packing check) use the same
+`GEMINI_API_KEY` as the symptom checker, with their own model `AI_MODEL` (default
+`gemini-3.5-flash`). Every feature works without it: set `AI_ENABLED=false`, or leave out the
+key. The free tier allows about 20 requests per model per day — enough to try it, not for
+real vendors. Allowances are 300 smart actions and 120 voice minutes per vendor a month
+(`docs/AI.md`). Google Speech-to-Text and Text-to-Speech (`STT_PROVIDER` / `TTS_PROVIDER=google`)
+need a billing account and are off by default.
+
 ## 6. Smoke test
 
 ```bash

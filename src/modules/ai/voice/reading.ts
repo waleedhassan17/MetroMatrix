@@ -162,6 +162,7 @@ export function voiceSchema(context: VoiceContext): Record<string, unknown> {
       slots: { type: 'object', properties: props },
       confidence: { type: 'number' },
     },
-    required: ['language', 'intent', 'slots', 'confidence'],
+    // The transcript lets the rule parser fill a slot the model leaves empty.
+    required: ['transcript', 'language', 'intent', 'slots', 'confidence'],
   };
 }

@@ -303,6 +303,58 @@ write and every auth event worth investigating gets one. Actions are dotted verb
 - Demo vendors are fictional (taglines say so), logos are generated monograms, photos are
   credited Unsplash food photos (`seeds/food/CREDITS.md`, checked by `food-data.spec.ts`).
 
+## Kitchen Intelligence (Chunk 5)
+
+- New modules:
+  - `src/modules/ai/` — the AI layer and voice;
+  - `src/modules/kitchen/` — stock, recipes, purchases, costing, price watch, waste, insight
+    cards, forecast and prep, Bachat Box, packing proof;
+  - later `food-growth/`, `nutrition/` and `my-kitchen/`.
+
+  Contracts: `docs/API_KITCHEN.md`, `docs/AI.md`, `docs/VOICE.md`.
+- **AI is optional and never trusted blindly.** Every call goes through `AiService.run`:
+  kill switch, cache, quota, 12 s budget, class-validator check plus one retry, then an
+  `ai_usage` row. Callers always have a manual path (`AiService.failure` →
+  `503 AI_UNAVAILABLE { manual }` / `429 AI_QUOTA_REACHED { resetsOn }`). AI output is a
+  draft until a person confirms; `/ai/voice` executes nothing.
+- **Prompts** are `ai/prompts/*.md` with an `id` and `version`. Bump the version when the
+  text changes.
+- **Tests never call a real model.** Override `AiProvider` with `FakeAiProvider` and
+  `MediaStorage` with `FakeMediaStorage` (`test/utils/fake-ai.ts`). Real calls only in
+  `npm run voice:eval` (free-tier quota: about 20 a model a day).
+- **Voice screens** register in `onModuleInit` through `VoiceContexts.register`, so ai/ never
+  imports Food. Readings go through `combineReadings`: the model, completed by the rule
+  parser (`voice/rule-parser.ts`, `voice/lexicon.ts`). `voice-eval/manifest.json` is the
+  accuracy set; the rule-parser spec is its regression gate. Add phrases, don't tune on the
+  held-out set.
+- **Units:** `kitchen/stock/units.ts` is the only conversion code (base `g` / `ml` / `piece`).
+  Costs are rupees per base unit, `numeric(12,4)`.
+- **Stock changes only through `KitchenStockService`** (`apply`, `restoreRef`,
+  `reversePurchase`). It locks ingredients in id order, uses FIFO batches and writes one
+  movement per batch with `balance_after`. Stock may go negative and never blocks an order.
+  After each change it re-checks sold-out (`StockAvailabilityService`; `auto_reason = 'stock'`
+  only — never undo a manual sold-out).
+- **Order hooks:** `FoodOrderTransitionsService.beforeStatus` / `afterStatus` (deduct on
+  accept, restore on cancel, the packing-photo check), and `FoodNotifier.afterChange`.
+  Deduct and restore are once-only through `food_orders.stock_deducted_at` /
+  `stock_restored_at`.
+- **`UPDATE … RETURNING` through `m.query` returns `[rows, affected]`.** Read it with
+  `returned()` (`common/db/parallel.ts`), never `const [row] = …`.
+- **Kitchen notifications go through the `kitchen_alerts` outbox:** `queue` in the
+  transaction, then `flush` after commit.
+- **Forecast:** `kitchen/forecast/forecast.ts` (pure, spec-tested). Certain demand plugs in
+  through `ForecastService.extraDemand`, and insight cards through
+  `InsightCardsService.register`.
+- **Smart ETA:** `prep_time_stats` (Food), p75 when a bucket has ≥ 20 samples.
+- **Bachat Box:** the last box is decided by one conditional `UPDATE`; three no-shows block
+  a customer for 14 days.
+- **Jobs** (`kitchen/jobs/kitchen-jobs.service.ts`) are advisory-locked and idempotent, and
+  tests call them directly. `KitchenJobsService.nightly[]` takes more steps.
+- `test/qa-matrix-kitchen.e2e-spec.ts` is Chunk 5's release gate: rows 1–19 and 36–38 now.
+  Helpers live in `test/utils/kitchen.ts` and `test/utils/fake-ai.ts`.
+- **`seed:kitchen`** (after `seed:food`) boots the app context, so demo data goes through the
+  same services. History orders are inserted as already deducted.
+
 ## Keep in sync when the API changes
 
 - `docs/API_AUTH.md`, `docs/API_SHOPPING.md`, `docs/API_HEALTH.md` (+ `docs/VIDEO.md`),
@@ -312,8 +364,11 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   `seed:shopping`) and `postman/MetroMatrix-Health.postman_collection.json`
   (`npm run postman:health`, needs `seed:health`) and
   `postman/MetroMatrix-Food.postman_collection.json` (`npm run postman:food`, needs
-  `seed:food`), plus `scripts/food-socket-check.mjs` (`npm run socket:food`). These are
-  runnable flows against a local server plus Mailpit.
+  `seed:food`), plus `scripts/food-socket-check.mjs` (`npm run socket:food`), and
+  `postman/MetroMatrix-Kitchen.postman_collection.json` (`npm run postman:kitchen`, needs
+  `seed:food` + `seed:kitchen`). These are runnable flows against a local server plus Mailpit.
+- `docs/API_KITCHEN.md`, `docs/AI.md`, `docs/VOICE.md` (and its accuracy table, written by
+  `npm run voice:eval`).
 - `.env.example` and `env.validation.ts` — together, always.
 
 ## Commands
@@ -327,12 +382,15 @@ npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* e
 npm run seed:shopping         demo stores/products (SEED_DEMO_PASSWORD; --placeholder-images = no uploads)
 npm run seed:health           30 demo doctors (portraits), patients, visits, reviews, home banners (same password and flags)
 npm run seed:food             6 fictional food vendors, 58 dishes, riders, customers, orders, reviews, banners (same password and flags)
+npm run seed:kitchen          kitchens for 3 of them: ingredients, recipes, 60 days of orders, purchases, waste, SPI sample, forecasts
 npm run lint && npm run build && npm test && npm run test:e2e
 npm run postman:local         newman run of the Auth collection (needs a running server)
 npm run postman:shopping      newman run of the Shopping collection (needs seed:shopping)
 npm run postman:health        newman run of the Healthcare collection (needs seed:health)
 npm run postman:food          newman run of the Food Court collection (needs seed:food)
 npm run socket:food           Socket.IO check of the Food realtime flow (needs seed:food)
+npm run postman:kitchen       newman run of the Kitchen collection (needs seed:food + seed:kitchen; AI_ENABLED=false)
+npm run voice:eval            voice accuracy against Gemini (real calls; resumes; never in CI)
 ```
 
 Deploying: see `DEPLOYMENT.md` (nothing is provisioned by default — the owner decides).

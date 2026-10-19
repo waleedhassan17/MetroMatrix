@@ -192,7 +192,7 @@ describe('AI foundation — voice, quotas, kill switch (Chunk 5 P0)', () => {
     expect(usage).toEqual({
       feature: 'voice',
       prompt_id: 'voice_intent',
-      prompt_version: 2,
+      prompt_version: 3,
       status: 'ok',
       audio_seconds: 5,
       cached: false,

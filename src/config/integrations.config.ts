@@ -29,7 +29,7 @@ export default registerAs('integrations', () => ({
   },
   ai: {
     /** The kitchen AI / voice model (the symptom checker keeps gemini.model). */
-    model: process.env.AI_MODEL || 'gemini-3.8-flash',
+    model: process.env.AI_MODEL || 'gemini-3.5-flash',
     /** The kill switch: false turns every AI feature to its manual path. */
     enabled: (process.env.AI_ENABLED ?? 'true').toLowerCase() !== 'false',
     /** Comma-separated feature names, or "all". */

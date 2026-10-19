@@ -33,7 +33,7 @@ command (`text` instead of `audioUrl`) goes through the same reading, with no au
 
 | Field | | |
 |---|---|---|
-| `context` | required | The screen: `board`, `today`, `menu_search` (vendor); `food_search` (customer). `stock`, `purchase` and `pantry` are added with their screens (P1, P2, P11). |
+| `context` | required | The screen: `board`, `today`, `stock`, `purchase`, `menu_search` (vendor); `food_search` (customer). `pantry` comes with My Kitchen (P11). |
 | `audioUrl` | or `text` | A `voice_audio` upload of yours (m4a, mp4, aac, webm, ogg, mp3, wav; ≤ 1 MB). Anyone else's URL is `400 VALIDATION_FAILED`. |
 | `publicId` | optional | From the upload response; checked against the URL. |
 | `durationSeconds` | with audio | As the app measured it. Over 30 s → `400 VOICE_TOO_LONG` (also when the file is over 1 MB). |
@@ -95,8 +95,9 @@ command (`text` instead of `audioUrl`) goes through the same reading, with no au
 | | `cooking_today` | `on`, `dish?` | with a dish: `PATCH /food/vendor/today { items: [{ itemId, cooking }] }`; without: `POST /food/vendor/pause` / `resume` |
 | `menu_search` | `search` | `query` | `GET /food/vendor/menu/items/:id` |
 | `food_search` | `search` | `query` | `GET /food/search?q=…` (the app adds `lat`, `lng`) |
-| `stock` (P1) | `count`, `log_waste`, `add_purchase` | `lines[]`, `reason` | stock count / waste / purchase draft |
-| `purchase` (P2) | `add_purchase`, `log_waste` | `lines[{ name, qty, unit, totalPrice }]` | purchase draft for confirmation |
+| `stock` | `count` | `lines[{ name, qty, unit }]` | `POST /food/vendor/kitchen/stock/count` (every name known) |
+| | `log_waste` | one line, `reason` | `POST /food/vendor/kitchen/waste` |
+| `purchase` (and `stock`) | `add_purchase` | `lines[{ name, qty, unit, totalPrice }]` | `POST /food/vendor/kitchen/purchases` (`source: voice`) once every line is known and priced; else a `draft` with each line's status (`ok`, `UNIT_MISMATCH`, `UNKNOWN_INGREDIENT` + `suggestedName`) |
 | `pantry` (P11) | `add_pantry` | `lines[{ name, qty, unit, expiresInDays }]` | pantry draft |
 
 Which order? A spoken code (or the last 3+ characters of it) picks it; otherwise the only
@@ -144,19 +145,54 @@ Three readers are measured:
 numbers exactly, names at similarity ≥ 0.6, purchase/pantry lines in order.
 
 <!-- voice-eval:start -->
-Measured 2026-10-19: model gemini-3.8-flash, voice_intent@2; 17 of 60 phrases read as text, 0 as audio (0 clips synthesised with gemini-3.8-flash-tts, 0 real recordings).
+Measured 2026-10-19: model gemini-3.5-flash, voice_intent@2; 0 of 60 phrases read as text, 17 as audio (17 clips synthesised with gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, 0 real recordings).
+2 model calls returned no answer (timeout or HTTP error) and are not counted; the next run retries them.
 
 | Phrases | Rules, tuning (40) | Rules, held-out (20) | Model, text | Model, audio |
 |---|---|---|---|---|
-| Intent — Urdu script | 100% (7/7) | 100% (4/4) | 100% (3/3) | — |
-| Intent — Roman Urdu | 100% (19/19) | 90% (9/10) | 100% (8/8) | — |
-| Intent — English | 100% (14/14) | 100% (6/6) | 83% (5/6) | — |
-| Intent — All | 100% (40/40) | 95% (19/20) | 94% (16/17) | — |
-| Intent + slots — Urdu script | 100% (7/7) | 100% (4/4) | 100% (3/3) | — |
-| Intent + slots — Roman Urdu | 100% (19/19) | 90% (9/10) | 100% (8/8) | — |
-| Intent + slots — English | 100% (14/14) | 100% (6/6) | 83% (5/6) | — |
-| Intent + slots — All | 100% (40/40) | 95% (19/20) | 94% (16/17) | — |
+| Intent — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (3/3) |
+| Intent — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 100% (5/5) |
+| Intent — English | 100% (14/14) | 100% (6/6) | — | 100% (9/9) |
+| Intent — All | 100% (40/40) | 95% (19/20) | — | 100% (17/17) |
+| Intent + slots — Urdu script | 100% (7/7) | 100% (4/4) | — | 67% (2/3) |
+| Intent + slots — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 80% (4/5) |
+| Intent + slots — English | 100% (14/14) | 100% (6/6) | — | 67% (6/9) |
+| Intent + slots — All | 100% (40/40) | 95% (19/20) | — | 71% (12/17) |
 <!-- voice-eval:end -->
+
+### Runs so far
+
+The block above is rewritten by each `npm run voice:eval` (current model and prompt version).
+Every run so far:
+
+| Date | Reader | Model | Prompt | Measured | Intent | Intent + slots |
+|---|---|---|---|---|---|---|
+| 2026-10-19 | rules | — | — | 40 tuning + 20 held-out (written) | 100% / 95% | 100% / 95% |
+| 2026-10-19 | model, text | gemini-2.5-flash | voice_intent@1 | 21 | 100% (21/21) | 62% (13/21) |
+| 2026-10-19 | model, text | gemini-3.8-flash | voice_intent@2 | 16 (+1 HTTP 503) | 100% (16/16) | 100% (16/16) |
+| 2026-10-19 | model, audio | gemini-3.8-flash | voice_intent@2 | 0 — all 20 calls timed out at 30 s | — | — |
+| 2026-10-19 | model, audio | gemini-3.5-flash | voice_intent@2 | 17 clips (9 English, 8 Urdu) (+2 no answer) | 100% (17/17) | 71% (12/17) |
+
+What changed between versions:
+
+- **@1 → @2.** A schema per screen with slot descriptions, worked examples, and only the
+  intent's own slots. Model readings are completed by the rule parser. Slots went from
+  62% to 100% on text.
+- **@2 → @3.** The transcript is always required. Every @2 audio miss had left out the
+  transcript together with the portion count or a line's price, so the rules had nothing to
+  complete from.
+
+@3 has not been measured yet.
+
+**Coverage.** The spec asks for 20 Urdu and 20 English clips. 17 have been read so far,
+because this key's free tier allows about 20 requests per model per day. 60 synthesised clips
+are ready in `voice-eval/clips/`. `npm run voice:eval -- --only audio` resumes where it
+stopped; run it once a day until all are measured, or with a paid key in one go. Real kitchen
+recordings in `voice-eval/recordings/` replace the synthesised clips.
+
+**Why AI_MODEL is gemini-3.5-flash.** On written commands 3.8-flash was the most accurate.
+On audio, though, all 20 of its calls timed out while 3.5-flash answered in about 3 s, so
+voice uses 3.5-flash.
 
 Synthesised speech is cleaner than a real kitchen, with no fryer, no traffic and no
 half-finished sentences. Treat the audio column as an upper bound until real recordings

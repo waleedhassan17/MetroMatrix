@@ -24,6 +24,7 @@ npm run seed:superadmin     # needs SUPER_ADMIN_EMAIL / SUPER_ADMIN_PASSWORD in 
 npm run seed:shopping       # optional demo stores; needs SEED_DEMO_PASSWORD (see seed/assets/shopping)
 npm run seed:health         # optional demo doctors, patients, visits and reviews (same password)
 npm run seed:food           # optional demo food vendors, riders, customers, orders (same password)
+npm run seed:kitchen        # optional kitchens for three of them (stock, recipes, forecasts; after seed:food)
 npm run start:dev           # http://localhost:3000/api/v1 · Swagger at /api/docs
 ```
 
@@ -43,6 +44,7 @@ npm run migration:check  # entities and migrations agree
 ```
 
 Against a running server with the demo data: `npm run postman:local` (Auth),
-`postman:shopping`, `postman:health`, `postman:food`, and `npm run socket:food` (the Food
-realtime flow).
+`postman:shopping`, `postman:health`, `postman:food`, `postman:kitchen`, and
+`npm run socket:food` (the Food realtime flow). `npm run voice:eval` measures voice accuracy
+against Gemini (real calls, `GEMINI_API_KEY`; see `docs/VOICE.md`).
 # MetroMatrix

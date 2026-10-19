@@ -100,7 +100,7 @@ const clipsOnly = args.includes('--clips-only');
 const wants = (r: Reader) => !only || only === r;
 
 const apiKey = process.env.GEMINI_API_KEY ?? '';
-const model = arg('--model') || process.env.AI_MODEL || 'gemini-3.8-flash';
+const model = arg('--model') || process.env.AI_MODEL || 'gemini-3.5-flash';
 const ttsModel =
   arg('--tts-model') || process.env.GEMINI_TTS_MODEL || 'gemini-3.8-flash-tts';
 const ALIASES = aliasMap(INGREDIENT_ALIASES);
@@ -176,7 +176,7 @@ async function modelRead(
           ],
           responseSchema: voiceSchema(p.context),
           temperature: 0,
-          signal: AbortSignal.timeout(30_000),
+          signal: AbortSignal.timeout(60_000),
         });
         let raw: unknown;
         try {
@@ -333,9 +333,13 @@ function table(rows: Row[], promptLabel: string): string {
   for (const metric of ['intent', 'full'] as const)
     for (const [name, f] of groups) {
       const cells = cols.map(([, reader, set]) => {
+        // An attempt that never answered (timeout, HTTP error) is not a reading: not counted.
         const rs = rows.filter(
           (r) =>
-            r.reader === reader && (set === 'all' || r.set === set) && f(r),
+            r.reader === reader &&
+            !r.error &&
+            (set === 'all' || r.set === set) &&
+            f(r),
         );
         return pct(rs.filter((r) => r.score[metric]).length, rs.length);
       });
@@ -343,9 +347,10 @@ function table(rows: Row[], promptLabel: string): string {
         `| ${metric === 'intent' ? 'Intent' : 'Intent + slots'} — ${name} | ${cells.join(' | ')} |`,
       );
     }
-  const audio = rows.filter((r) => r.reader === 'audio');
+  const failed = rows.filter((r) => r.error && r.reader !== 'rules').length;
+  const audio = rows.filter((r) => r.reader === 'audio' && !r.error);
   const real = audio.filter((r) => r.source === 'recording').length;
-  const text = rows.filter((r) => r.reader === 'text').length;
+  const text = rows.filter((r) => r.reader === 'text' && !r.error).length;
   const index = clipIndex();
   const voices = [
     ...new Set(
@@ -358,6 +363,11 @@ function table(rows: Row[], promptLabel: string): string {
     `Measured ${new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Karachi' })}: model ${model}, ${promptLabel}; ` +
       `${text} of ${MANIFEST.phrases.length} phrases read as text, ${audio.length} as audio ` +
       `(${audio.length - real} clips synthesised${voices ? ` with ${voices}` : ''}, ${real} real recordings).`,
+    ...(failed
+      ? [
+          `${failed} model calls returned no answer (timeout or HTTP error) and are not counted; the next run retries them.`,
+        ]
+      : []),
     '',
     ...lines,
   ].join('\n');
@@ -419,10 +429,21 @@ async function main() {
   );
   const done = (reader: Reader, id: string) =>
     rows.some((r) => r.reader === reader && r.id === id);
+  /** Other models' and prompt versions' results stay in the file. */
+  const others = previous.filter(
+    (r) =>
+      r.reader !== 'rules' &&
+      !(r.model === model && r.prompt === promptLabel) &&
+      !r.error,
+  );
   const save = () =>
     writeFileSync(
       RESULTS,
-      JSON.stringify({ at: new Date().toISOString(), rows }, null, 2),
+      JSON.stringify(
+        { at: new Date().toISOString(), rows: [...others, ...rows] },
+        null,
+        2,
+      ),
     );
 
   for (const p of MANIFEST.phrases) {
