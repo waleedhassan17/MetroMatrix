@@ -227,6 +227,7 @@ import { CalendarEvent } from './reference/entities/calendar-event.entity';
     RiderGuard,
     FoodOrderWriter,
     FoodDiscoveryService,
+    MenuService,
   ],
 })
 export class FoodModule {}

@@ -126,7 +126,7 @@ export class MenuReadService {
         [brandId],
       ),
       this.dataSource.query(
-        `SELECT id, category_id, description, tags, is_deal, serves, sold_30d FROM menu_items
+        `SELECT id, category_id, description, description_ur, tags, is_deal, serves, sold_30d FROM menu_items
           WHERE brand_id = $1 AND is_active ORDER BY sort, name`,
         [brandId],
       ),
@@ -146,6 +146,7 @@ export class MenuReadService {
         id: s.id,
         name: s.name,
         description: r.description,
+        descriptionUr: r.description_ur,
         photoUrl: s.photoUrl,
         fromPrice: fromPrice(s),
         hasVariants: s.variants.length > 0,
@@ -201,7 +202,7 @@ export class MenuReadService {
     const s = (await this.snapshots(branchId, [itemId])).get(itemId);
     if (!s) return null;
     const [row] = await this.dataSource.query(
-      `SELECT description, tags, is_deal, serves FROM menu_items WHERE id = $1`,
+      `SELECT description, description_ur, tags, is_deal, serves FROM menu_items WHERE id = $1`,
       [itemId],
     );
     const reason = unavailableReason(s, tz, now);
@@ -226,6 +227,7 @@ export class MenuReadService {
       id: s.id,
       name: s.name,
       description: row.description,
+      descriptionUr: row.description_ur,
       photoUrl: s.photoUrl,
       tags: row.tags,
       isDeal: row.is_deal,

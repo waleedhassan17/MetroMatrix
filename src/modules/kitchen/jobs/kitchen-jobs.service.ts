@@ -7,6 +7,7 @@ import { CostingService } from '../costing/costing.service';
 import { ForecastService } from '../forecast/forecast.service';
 import { SurplusService } from '../surplus/surplus.service';
 import { EngineeringService } from '../engineering/engineering.service';
+import { ReviewInsightsService } from '../reviews/review-insights.service';
 import { addDays, todayIn } from '../../../common/time/time.util';
 import { display } from '../stock/units';
 
@@ -34,11 +35,16 @@ export class KitchenJobsService {
     private readonly forecasts: ForecastService,
     private readonly surplus: SurplusService,
     private readonly engineering: EngineeringService,
+    private readonly reviewInsights: ReviewInsightsService,
   ) {
     this.nightly.push(
       { name: 'forecasts', run: (now) => this.forecastAll(now) },
       { name: 'cost-snapshots', run: (now) => this.costSnapshots(now) },
       { name: 'experiments', run: (now) => this.experiments(now) },
+      {
+        name: 'review-insights',
+        run: (now) => this.reviewInsights.runAll(now),
+      },
     );
   }
 

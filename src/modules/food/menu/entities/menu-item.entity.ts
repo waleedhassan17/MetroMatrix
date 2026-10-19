@@ -48,6 +48,10 @@ export class MenuItem extends BaseEntity {
   @Column({ type: 'text', nullable: true })
   description!: string | null;
 
+  /** The description in Urdu script (Chunk 5: the menu assistant drafts it; the vendor saves it). */
+  @Column({ type: 'text', name: 'description_ur', nullable: true })
+  descriptionUr!: string | null;
+
   @Column({ type: 'varchar', length: 500, name: 'photo_url', nullable: true })
   photoUrl!: string | null;
 

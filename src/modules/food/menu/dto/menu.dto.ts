@@ -121,6 +121,16 @@ export class ItemDto {
   description?: string;
 
   @ApiPropertyOptional({
+    example: 'کوئلے پر پکی خوشبودار چکن کڑاہی',
+    description: 'The description in Urdu script.',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(1000)
+  descriptionUr?: string;
+
+  @ApiPropertyOptional({
     description: 'secure_url of an upload signed for purpose menu_item.',
   })
   @IsOptional()
@@ -195,6 +205,13 @@ export class UpdateItemDto {
   @IsString()
   @MaxLength(1000)
   description?: string | null;
+
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(1000)
+  descriptionUr?: string | null;
 
   @ValidateIf((_, v) => v !== null)
   @IsOptional()

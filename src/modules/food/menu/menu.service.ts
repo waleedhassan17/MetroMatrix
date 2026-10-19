@@ -228,6 +228,7 @@ export class MenuService implements OnModuleInit {
       name: i.name,
       nameUr: i.nameUr,
       description: i.description,
+      descriptionUr: i.descriptionUr,
       photoUrl: i.photoUrl,
       basePrice: i.basePrice,
       tags: i.tags,
@@ -341,6 +342,7 @@ export class MenuService implements OnModuleInit {
           name: dto.name,
           nameUr: dto.nameUr ?? null,
           description: dto.description ?? null,
+          descriptionUr: dto.descriptionUr ?? null,
           photoUrl: dto.photoUrl ?? null,
           basePrice: dto.basePrice,
           tags: [...new Set(dto.tags ?? [])],
@@ -377,6 +379,10 @@ export class MenuService implements OnModuleInit {
           nameUr: dto.nameUr !== undefined ? dto.nameUr : i.nameUr,
           description:
             dto.description !== undefined ? dto.description : i.description,
+          descriptionUr:
+            dto.descriptionUr !== undefined
+              ? dto.descriptionUr
+              : i.descriptionUr,
           photoUrl: dto.photoUrl !== undefined ? dto.photoUrl : i.photoUrl,
           basePrice: dto.basePrice ?? i.basePrice,
           tags: dto.tags ? [...new Set(dto.tags)] : i.tags,
@@ -412,6 +418,7 @@ export class MenuService implements OnModuleInit {
       name: `${original.name} (copy)`.slice(0, 120),
       nameUr: original.nameUr ?? undefined,
       description: original.description ?? undefined,
+      descriptionUr: original.descriptionUr ?? undefined,
       photoUrl: undefined,
       basePrice: original.basePrice,
       tags: original.tags,

@@ -64,6 +64,10 @@ import {
 import { MenuExperiment } from './entities/menu-experiment.entity';
 import { EngineeringService } from './engineering/engineering.service';
 import { KitchenEngineeringController } from './engineering/engineering.controller';
+import { ReviewInsight } from './entities/review-insight.entity';
+import { MenuAssistantService } from './assistant/menu-assistant.service';
+import { KitchenAssistantController } from './assistant/assistant.controller';
+import { ReviewInsightsService } from './reviews/review-insights.service';
 
 /**
  * Kitchen intelligence for Food Court vendors (Chunk 5): voice on the
@@ -96,6 +100,7 @@ import { KitchenEngineeringController } from './engineering/engineering.controll
       SurplusCustomerStatus,
       PackingProof,
       MenuExperiment,
+      ReviewInsight,
     ]),
     FoodModule,
     NotificationsModule,
@@ -111,6 +116,7 @@ import { KitchenEngineeringController } from './engineering/engineering.controll
     RiderPackingController,
     CustomerSurplusController,
     KitchenEngineeringController,
+    KitchenAssistantController,
   ],
   providers: [
     KitchenVendors,
@@ -136,6 +142,8 @@ import { KitchenEngineeringController } from './engineering/engineering.controll
     SurplusService,
     PackingService,
     EngineeringService,
+    MenuAssistantService,
+    ReviewInsightsService,
   ],
   exports: [
     KitchenVendors,
