@@ -220,6 +220,9 @@ import { CalendarEvent } from './reference/entities/calendar-event.entity';
     BranchStateService,
     PrepStatsService,
     FoodJobsService,
+    VendorSettingsService,
+    FoodOrderViewsService,
+    RiderGuard,
   ],
 })
 export class FoodModule {}

@@ -44,6 +44,8 @@ export class FoodOrderViewsService {
   canReview: (order: FoodOrder) => Promise<boolean> = async () => false;
   /** Filled in by riders (P6): the rider card on an order. */
   riderCard: (order: FoodOrder) => Promise<unknown> = async () => null;
+  /** Filled in by the kitchen (Chunk 5): the packed-order photo. */
+  packingPhoto: (order: FoodOrder) => Promise<string | null> = async () => null;
 
   constructor(private readonly dataSource: DataSource) {}
 
@@ -185,6 +187,7 @@ export class FoodOrderViewsService {
         promisedAt: o.promisedAt,
       },
       rider: await this.riderCard(o),
+      packingPhotoUrl: await this.packingPhoto(o),
       handedToExternal: o.handedToExternal,
       codCollected: viewer === 'customer' ? undefined : o.codCollected,
       cancelledBy: o.cancelledBy,
@@ -345,6 +348,7 @@ export class FoodOrderViewsService {
         ? { lat: o.addressSnapshot.lat, lng: o.addressSnapshot.lng }
         : null,
       rider: await this.riderCard(o),
+      packingPhotoUrl: await this.packingPhoto(o),
       handedToExternal: o.handedToExternal,
       updatedAt: o.updatedAt,
     };

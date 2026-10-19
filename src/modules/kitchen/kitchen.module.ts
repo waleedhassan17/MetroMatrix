@@ -47,6 +47,20 @@ import {
 import { ForecastService } from './forecast/forecast.service';
 import { PrepService } from './forecast/prep.service';
 import { KitchenForecastController } from './forecast/forecast.controller';
+import {
+  SurplusBox,
+  SurplusCustomerStatus,
+  SurplusDonation,
+  SurplusReservation,
+} from './entities/surplus.entity';
+import { PackingProof } from './entities/packing-proof.entity';
+import { SurplusService } from './surplus/surplus.service';
+import { PackingService } from './packing/packing.service';
+import {
+  CustomerSurplusController,
+  KitchenSurplusController,
+  RiderPackingController,
+} from './surplus/surplus.controller';
 
 /**
  * Kitchen intelligence for Food Court vendors (Chunk 5): voice on the
@@ -73,6 +87,11 @@ import { KitchenForecastController } from './forecast/forecast.controller';
       ItemCostSnapshot,
       DemandForecast,
       ForecastAccuracy,
+      SurplusBox,
+      SurplusReservation,
+      SurplusDonation,
+      SurplusCustomerStatus,
+      PackingProof,
     ]),
     FoodModule,
     NotificationsModule,
@@ -84,6 +103,9 @@ import { KitchenForecastController } from './forecast/forecast.controller';
     KitchenMoneyController,
     AdminKitchenController,
     KitchenForecastController,
+    KitchenSurplusController,
+    RiderPackingController,
+    CustomerSurplusController,
   ],
   providers: [
     KitchenVendors,
@@ -106,6 +128,8 @@ import { KitchenForecastController } from './forecast/forecast.controller';
     InsightCardsService,
     ForecastService,
     PrepService,
+    SurplusService,
+    PackingService,
   ],
   exports: [
     KitchenVendors,
