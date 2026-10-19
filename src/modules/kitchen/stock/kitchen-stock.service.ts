@@ -140,6 +140,65 @@ export class KitchenStockService {
     await this.finish(m, branchId, held);
   }
 
+  /**
+   * Take an untouched purchase back out: its batches emptied, a manual
+   * movement each, and the average cost as if it had never come in.
+   */
+  async reversePurchase(
+    m: EntityManager,
+    branchId: string,
+    purchaseId: string,
+    actorUserId: string | null,
+  ): Promise<void> {
+    const moves: Array<{
+      ingredient_id: string;
+      batch_id: string | null;
+      delta: string;
+      unit_cost: string;
+    }> = await m.query(
+      `SELECT ingredient_id, batch_id, delta, unit_cost FROM stock_movements
+        WHERE ref_type = 'purchase' AND ref_id = $1 AND reason = 'purchase' ORDER BY created_at, id`,
+      [purchaseId],
+    );
+    if (!moves.length) return;
+    const held = await this.lock(
+      m,
+      branchId,
+      moves.map((x) => x.ingredient_id),
+    );
+    for (const x of moves) {
+      const h = held.get(x.ingredient_id)!;
+      const qty = Number(x.delta);
+      const cost = Number(x.unit_cost);
+      if (x.batch_id)
+        await m.query(
+          `UPDATE stock_batches SET qty_remaining = GREATEST(qty_remaining - $2, 0), updated_at = now() WHERE id = $1`,
+          [x.batch_id, qty],
+        );
+      const left = round3(h.onHand - qty);
+      // What is left is valued at the batches still on the shelf.
+      const [val] = await m.query(
+        `SELECT sum(qty_remaining) AS q, sum(qty_remaining * unit_cost) AS v
+           FROM stock_batches WHERE ingredient_id = $1 AND qty_remaining > 0`,
+        [h.id],
+      );
+      if (Number(val.q) > 0) h.avg = round4(Number(val.v) / Number(val.q));
+      h.onHand = left;
+      await this.move(
+        m,
+        h,
+        x.batch_id,
+        -qty,
+        cost,
+        'manual',
+        { type: 'purchase', id: purchaseId },
+        actorUserId,
+        'Purchase deleted',
+      );
+    }
+    await this.finish(m, branchId, held);
+  }
+
   private async lock(
     m: EntityManager,
     branchId: string,

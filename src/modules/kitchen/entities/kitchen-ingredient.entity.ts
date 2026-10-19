@@ -3,6 +3,7 @@ import { BaseEntity } from '../../../common/base/base.entity';
 import { Branch } from '../../food/vendor/entities/branch.entity';
 import { numeric } from '../common/numeric';
 import type { BaseUnit, CustomUnit } from '../stock/units';
+import { ReferenceItem } from './reference-price.entity';
 
 export const INGREDIENT_CATEGORIES = [
   'meat',
@@ -78,6 +79,14 @@ export class KitchenIngredient extends BaseEntity {
 
   @Column({ ...numeric(12, 4), name: 'last_cost', nullable: true })
   lastCost!: number | null;
+
+  /** The PBS SPI item its cost is compared with (price watch). */
+  @Column({ type: 'uuid', name: 'reference_item_id', nullable: true })
+  referenceItemId!: string | null;
+
+  @ManyToOne(() => ReferenceItem, { onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'reference_item_id' })
+  referenceItem?: ReferenceItem;
 
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive!: boolean;

@@ -11,8 +11,11 @@ import type {
 } from '../../ai/voice/voice.types';
 import type { VendorRef } from '../../food/vendor/food-vendor.service';
 import { KitchenVendors } from '../common/kitchen-vendors.service';
-import { IngredientsService } from '../stock/ingredients.service';
-import { display } from '../stock/units';
+import {
+  LineResolver,
+  ResolvedLine,
+  isReady,
+} from '../stock/line-resolver.service';
 
 interface Dish {
   id: string;
@@ -103,7 +106,7 @@ export class KitchenVoiceContexts implements OnModuleInit {
     private readonly dataSource: DataSource,
     private readonly vendors: KitchenVendors,
     private readonly contexts: VoiceContexts,
-    private readonly ingredients: IngredientsService,
+    private readonly lines: LineResolver,
   ) {}
 
   onModuleInit(): void {
@@ -111,82 +114,115 @@ export class KitchenVoiceContexts implements OnModuleInit {
     this.contexts.register(this.today());
     this.contexts.register(this.menuSearch());
     this.contexts.register(this.stockScreen());
+    this.contexts.register(this.purchaseScreen());
   }
 
-  /**
-   * Spoken lines → the kitchen's ingredients, quantities in base units.
-   * Unknown names come back with the canonical name to offer as a new
-   * ingredient (UNKNOWN_INGREDIENT on the line, never a guess).
-   */
-  async resolveLines(
-    branchId: string,
-    lines: VoiceIntent['slots']['lines'] = [],
-  ) {
-    const out = [];
-    for (const l of lines) {
-      const r = await this.ingredients.resolve(branchId, l.name);
-      if (!r.ingredient) {
-        out.push({
-          spoken: l.name,
-          status: 'UNKNOWN_INGREDIENT' as const,
-          suggestedName: r.canonical,
-          candidates: r.candidates.map((c) => ({
-            id: c.value.id,
-            label: c.value.name,
-            score: Number(c.score.toFixed(2)),
-          })),
-          qty: l.qty ?? null,
-          unit: l.unit ?? null,
-          totalPrice: l.totalPrice ?? null,
-        });
-        continue;
-      }
-      const i = r.ingredient;
-      const qtyBase = this.ingredients.safeBase(i, l.qty, l.unit);
-      out.push({
-        spoken: l.name,
-        status:
-          qtyBase === null && l.qty !== undefined
-            ? ('UNIT_MISMATCH' as const)
-            : ('ok' as const),
-        ingredientId: i.id,
-        name: i.name,
-        qty: l.qty ?? null,
-        unit: l.unit ?? i.base_unit,
-        qtyBase,
-        baseUnit: i.base_unit,
-        display: qtyBase === null ? null : display(qtyBase, i.base_unit),
-        totalPrice: l.totalPrice ?? null,
-      });
+  private async ingredientScope(u: AuthenticatedUser) {
+    const s = await this.scope(u, false);
+    const names: Array<{ name: string; name_ur: string | null }> =
+      await this.dataSource.query(
+        `SELECT name, name_ur FROM kitchen_ingredients WHERE branch_id = $1 AND is_active ORDER BY name`,
+        [s.scope.v.branchId],
+      );
+    return {
+      ...s,
+      vocabulary: names.flatMap((n) => [
+        n.name,
+        ...(n.name_ur ? [n.name_ur] : []),
+      ]),
+    };
+  }
+
+  /** add_purchase → a purchase draft; log_waste → one waste entry. Unknown names are flagged, never guessed. */
+  private purchaseOrWaste(i: VoiceIntent, lines: ResolvedLine[]): Resolution {
+    const fmt = (l: Extract<ResolvedLine, { ingredientId: string }>) =>
+      `${l.name} ${l.display ? `${l.display.qty} ${l.display.unit}` : ''}`.trim();
+    if (i.intent === 'add_purchase') {
+      const ready = lines.filter(isReady);
+      const priced = ready.filter((l) => l.totalPrice !== null);
+      const all = lines.length > 0 && priced.length === lines.length;
+      const total = priced.reduce((s, l) => s + (l.totalPrice ?? 0), 0);
+      const body = {
+        source: 'voice',
+        lines: priced.map((l) => ({
+          ingredientId: l.ingredientId,
+          qty: l.qty,
+          unit: l.unit,
+          totalPrice: Math.round(l.totalPrice!),
+        })),
+      };
+      return {
+        proposedAction: all
+          ? {
+              method: 'POST',
+              path: '/food/vendor/kitchen/purchases',
+              body,
+              summary: `Purchase: ${priced.map((l) => `${fmt(l)} Rs ${Math.round(l.totalPrice!).toLocaleString('en-PK')}`).join(', ')} — Rs ${total.toLocaleString('en-PK')}`,
+            }
+          : null,
+        draft: { lines, body },
+        ...(all
+          ? {}
+          : {
+              note: lines.some((l) => l.status === 'UNKNOWN_INGREDIENT')
+                ? 'Add the new ingredients first, or pick one of the suggestions.'
+                : 'Add the price (and check the unit) for each line before saving.',
+            }),
+      };
     }
-    return out;
+    if (i.intent === 'log_waste') {
+      const [l] = lines;
+      const ok = lines.length === 1 && l && isReady(l);
+      return {
+        proposedAction: ok
+          ? {
+              method: 'POST',
+              path: '/food/vendor/kitchen/waste',
+              body: {
+                ingredientId: l.ingredientId,
+                qty: l.qty,
+                unit: l.unit,
+                reason: i.slots.reason ?? 'other',
+              },
+              summary: `Waste: ${fmt(l)} (${i.slots.reason ?? 'other'})`,
+            }
+          : null,
+        draft: { lines },
+        ...(ok
+          ? {}
+          : {
+              note:
+                lines.length > 1
+                  ? 'Log one item at a time.'
+                  : 'Check the name and the amount.',
+            }),
+      };
+    }
+    return { proposedAction: null, draft: { lines } };
+  }
+
+  private purchaseScreen(): VoiceContextHandler<VendorScope> {
+    return {
+      context: 'purchase',
+      hint: 'Try: “paanch kilo tamatar, baara sau rupay”.',
+      authorize: (u) => this.ingredientScope(u),
+      resolve: async (i, s) =>
+        this.purchaseOrWaste(
+          i,
+          await this.lines.resolve(s.v.branchId, i.slots.lines),
+        ),
+    };
   }
 
   private stockScreen(): VoiceContextHandler<VendorScope> {
     return {
       context: 'stock',
       hint: 'Try: “chawal bees kilo baqi hain” or “do kilo dahi kharab ho gaya”.',
-      authorize: async (u) => {
-        const s = await this.scope(u, false);
-        const names: Array<{ name: string; name_ur: string | null }> =
-          await this.dataSource.query(
-            `SELECT name, name_ur FROM kitchen_ingredients WHERE branch_id = $1 AND is_active ORDER BY name`,
-            [s.scope.v.branchId],
-          );
-        return {
-          ...s,
-          vocabulary: names.flatMap((n) => [
-            n.name,
-            ...(n.name_ur ? [n.name_ur] : []),
-          ]),
-        };
-      },
+      authorize: (u) => this.ingredientScope(u),
       resolve: async (i, s) => {
-        const lines = await this.resolveLines(s.v.branchId, i.slots.lines);
+        const lines = await this.lines.resolve(s.v.branchId, i.slots.lines);
         if (i.intent === 'count') {
-          const ok = lines.filter(
-            (l) => l.status === 'ok' && l.qtyBase !== null,
-          );
+          const ok = lines.filter(isReady);
           return {
             proposedAction:
               ok.length && ok.length === lines.length
@@ -209,22 +245,10 @@ export class KitchenVoiceContexts implements OnModuleInit {
               : { note: 'Some names or units need a look before saving.' }),
           };
         }
-        return (
-          this.purchaseOrWaste?.(i, s, lines) ?? {
-            proposedAction: null,
-            draft: { lines },
-          }
-        );
+        return this.purchaseOrWaste(i, lines);
       },
     };
   }
-
-  /** Set by the purchases and waste screens (P2). */
-  purchaseOrWaste?: (
-    i: VoiceIntent,
-    s: VendorScope,
-    lines: Awaited<ReturnType<KitchenVoiceContexts['resolveLines']>>,
-  ) => Promise<Resolution> | Resolution;
 
   private async scope(user: AuthenticatedUser, withOrders: boolean) {
     const v = await this.vendors.forUser(user);

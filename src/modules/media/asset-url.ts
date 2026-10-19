@@ -84,6 +84,32 @@ export const UPLOAD_PURPOSES = {
     formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
     maxBytes: 8_000_000,
   },
+  /** A supplier's bill photographed for the receipt scan (private: prices and phone numbers). */
+  receipt: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+    delivery: 'authenticated',
+  },
+  /** The packed order, before it leaves (shown to that order's customer). */
+  packing_proof: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+  },
+  /** Kitchen story photos and the Bachat Box donation photo (public). */
+  kitchen_story: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+  },
+  /** A customer's grocery receipt for My Kitchen (private). */
+  pantry_receipt: {
+    resourceType: 'image',
+    formats: ['jpg', 'jpeg', 'png', 'webp', 'heic'],
+    maxBytes: 8_000_000,
+    delivery: 'authenticated',
+  },
   /** Voice commands (≤ 30 s). Private; deleted 24 h after upload. */
   voice_audio: {
     resourceType: 'video',

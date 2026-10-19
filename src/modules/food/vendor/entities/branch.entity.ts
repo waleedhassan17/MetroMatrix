@@ -26,6 +26,10 @@ export interface GeoPoint {
 @Entity('branches')
 @Index(['businessId'], { unique: true })
 @Index(['brandId'])
+@Check(
+  'CHK_branches_food_cost_target',
+  '"target_food_cost_pct" BETWEEN 5 AND 95',
+)
 @Check('CHK_branches_auto_reject', '"auto_reject_minutes" BETWEEN 3 AND 10')
 @Check(
   'CHK_branches_numbers',
@@ -161,4 +165,12 @@ export class Branch extends BaseEntity {
 
   @Column({ type: 'text', name: 'food_safety_note', nullable: true })
   foodSafetyNote!: string | null;
+
+  /** Kitchen (Chunk 5): the food cost % a dish should stay under (alerts above it). */
+  @Column({ type: 'smallint', name: 'target_food_cost_pct', default: 35 })
+  targetFoodCostPct!: number;
+
+  /** Kitchen (Chunk 5): a packing photo before an order leaves (on_the_way / picked_up). */
+  @Column({ type: 'boolean', name: 'require_packing_photo', default: false })
+  requirePackingPhoto!: boolean;
 }

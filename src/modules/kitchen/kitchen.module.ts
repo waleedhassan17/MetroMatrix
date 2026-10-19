@@ -22,6 +22,24 @@ import { StockViewsService } from './stock/stock-views.service';
 import { RecipesService } from './recipes/recipes.service';
 import { KitchenStockController } from './stock/kitchen.controller';
 import { KitchenJobsService } from './jobs/kitchen-jobs.service';
+import { Supplier } from './entities/supplier.entity';
+import { Purchase, PurchaseLine } from './entities/purchase.entity';
+import { WasteEntry } from './entities/waste-entry.entity';
+import {
+  ReferenceItem,
+  ReferencePrice,
+} from './entities/reference-price.entity';
+import { ItemCostSnapshot } from './entities/cost-snapshot.entity';
+import { LineResolver } from './stock/line-resolver.service';
+import { PurchasesService } from './purchases/purchases.service';
+import { ReceiptScanService } from './purchases/receipt-scan.service';
+import { CostingService } from './costing/costing.service';
+import { PriceWatchService } from './costing/price-watch.service';
+import { WasteService } from './waste/waste.service';
+import { InsightCardsService } from './insights/insight-cards.service';
+import { KitchenMoneyController } from './purchases/kitchen-money.controller';
+import { AdminKitchenController } from './admin/admin-kitchen.controller';
+import { MediaModule } from '../media/media.module';
 
 /**
  * Kitchen intelligence for Food Court vendors (Chunk 5): voice on the
@@ -39,11 +57,24 @@ import { KitchenJobsService } from './jobs/kitchen-jobs.service';
       RecipeCard,
       RecipeLine,
       KitchenAlert,
+      Supplier,
+      Purchase,
+      PurchaseLine,
+      WasteEntry,
+      ReferenceItem,
+      ReferencePrice,
+      ItemCostSnapshot,
     ]),
     FoodModule,
     NotificationsModule,
+    MediaModule,
   ],
-  controllers: [AnnounceController, KitchenStockController],
+  controllers: [
+    AnnounceController,
+    KitchenStockController,
+    KitchenMoneyController,
+    AdminKitchenController,
+  ],
   providers: [
     KitchenVendors,
     KitchenVoiceContexts,
@@ -56,6 +87,13 @@ import { KitchenJobsService } from './jobs/kitchen-jobs.service';
     StockViewsService,
     RecipesService,
     KitchenJobsService,
+    LineResolver,
+    PurchasesService,
+    ReceiptScanService,
+    CostingService,
+    PriceWatchService,
+    WasteService,
+    InsightCardsService,
   ],
   exports: [
     KitchenVendors,
@@ -63,6 +101,9 @@ import { KitchenJobsService } from './jobs/kitchen-jobs.service';
     IngredientsService,
     StockAvailabilityService,
     KitchenAlertsService,
+    LineResolver,
+    CostingService,
+    InsightCardsService,
   ],
 })
 export class KitchenModule {}

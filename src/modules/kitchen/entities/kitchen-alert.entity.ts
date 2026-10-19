@@ -8,6 +8,8 @@ export const KITCHEN_ALERT_KINDS = [
   'stock_negative',
   'expiring',
   'expired',
+  'food_cost_high',
+  'price_above_reference',
 ] as const;
 export type KitchenAlertKind = (typeof KITCHEN_ALERT_KINDS)[number];
 

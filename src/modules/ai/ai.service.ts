@@ -10,6 +10,7 @@ import { AiActor, AiQuotaService } from './ai-quota.service';
 import { AiUsage, AiUsageStatus } from './entities/ai-usage.entity';
 import { AiCacheEntry } from './entities/ai-cache.entity';
 import { aiQuotaReached, aiUnavailable } from './ai-errors';
+import { MediaStorage } from '../media/media-storage';
 
 export interface AiCall<T extends object> {
   feature: AiFeature;
@@ -67,7 +68,40 @@ export class AiService {
     private readonly provider: AiProvider,
     private readonly prompts: PromptRegistry,
     private readonly quota: AiQuotaService,
+    private readonly storage: MediaStorage,
   ) {}
+
+  /** A JSON answer from text input (the spec's json<T>). */
+  json<T extends object>(
+    call: Omit<AiCall<T>, 'media'>,
+  ): Promise<AiOutcome<T>> {
+    return this.run(call);
+  }
+
+  /**
+   * A JSON answer about images (receipt scan, packing check, photo tips):
+   * each image is read server-side (private ones through a signed link) and
+   * sent inline. An image that can't be read is `unavailable`.
+   */
+  async vision<T extends object>(
+    call: Omit<AiCall<T>, 'media'> & { imageUrls: string[]; maxBytes?: number },
+  ): Promise<AiOutcome<T>> {
+    if (!this.usable(call.feature))
+      return {
+        ok: false,
+        reason: this.settings.isOn(call.feature) ? 'unavailable' : 'disabled',
+      };
+    const media: AiPart[] = [];
+    for (const url of call.imageUrls) {
+      const img = await this.storage.fetch(url, call.maxBytes ?? 8_000_000);
+      if (!img || img === 'too_large')
+        return { ok: false, reason: 'unavailable' };
+      media.push({
+        inline: { mimeType: img.mimeType, data: img.bytes.toString('base64') },
+      });
+    }
+    return this.run({ ...call, media });
+  }
 
   /** Is the feature usable at all (switches on, provider configured)? */
   usable(feature: AiFeature): boolean {
