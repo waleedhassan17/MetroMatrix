@@ -13,7 +13,7 @@ pantry recipes. It is built so that **AI is never needed**:
 ```
 feature switched on? (AI_ENABLED, AI_FEATURES) ── no ─▶ { ok: false, reason: 'disabled' }
 provider configured? (GEMINI_API_KEY)           ── no ─▶ 'unavailable'
-cached answer? (ai_cache, 24 h, same prompt id + version + input + media hash) ─▶ use it (free)
+cached answer? (ai_cache, per feature 6 h–7 days, same prompt id + version + input + media hash) ─▶ use it (free)
 over this month's allowance?                    ── yes ▶ 'quota' (429 AI_QUOTA_REACHED, resetsOn)
 model call, 12 s budget (AI_TIMEOUT_MS)         ── slow ▶ 'timeout'
 JSON → class-validator DTO + semantic checks    ── bad ─▶ one retry that shows the model its errors
@@ -60,9 +60,16 @@ records the prompt id and version. **Change a prompt's text → bump its version
 | `voice_intent` | 3 | `voice` | Audio or text + the screen's intents + vocabulary → `{ transcript, language, intent, slots, confidence }`. The schema is per screen (only that screen's intents and slots). |
 | `receipt_scan` | 1 | `receipt_scan` | Bill photo + the kitchen's ingredient names → `{ supplier?, date?, lines: [{ name, qty, unit, totalPrice }], total?, confidence }` |
 | `packing_check` | 1 | `packing_check` | Packed-order photo + ticket lines → `{ detectedItems, match, missing, confidence, note }` (advisory) |
+| `describe` | 1 | `menu_assistant` | Dish details + recipe ingredients → `{ en, ur }` (≤ 160 each; Urdu script; no health claims, brands, emojis) |
+| `specials` | 1 | `specials` | Expiring + pantry ingredients (ids), cuisines, existing dishes → `{ ideas: [{ name, description, servings, lines: [{ ingredientId, qty, unit }], why }] }` (1–3) |
+| `combos` | 1 | `combos` | Dish pairs counted from orders → `{ combos: [{ key, name, description }] }` (wording only) |
+| `photo_tips` | 1 | `photo_check` | Menu photo + measured metrics → `{ tips (≤ 3), looksLikeFood, matchesDish }` |
+| `review_themes` | 1 | `review_insights` | Anonymised reviews → `{ themes: [{ theme, sentiment, count, examples (≤ 2) }] }` (≤ 8) |
+| `nutrition_estimate` | 1 | `nutrition` | Dish name, description, portion → per serving `{ servingGrams, kcal, proteinG, carbsG, fatG, fibreG, sodiumMg, confidence ≤ 0.5 }` |
+| `pantry_recipes` | 1 | `pantry_recipes` | Pantry items (ids, days left) → `{ recipes: [{ title, titleUr, uses (ids), missing, steps, minutes, servings, why }] }` (1–5) |
 
-Prompts for 5C — `describe`, `specials`, `combos`, `review_themes`, `nutrition_estimate` and
-`pantry_recipes` — are added with their features.
+Staff see every prompt with its version and 30-day calls at `GET /admin/ai/prompts`, and usage
+by feature, business and failure at `GET /admin/ai/usage`.
 
 ## 4. Allowances (quotas)
 
@@ -89,6 +96,18 @@ Prompts for 5C — `describe`, `specials`, `combos`, `review_themes`, `nutrition
 | Receipt scan | `503` + "Type the bill's lines into a new purchase." | `429` |
 | Packing check | The photo is saved; `aiCheck: null`. The order is never blocked. | same |
 | Announcements | Template-built, never AI. | — |
+| Describe | `503 AI_UNAVAILABLE` + "Write the description yourself…" | `429` |
+| Specials | `503` + "Check the expiring ingredients in Stock…" (nothing expiring → no call at all) | `429` |
+| Combos | The dish names stand ("Karahi + Naan"); the combos themselves are counted, never AI. | same |
+| Photo check | The measured checks and tips; `aiTips: null`. | same |
+| Review insights | The keyword lexicon (`method: lexicon`). | same |
+| Nutrition estimate | `503` + "Map the recipe card's ingredients…" (a usable recipe never calls it) | `429` |
+| Pantry recipes | The recipe book (`source: library`). | same |
+
+**Checks before use.** Describe and specials refuse health claims, brand names and emojis;
+specials and pantry recipes may use only the ids they were given (others are dropped or
+retried); a nutrition estimate must fit 4 × protein + 4 × carbs + 9 × fat, and its confidence is
+capped at 0.4; review-theme counts can't exceed the reviews read.
 
 **The model's reading is completed, never trusted blindly.** Slots that don't belong to the
 chosen intent are dropped. When the rule parser reads the same intent from the transcript,
@@ -100,8 +119,10 @@ it fills the slots the model left empty — the count of plates, a line's price
 | Table | What | How long |
 |---|---|---|
 | `ai_usage` | Who (business or user), feature, prompt id and version, tokens, latency, status (`ok`, `invalid`, `timeout`, `quota`, `error`), `cached`, audio seconds. No text, no audio. | Kept (counts for allowances and the staff dashboard) |
-| `ai_cache` | Answers to identical non-personal inputs (typed voice commands) | 24 h, purged hourly |
+| `ai_cache` | Answers to identical inputs: typed voice commands, describe, combos and photo tips (24 h); nutrition estimates (7 days); pantry recipes (6 h, keyed by the pantry's items) | Until it expires; expired rows purged hourly |
 | `voice_logs` | Transcript, reading, status — for quality review | 30 days; audio deleted after 24 h |
+| `review_insights` | Themes and up to 2 anonymised quotes each, per kitchen per day | Kept (the vendor's history) |
+| `menu_item_nutrition` | Per-dish values, `method` (`recipe` or `ai_estimate`) and confidence | Kept, recomputed |
 
 ## 7. Switches (env; also in `.env.example`)
 

@@ -182,6 +182,11 @@ Karachi, forecasts and tonight's Bachat Box. Part 2 adds the growth demo:
 - kitchen stories, a signature dish and QR/storefront orders;
 - anonymous demand data and a menu experiment.
 
+Part 3 confirms the demo kitchens' nutrition mappings and adds a fictional demo grocer with
+pack sizes (it needs `SEED_DEMO_PASSWORD`; placeholder images) and a demo pantry. The
+nutrition reference foods (USDA SR Legacy, public domain) are loaded by a migration, so nothing
+is downloaded at deploy time.
+
 No uploads and no AI calls:
 ```bash
 heroku run -a metromatrix-api npm run seed:kitchen:prod -- --allow-production

@@ -10,8 +10,10 @@ enforced by the e2e suite:
 
 - order `source` / `campaign` at checkout;
 - card `badges` and the home rails `iftarNearYou`, `surplusNearYou` and `tiffinNearYou`;
-- `story`, `signatureDishes` and `ramadan` on the vendor page, and `signature` on the item
-  sheet;
+- `story`, `signatureDishes`, `ramadan` and `nutritionByItem` on the vendor page;
+- `signature`, `nutrition` and `descriptionUr` on the item sheet (`descriptionUr` on menu cards
+  too);
+- the list filters `maxKcal` / `highProtein`;
 - the pause `reason` / `minutes`, the smart ETA and Ramadan hours.
 
 The live schema is at `GET /api/docs-json`; Swagger UI is at `/api/docs` where it is enabled.
@@ -153,6 +155,11 @@ Option groups are **reusable** across dishes. A group with `variantId` applies t
 only (`variants[].groupIds` lists what applies). `unavailableReason`: `unavailable` (86'd or
 until a time), `not_today` (weekly menu), `outside_hours` (category window), `sold_out`
 (today's portions), `not_on_menu`.
+
+*(Chunk 5)* The sheet also carries `descriptionUr` (Urdu script), `signature: { badge, label,
+by, since } | null` and `nutrition: { perServing: { kcal, proteinG, carbsG, fatG, fibreG,
+sodiumMg }, servingGrams, method: recipe|ai_estimate, confidence, lowConfidence, label, badges }
+| null` (`docs/API_KITCHEN.md` §34; null when the vendor hid it).
 
 ### `Cart` (`GET /food/cart` and every cart write)
 
@@ -334,7 +341,7 @@ needs the order `ready` (else `409 INVALID_TRANSITION`) and moves it to `on_the_
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/food/home?lat&lng` | `{ coverage: { delivering, message, pickupNearby }, cuisines, banners, orderAgain (signed in), offers, homeKitchens, topRated, fastest, newOnFoodCourt, freeDelivery }`, plus *(Chunk 5)* `iftarNearYou`, `surplusNearYou` and `tiffinNearYou` when they have cards. Far from every vendor: `message: "Not delivering here yet"`. Home, list and search are logged anonymously for the demand map (`docs/API_KITCHEN.md` §25). |
-| GET | `/food/vendors?lat&lng` | **Required** `lat`/`lng`. Filters: `q` (vendor, cuisine or dish), `cuisine` (slug or id), `freeDelivery`, `offers`, `minRating`, `pickup` (vendors you can collect from within 25 km, whatever their zone), `homeKitchen`, `openNow`, `priceLevel` (1–3). `sort=recommended` (default) · `distance` · `rating` · `delivery_time` · `delivery_fee`. Open vendors come first in every sort. Paused and out-of-zone vendors are left out. |
+| GET | `/food/vendors?lat&lng` | **Required** `lat`/`lng`. Filters: `q` (vendor, cuisine or dish), `cuisine` (slug or id), `freeDelivery`, `offers`, `minRating`, `pickup` (vendors you can collect from within 25 km, whatever their zone), `homeKitchen`, `openNow`, `priceLevel` (1–3), *(Chunk 5)* `maxKcal` (100–3000) and `highProtein=true` (vendors with at least one such dish, estimated nutrition). `sort=recommended` (default) · `distance` · `rating` · `delivery_time` · `delivery_fee`. Open vendors come first in every sort. Paused and out-of-zone vendors are left out. |
 | GET | `/food/vendors/:slugOrId?lat&lng` | `VendorPage`. Unknown, not live or suspended: `404`. |
 | GET | `/food/vendors/:id/reviews` | Visible reviews, newest first (paged). |
 | GET | `/food/vendors/:idOrSlug/slots` | `Slots` (home kitchens with pre-order slots). |

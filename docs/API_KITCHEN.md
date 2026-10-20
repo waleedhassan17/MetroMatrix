@@ -8,13 +8,16 @@ milestones; this edition covers:
   layer;
 - **5B, growth** (§19–30): tiffin, catering, Ramadan mode, the storefront and order sources,
   kitchen story and hygiene, signature recipes, home rails and badges, the demand map and
-  curve, menu engineering and experiments, rider batching.
-
-5C (AI assistants, nutrition, My Kitchen) extends it.
+  curve, menu engineering and experiments, rider batching;
+- **5C, AI assistants, nutrition and My Kitchen** (§31–38): the menu assistant (describe,
+  specials, combos, photo check), review insights, nutrition (reference foods, mapping, per-dish
+  values, the customer's profile and summary), My Kitchen (pantry, recipes, missing-to-bag),
+  staff tools.
 
 Everything here is enforced by the e2e suite:
 
-- `test/kitchen-*.e2e-spec.ts`, `test/growth-*.e2e-spec.ts` and `test/ai-voice.e2e-spec.ts`;
+- `test/kitchen-*.e2e-spec.ts`, `test/growth-*.e2e-spec.ts`, `test/nutrition.e2e-spec.ts`,
+  `test/my-kitchen.e2e-spec.ts` and `test/ai-voice.e2e-spec.ts`;
 - the release gate `test/qa-matrix-kitchen.e2e-spec.ts` (one test per QA row).
 
 Voice is in `docs/VOICE.md`; the AI layer (prompts, schemas, quotas, fallbacks, cost) is in
@@ -25,12 +28,12 @@ flows: `npm run postman:kitchen` (needs `seed:food` and `seed:kitchen`).
 
 | Who | Prefix | Account |
 |---|---|---|
-| Vendor | `/food/vendor/kitchen`, plus `/food/vendor/pause`; 5B: `/food/vendor/{tiffin,catering,ramadan,story,storefront,demand-map,demand-curve}` | `@FoodVendor()`: partner, food business approved |
+| Vendor | `/food/vendor/kitchen` (5C adds `/ai/*`, `/review-insights`, `/nutrition/*`), plus `/food/vendor/pause`; 5B: `/food/vendor/{tiffin,catering,ramadan,story,storefront,demand-map,demand-curve}` | `@FoodVendor()`: partner, food business approved |
 | Rider | `/food/rider/orders/:id/packing-proof` | role `rider` |
-| Customer | `/food/surplus` (nearby boxes: signed out works); 5B: `/food/tiffin`, `/food/catering`, `/food/vendors/:idOrSlug/tiffin-plans` | customer, verified email |
+| Customer | `/food/surplus` (nearby boxes: signed out works); 5B: `/food/tiffin`, `/food/catering`, `/food/vendors/:idOrSlug/tiffin-plans`; 5C: `/food/me/nutrition/*`, `/my-kitchen/*` | customer, verified email |
 | Public | 5B: `/public/food/store/:slug` | none |
 | Voice | `/ai/voice`, `/ai/announce`, `/ai/usage` | partner or customer, by screen |
-| Staff | `/admin/kitchen`; 5B: `/admin/food/{calendar-events,hygiene,signatures,demand-map}` | `admin` / `super_admin`, every write audited |
+| Staff | `/admin/kitchen`; 5B: `/admin/food/{calendar-events,hygiene,signatures,demand-map}`; 5C: `/admin/nutrition/foods`, `/admin/kitchen/aliases`, `/admin/ai/*`, `/admin/food/lookup` | `admin` / `super_admin`, every write audited |
 
 **Rules this chunk adds.**
 
@@ -412,7 +415,8 @@ no CSV or API. Staff transcribe the rows they need into this template, for examp
 | `SURPLUS_WINDOW_CLOSED` | 409 | The pickup window has closed (reserve or cancel). |
 | `SURPLUS_BLOCKED` | 403 | Three no-shows. `details.until`. |
 | `TIFFIN_FULL`, `TIFFIN_SKIP_CUTOFF_PASSED`, `CATERING_QUOTE_EXPIRED` | | 5B — see §28. |
-| `RECIPE_INCOMPLETE`, `NUTRITION_UNAVAILABLE` | | Reserved for 5C. |
+| `NUTRITION_UNAVAILABLE` | | 5C — see §37. |
+| `RECIPE_INCOMPLETE` | | Reserved (not used yet). |
 
 ## 15. Notifications (`type`)
 
@@ -810,3 +814,263 @@ The notifications:
 - **The kitchen story video is a `kitchen_video` upload** (files never pass through the API;
   outside links are refused like any foreign URL).
 - **Menu engineering is per dish.** Sizes are folded in by the quantity sold of each.
+
+---
+
+# Milestone 5C — AI assistants, nutrition, My Kitchen
+
+Modules: `kitchen/assistant/` and `kitchen/reviews/` (menu assistant, review insights),
+`src/modules/nutrition/`, `src/modules/my-kitchen/`, plus pack sizes and a Grocery aisle in
+Shopping. Every AI answer here is a **draft** or an **estimate labelled as one**; each feature
+has a deterministic or manual path (`docs/AI.md` §5).
+
+## 31. Menu assistant (`/food/vendor/kitchen/ai`)
+
+**Describe** — `POST /ai/describe { itemId }` → `{ itemId, name, draft: { description,
+descriptionUr }, current, cached, save: { method: "PATCH", path: "/food/vendor/menu/items/:id",
+body } }`.
+
+- `describe@1` writes English (40–160 characters) and Urdu **in Urdu script** (20–160; at least
+  90% of its letters Arabic-script).
+- The check refuses health or medical claims (`healthy`, `low-fat`, `diet`, `immunity`,
+  `صحت` …), brand or chain names (`KFC`, `Pepsi` …), emojis and hashtags. A refusal triggers one
+  retry that shows the model its errors; a second miss is `503 AI_UNAVAILABLE`
+  (`reason: invalid`) with the manual path.
+- **Nothing is saved.** The vendor edits the draft and sends `save` — the ordinary dish PATCH,
+  which now takes `descriptionUr` (also on the item sheet and the menu cards). Answers are
+  cached 24 h for the same dish details.
+
+**Specials** — `POST /ai/specials`:
+
+```
+{ days: 3, targetFoodCostPct, expiring: [{ ingredientId, name, expiresOn, expiringQty }],
+  ideas: [{ name, description, servings, why, lines: [{ ingredientId, name, qty, unit, expiring }],
+            uses, costPerServing, suggestedPrice, foodCostPct,
+            create: { method: "POST", path: "/food/vendor/kitchen/ai/specials/create", body } }],
+  dropped }
+```
+
+- Built only from batches expiring within 3 days (not yet past). With none, the answer is
+  `{ ideas: [], message }` and **no model call is made**.
+- `specials@1` proposes 1–3 ideas. An idea is kept only if every line is one of **this
+  kitchen's ingredients**, in a unit it can be counted in, and at least one line is
+  **expiring**. Anything else is dropped and counted in `dropped`; when none survive, the answer
+  is `503 AI_UNAVAILABLE`.
+- `costPerServing` uses average cost. `suggestedPrice` = cost ÷ target food cost %, rounded up
+  to Rs 10.
+- `POST /ai/specials/create` takes `{ name, description?, basePrice, categoryId? (your first),
+  servings, lines }`. It creates an **inactive** dish with that recipe card (`201 { item,
+  recipe }`); another kitchen's ingredient is `404`.
+
+**Combos** — `POST /ai/combos`:
+
+- From the last 60 days of accepted-onward orders: pairs of active dishes ordered together in
+  **at least 3 orders**, the top 5 by count, then by lift.
+- Each combo carries `together`, `supportPct`, `lift`, `price` (the two prices), `bundlePrice`
+  (10% off, rounded down to Rs 10), `cost`, `margin` and `foodCostPct`.
+- `combos@1` only **names** them (cached 24 h). Without AI the name is "Dish A + Dish B"
+  (`named: rules`), so this endpoint never needs the model.
+- `draft` is a body for `POST /food/vendor/menu/items` (`isDeal: true`, inactive). Nothing is
+  created.
+
+**Photo check** — `POST /ai/photo-check { imageUrl (a menu_item upload), itemId? }`:
+
+- It is measured without AI (`jpeg-js` / `pngjs`; JPG and PNG — HEIC or WebP is `400` with a
+  hint): `metrics: { width, height, brightness (mean luma), contrast (luma SD), sharpness
+  (variance of the Laplacian on a ≤ 512 px copy), centerFocus (edge energy in the middle 60%),
+  aspect }`.
+- `problems` and `tips` cover `dark` (< 70) / `overexposed` (> 205), `flat` (contrast < 25),
+  `blurry` (sharpness < 60), `off_centre` (< 0.3), `small` (shorter side < 600 px) and
+  `portrait` / `too_wide`. `score` = 100 − 20 per problem.
+- With AI on, `photo_tips@1` adds `aiTips` (≤ 3), `looksLikeFood` and `matchesDish`
+  (`source: measured+ai`).
+
+## 32. Review insights
+
+**Nightly** (the kitchen nightly step `review-insights`), for each kitchen with **at least 5
+new written reviews** since its last run:
+
+1. Hidden reviews are skipped, and at most the 60 newest are read.
+2. They are **anonymised** first: phone numbers, emails and "rider Ali"-style names are
+   removed, and text is cut to 100 characters.
+3. `review_themes@1` returns up to 8 themes `{ theme, sentiment, count, examples (≤ 2) }`.
+   Without AI the keyword lexicon (`kitchen/reviews/review-lexicon.ts`; English, Roman Urdu,
+   Urdu) does the same, with ratings guarding sentiment.
+4. One insight per kitchen per day.
+
+**Push** — at most **once a week**: `kitchen.review_insights`, "This week: 6 reviews mention
+cold food" (the top complaint, else the top praise).
+
+**Route** — `GET /food/vendor/kitchen/review-insights` → `{ latest: { periodStart, periodEnd,
+reviewCount, method: ai|lexicon, headline, themes }, history (the 7 before), newReviews, needed:
+5 }`.
+
+## 33. Nutrition for vendors (`/food/vendor/kitchen/nutrition`)
+
+**Reference foods.** `nutrition_foods` holds **443 foods per 100 g** (kcal, protein,
+carbohydrate, fat, fibre, sodium).
+
+- They come from USDA FoodData Central SR Legacy (public domain), built by
+  `scripts/build-nutrition-seed.mjs` into a committed data file and loaded by a migration.
+- Every food canonical of `ingredient_aliases` is linked (`canonicals`). Where USDA has no exact
+  match, an equivalent is used and **labelled** in `note` (paneer → queso fresco, masala blends
+  → curry powder, mutton → goat).
+- `pieceGrams` gives a typical weight for ingredients counted in pieces (an egg 50 g, a naan
+  90 g).
+- `GET /foods?q&page` searches them.
+
+**Mapping.**
+
+- `GET /mapping` lists each ingredient as `confirmed` (with its food), `suggested` (by alias →
+  canonical, else a close name), `unmapped` or `not_food` (packaging, fuel), plus a `summary`.
+- **Only confirmed mappings count.** `PUT /mapping/:ingredientId { nutritionFoodId | null,
+  pieceGrams? }` confirms or clears one. `POST /mapping/accept-suggestions` confirms every
+  suggestion. Both recompute the kitchen's dishes.
+
+**Per dish** (per serving).
+
+| Route | |
+|---|---|
+| `GET /items` | Every dish with `kcal`, `proteinG`, `method`, `label`, `badges`, `hidden`, `hasRecipe` (paged). |
+| `GET /items/:itemId` | `{ nutrition, recipe: { mappedShare, needed: 0.8, usable, unmapped } }` (recomputed first). |
+| `POST /items/:itemId/estimate` | When the recipe can't be used: `nutrition_estimate@1` from the name, description, portion and sizes. Answers whose kcal doesn't fit 4/4/9 × the macros are refused (one retry). Confidence is **capped at 0.4**; cached 7 days. `503 AI_UNAVAILABLE` with AI off. |
+| `PATCH /items/:itemId { hidden }` | Hide it from customers (`409 NUTRITION_UNAVAILABLE` when there is none). |
+
+- **`recipe`** (confidence 0.9) applies when ≥ **80% of the base card's weight** (no
+  packaging, no add-on lines) is mapped. It is Σ grams × value ÷ 100 ÷ yield; ml count as grams,
+  pieces × their weight (an unknown piece weight counts as 50 g, unmapped).
+- Otherwise there is no value until the vendor asks for an **`ai_estimate`**, labelled
+  "AI estimate — low confidence". A recipe that becomes usable replaces it.
+- Badges: `under_600_kcal` (< 600), `high_protein` (≥ 25 g), `veg` (the dish's `veg` tag).
+- Recomputed when a recipe card is saved or removed, when a mapping changes, and nightly
+  (`nutrition` step). The maths is `nutrition/nutrition-math.ts` (pure).
+
+## 34. Nutrition for customers
+
+- The item sheet (`GET /food/items/:id`) gains `nutrition: { perServing, servingGrams, method,
+  confidence, lowConfidence, label, badges } | null`; the vendor page gains `nutritionByItem`.
+  A hidden dish shows nothing.
+- `GET /food/vendors` filters: `maxKcal` (100–3000) and `highProtein=true` keep vendors with at
+  least one such visible dish.
+- **Profile** (opt-in) — `/food/me/nutrition/profile`:
+  - `PUT { goal: maintain|lose|gain, sex, age, heightCm, weightKg, activity:
+    sedentary|light|moderate|active|very_active }` uses **Mifflin-St Jeor**. BMR =
+    10 × kg + 6.25 × cm − 5 × age + 5 (male) / − 161 (female); × 1.2 / 1.375 / 1.55 / 1.725 / 1.9;
+    lose −500, gain +300; never below 1,200 (female) / 1,500 (male); rounded to 10.
+  - The response carries `formula` with the citation (Am J Clin Nutr 1990). Missing details →
+    `400` listing them.
+  - `{ goal, manualTargetKcal }` sets your own target instead.
+  - `PUT` is for customers (`403` otherwise). `GET` and `DELETE` are **404 for anyone without a
+    profile — vendors included**. **`DELETE` removes the row.** No vendor route, order view or
+    analytics reads it.
+- **Summary** — `GET /food/me/nutrition/summary?range=7d|30d` → `{ days: [{ date, kcal,
+  proteinG, carbsG, fatG, items, itemsWithNutrition }], totals, coverage, targetKcal, label }`.
+  It covers delivered and picked-up food orders only, labelled "Estimated, from food you ordered
+  on MetroMatrix only — not everything you ate."
+
+## 35. My Kitchen (`/my-kitchen`, customers)
+
+**Pantry**
+
+| Route | |
+|---|---|
+| `GET /pantry?status=active\|used\|expired\|discarded` | Soonest expiry first (paged); each item `{ name, canonical, qty, unit (g, kg, ml, l, piece, dozen, pack), expiresOn, daysLeft, expiring, status, source }`. |
+| `POST /pantry` · `POST /pantry/batch { items }` | Urdu and Roman Urdu names get their canonical name (`palak` → spinach). `batch` is what a confirmed voice command sends (`source: voice`). |
+| `PATCH /pantry/:id` · `POST /pantry/:id/used` · `/discard` · `DELETE /pantry/:id` | Another person's item is `404`. |
+| `GET /pantry/expiring` | Expiring within 3 days (or past). |
+| `GET /stats?days` | `{ used, expired, discarded, usedShare, mostWasted }`. |
+| `GET /pantry/from-orders` · `POST /pantry/from-orders { lines: [{ storeOrderItemId, expiresOn? }] }` | Delivered Shopping **grocery** lines of the last 30 days not yet in the pantry. The quantity is pack × quantity; a suggested expiry comes from the aisle (meat 2 days, dairy and vegetables 5, bakery 3, rice and pulses 180). Each line is added once. |
+
+**Reminders** (09:00 PKT, once each): "Use soon" 2 days before and "Use today" on the day, one
+notification per person (`my_kitchen.expiring`). The day after, an item becomes `expired`.
+
+**Recipes** — `POST /recipes/suggest` → `{ source: ai|library, recipes: [{ title, titleUr, uses:
+[{ pantryItemId, name, expiresOn, expiring }], missing, steps, minutes, servings, why,
+expiringUsed, notCooking: { path: "/food/search?q=…" }, missingToBag }] }`.
+
+- `pantry_recipes@1` may use **only pantry ids**. The answer is re-sorted so the dishes using
+  the most items expiring within 3 days come first, then the fewest missing. Staples (salt, oil,
+  the everyday spices, water) are never "missing".
+- It is cached 6 h for the same pantry (the same items and expiry days).
+- Without AI, or when it fails, the **recipe book** (20 Pakistani home dishes,
+  `my-kitchen/recipe-library.ts`) is ranked by 3 × expiring items used + items used −
+  1.5 × missing.
+
+**Missing-to-bag** — `POST /missing-to-bag { items: [{ name }], city? }` → per item `{ name,
+canonical, options }`:
+
+- Matches are in-stock Shopping products in the **Grocery** aisles whose name matches it (its
+  canonical name and every alias).
+- They are sorted by **price per kg / l / piece** (from the pack size; no pack size last), top
+  5.
+- Each option has `store: { deliversToYou, dispatchDays }`, compared with your default
+  address's city, and an `addToBag` body for `POST /shop/cart/items`.
+- **Nothing is added for you.**
+
+**Voice** — the `pantry` screen ("ek litre doodh, teen din mein expire") proposes
+`POST /my-kitchen/pantry/batch` with `{ name: "milk", qty: 1, unit: "l", expiresOn }`.
+Nothing is saved until it is sent.
+
+**Shopping additions** — the Grocery taxonomy, and `packQty` / `packUnit` on products and
+variants with `pack` / `pricePer` in their views (`docs/API_SHOPPING.md` §5.6).
+
+## 36. Staff tools added in 5C
+
+| Route | |
+|---|---|
+| `GET/POST /admin/nutrition/foods` · `PATCH /:id` · `DELETE /:id` (deactivate) · `POST /:id/activate` | Values per 100 g. An edited USDA row becomes `source: staff` (its USDA id is kept). `409 CONFLICT` on a taken key. |
+| `POST /admin/nutrition/foods/import { csv }` | Header `key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams`. Insert or update by key; bad rows are listed by line. |
+| `GET/POST /admin/kitchen/aliases` · `DELETE /:id` | `{ alias, canonical, lang: en\|roman\|ur }`; `409` when the alias already means something. Voice, receipts, nutrition and the pantry use it at once. |
+| `GET /admin/ai/usage?days` | Totals; per feature `{ calls, ok, cached, invalid, timeout, quota, error, p50Ms, p95Ms, tokens }`; top businesses; the 20 latest failures. |
+| `GET /admin/ai/prompts` | Every prompt `{ id, version, feature, title, length }` with its 30-day calls (and calls to older versions). |
+| `GET /admin/ai/settings` | The switches as running (`enabled`, `features`, `model`, `providerConfigured`) — never a key. Vendor allowances are overridden on the plan (`PATCH /admin/food/vendors/:id/plan`). |
+| `GET /admin/food/lookup?code=` | A `CT-` catering request (with its quotes), an `FC-` order (with its source and the tiffin or catering behind it), or a tiffin subscription id. |
+
+Every write is audited (`nutrition.food.*`, `kitchen.alias.*`); lookups are audited as
+`food.lookup`. The platform demand map is §25.
+
+## 37. Errors, notifications and jobs added in 5C
+
+| Code | Status | When |
+|---|---|---|
+| `AI_UNAVAILABLE` (reused) | 503 | Describe, specials and the nutrition estimate when AI is off, failed or gave nothing usable (`details.manual`). Combos, the photo check, review insights and pantry recipes fall back instead. |
+| `NUTRITION_UNAVAILABLE` | 409 | Hiding the nutrition of a dish that has none. |
+| `CONFLICT` (reused) | 409 | A taken nutrition key or alias. |
+| `VALIDATION_FAILED` (reused) | 400 | A photo that isn't a readable JPG or PNG; a profile missing the formula's details; a pack size with only one half. |
+
+Notifications: `kitchen.review_insights` (weekly) and `my_kitchen.expiring`.
+
+| Job | When | What |
+|---|---|---|
+| `kitchen-nightly` steps `review-insights`, `nutrition` | 02:30 PKT | Themes for kitchens with 5+ new reviews (one a day); every recipe-based dish recomputed. |
+| `my-kitchen-reminders` | 09:00 PKT | Pantry reminders (once each) and expiry. |
+
+## 38. Decisions in 5C, and demo data part 3
+
+- **Describe saves through the ordinary dish PATCH.** `menu_items.description_ur` was added for
+  the Urdu text.
+- **Specials drop bad ideas instead of failing**, so one invented ingredient doesn't cost the
+  vendor the other ideas.
+- **Combos and the photo check never depend on the model.** The co-occurrence and the image
+  metrics are deterministic; AI only adds wording and tips. The decoders are pure JS: `jpeg-js`
+  (BSD-3-Clause) and `pngjs` (MIT).
+- **Only confirmed ingredient mappings count** toward nutrition. USDA equivalents for local
+  items are labelled.
+- **AI nutrition estimates are vendor-triggered**, never nightly. The only nightly AI is review
+  themes, metered like any call.
+- **The profile route answers 404 to anyone but its customer**, which is how "invisible to vendor
+  endpoints" is enforced.
+- **Shopping stores have no coordinates**, so missing-to-bag shows whether a store delivers to
+  your city and its dispatch days instead of a distance.
+- **Pack size lives on the product with a variant override**, and price per unit is computed,
+  never stored.
+- **Pantry units add `pack`** for things bought by the pack.
+
+**`seed:kitchen` part 3:**
+
+- nutrition mappings confirmed for the three demo kitchens, and per-dish values from their
+  recipes;
+- **Taaza Mandi Online (demo)**, a fictional grocer with 20 products in the Grocery aisles, with
+  pack sizes and bigger packs. It needs `SEED_DEMO_PASSWORD`, uses placeholder images and
+  uploads nothing;
+- an 8-item pantry for the demo customer Ayesha (spinach and paneer expiring first).

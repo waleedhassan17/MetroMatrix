@@ -2,7 +2,7 @@
 
 Vendors run a busy kitchen with wet hands. They press the mic, say "order accept karo, bees
 minute", and the app shows what it understood before anything happens. Customers can speak
-a food search, and later their pantry.
+a food search, and what they put in their pantry (My Kitchen).
 
 **Nothing is ever executed by a voice command.** `POST /ai/voice` returns a *proposed
 action*: the exact request the app would make. The app makes that request only after the
@@ -33,7 +33,7 @@ command (`text` instead of `audioUrl`) goes through the same reading, with no au
 
 | Field | | |
 |---|---|---|
-| `context` | required | The screen: `board`, `today`, `stock`, `purchase`, `menu_search` (vendor); `food_search` (customer). `pantry` comes with My Kitchen (P11). |
+| `context` | required | The screen: `board`, `today`, `stock`, `purchase`, `menu_search` (vendor); `food_search`, `pantry` (customer). |
 | `audioUrl` | or `text` | A `voice_audio` upload of yours (m4a, mp4, aac, webm, ogg, mp3, wav; ≤ 1 MB). Anyone else's URL is `400 VALIDATION_FAILED`. |
 | `publicId` | optional | From the upload response; checked against the URL. |
 | `durationSeconds` | with audio | As the app measured it. Over 30 s → `400 VOICE_TOO_LONG` (also when the file is over 1 MB). |
@@ -98,7 +98,7 @@ command (`text` instead of `audioUrl`) goes through the same reading, with no au
 | `stock` | `count` | `lines[{ name, qty, unit }]` | `POST /food/vendor/kitchen/stock/count` (every name known) |
 | | `log_waste` | one line, `reason` | `POST /food/vendor/kitchen/waste` |
 | `purchase` (and `stock`) | `add_purchase` | `lines[{ name, qty, unit, totalPrice }]` | `POST /food/vendor/kitchen/purchases` (`source: voice`) once every line is known and priced; else a `draft` with each line's status (`ok`, `UNIT_MISMATCH`, `UNKNOWN_INGREDIENT` + `suggestedName`) |
-| `pantry` (P11) | `add_pantry` | `lines[{ name, qty, unit, expiresInDays }]` | pantry draft |
+| `pantry` | `add_pantry` | `lines[{ name, qty, unit, expiresInDays }]` | `POST /my-kitchen/pantry/batch { items: [{ name (canonical), qty, unit, expiresOn }] }` |
 
 Which order? A spoken code (or the last 3+ characters of it) picks it; otherwise the only
 order in a fitting state (`placed` for accept/reject, `preparing` for ready); otherwise
@@ -145,19 +145,19 @@ Three readers are measured:
 numbers exactly, names at similarity ≥ 0.6, purchase/pantry lines in order.
 
 <!-- voice-eval:start -->
-Measured 2026-10-19: model gemini-3.5-flash, voice_intent@2; 0 of 60 phrases read as text, 17 as audio (17 clips synthesised with gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, 0 real recordings).
-2 model calls returned no answer (timeout or HTTP error) and are not counted; the next run retries them.
+Measured 2026-10-20: model gemini-3.5-flash, voice_intent@3; 0 of 60 phrases read as text, 21 as audio (21 clips synthesised with gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, 0 real recordings).
+1 model calls returned no answer (timeout or HTTP error) and are not counted; the next run retries them.
 
 | Phrases | Rules, tuning (40) | Rules, held-out (20) | Model, text | Model, audio |
 |---|---|---|---|---|
-| Intent — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (3/3) |
-| Intent — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 100% (5/5) |
-| Intent — English | 100% (14/14) | 100% (6/6) | — | 100% (9/9) |
-| Intent — All | 100% (40/40) | 95% (19/20) | — | 100% (17/17) |
-| Intent + slots — Urdu script | 100% (7/7) | 100% (4/4) | — | 67% (2/3) |
-| Intent + slots — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 80% (4/5) |
-| Intent + slots — English | 100% (14/14) | 100% (6/6) | — | 67% (6/9) |
-| Intent + slots — All | 100% (40/40) | 95% (19/20) | — | 71% (12/17) |
+| Intent — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (2/2) |
+| Intent — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 100% (8/8) |
+| Intent — English | 100% (14/14) | 100% (6/6) | — | 100% (11/11) |
+| Intent — All | 100% (40/40) | 95% (19/20) | — | 100% (21/21) |
+| Intent + slots — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (2/2) |
+| Intent + slots — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 100% (8/8) |
+| Intent + slots — English | 100% (14/14) | 100% (6/6) | — | 100% (11/11) |
+| Intent + slots — All | 100% (40/40) | 95% (19/20) | — | 100% (21/21) |
 <!-- voice-eval:end -->
 
 ### Runs so far
@@ -172,6 +172,7 @@ Every run so far:
 | 2026-10-19 | model, text | gemini-3.8-flash | voice_intent@2 | 16 (+1 HTTP 503) | 100% (16/16) | 100% (16/16) |
 | 2026-10-19 | model, audio | gemini-3.8-flash | voice_intent@2 | 0 — all 20 calls timed out at 30 s | — | — |
 | 2026-10-19 | model, audio | gemini-3.5-flash | voice_intent@2 | 17 clips (9 English, 8 Urdu) (+2 no answer) | 100% (17/17) | 71% (12/17) |
+| 2026-10-20 | model, audio | gemini-3.5-flash | voice_intent@3 | 21 clips (11 English, 2 Urdu script, 8 Roman Urdu) (+1 HTTP 503) | 100% (21/21) | 100% (21/21) |
 
 What changed between versions:
 
@@ -182,10 +183,12 @@ What changed between versions:
   transcript together with the portion count or a line's price, so the rules had nothing to
   complete from.
 
-@3 has not been measured yet.
+**@3 on audio: 21 of 21 with every slot right** (it was 12 of 17 on @2). The transcript is now
+always there for the rules to complete from. The model has not read written commands under @3
+yet.
 
-**Coverage.** The spec asks for 20 Urdu and 20 English clips. 17 have been read so far,
-because this key's free tier allows about 20 requests per model per day. 60 synthesised clips
+**Coverage.** The spec asks for 20 Urdu and 20 English clips. 21 have been read under @3 (and
+17 under @2), because this key's free tier allows about 20 requests per model per day. 60 synthesised clips
 are ready in `voice-eval/clips/`. `npm run voice:eval -- --only audio` resumes where it
 stopped; run it once a day until all are measured, or with a paid key in one go. Real kitchen
 recordings in `voice-eval/recordings/` replace the synthesised clips.

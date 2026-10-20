@@ -472,7 +472,7 @@ All order actions return `PartnerStoreOrder`.
   `pricePer: { price, per: kg|l|piece } | null` — the effective price ÷ the pack in kg, l or
   pieces (`shopping/common/pack.ts`).
 - My Kitchen's missing-to-bag compare (`POST /my-kitchen/missing-to-bag`, `docs/API_KITCHEN.md`
-  §34) sorts grocery products by it.
+  §35) sorts grocery products by it.
 
 ## 6. Error codes added in Chunk 2
 

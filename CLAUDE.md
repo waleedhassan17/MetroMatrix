@@ -311,7 +311,9 @@ write and every auth event worth investigating gets one. Actions are dotted verb
     cards, forecast and prep, Bachat Box, packing proof;
   - `src/modules/food-growth/` (5B) — tiffin, catering, Ramadan, story and hygiene,
     storefront, discovery rails and badges, demand map and curve;
-  - later `nutrition/` and `my-kitchen/`.
+  - `src/modules/nutrition/` (5C) — reference foods, mapping, per-dish values, the customer's
+    profile and summary;
+  - `src/modules/my-kitchen/` (5C) — pantry, reminders, recipe ideas, missing-to-bag.
 
   Contracts: `docs/API_KITCHEN.md`, `docs/AI.md`, `docs/VOICE.md`.
 - **AI is optional and never trusted blindly.** Every call goes through `AiService.run`:
@@ -364,11 +366,28 @@ write and every auth event worth investigating gets one. Actions are dotted verb
     (`common/geo`). Never add a user column. Demand output is k-thresholded (`DEMAND_K` = 5).
   - Hygiene `verified` is set only by staff (`/admin/food/hygiene`).
   - Menu engineering rules are pure (`kitchen/engineering/menu-engineering.ts`).
-- `test/qa-matrix-kitchen.e2e-spec.ts` is Chunk 5's release gate: rows 1–28 and 36–38 now.
+- **AI assistants, nutrition, My Kitchen (5C):**
+  - Menu assistant answers are drafts: describe saves through the dish PATCH
+    (`description_ur`); specials keep only ideas on the kitchen's own ingredients that use an
+    expiring one; combos are counted (`kitchen/assistant/combos.ts`), the AI only names them;
+    photo metrics are pure (`photo-metrics.ts`). Menu text rules: `text-rules.ts`.
+  - Review insights: the lexicon fallback is `kitchen/reviews/review-lexicon.ts`; reviews are
+    anonymised before anything reads them.
+  - Nutrition reference data is generated (`scripts/build-nutrition-seed.mjs` → the committed
+    `seeds/nutrition/nutrition-foods.data.ts`, loaded by a migration). Only **confirmed**
+    ingredient mappings count; recipe-based when ≥ 80% of the weight is mapped
+    (`nutrition-math.ts`, pure); AI estimates are vendor-triggered and capped at 0.4.
+  - A nutrition profile is its customer's alone: 404 for anyone else, never on a vendor route,
+    deleted for real.
+  - Pantry names map to canonicals through `ingredient_aliases`; the recipe book
+    (`my-kitchen/recipe-library.ts`) is the deterministic fallback. Missing-to-bag reads Shopping's
+    Grocery aisles and pack sizes (`shopping/common/pack.ts`).
+- `test/qa-matrix-kitchen.e2e-spec.ts` is Chunk 5's release gate: all 38 rows.
   Helpers live in `test/utils/kitchen.ts` and `test/utils/fake-ai.ts`.
 - **`seed:kitchen`** (after `seed:food`) boots the app context, so demo data goes through the
   same services. History orders are inserted as already deducted. Part 2 (5B) adds a tiffin
-  plan with subscribers, a catering request, a Ramadan event, a story and search events.
+  plan with subscribers, a catering request, a Ramadan event, a story and search events. Part 3
+  (5C) adds nutrition mappings, a fictional demo grocer with pack sizes and a demo pantry.
 
 ## Keep in sync when the API changes
 
@@ -397,7 +416,7 @@ npm run seed:superadmin       create/repair the super admin from SUPER_ADMIN_* e
 npm run seed:shopping         demo stores/products (SEED_DEMO_PASSWORD; --placeholder-images = no uploads)
 npm run seed:health           30 demo doctors (portraits), patients, visits, reviews, home banners (same password and flags)
 npm run seed:food             6 fictional food vendors, 58 dishes, riders, customers, orders, reviews, banners (same password and flags)
-npm run seed:kitchen          kitchens for 3 of them: ingredients, recipes, 60 days of orders, purchases, waste, SPI sample, forecasts
+npm run seed:kitchen          kitchens for 3 of them (ingredients, recipes, orders, purchases, forecasts), growth demo, nutrition, demo grocer, pantry
 npm run lint && npm run build && npm test && npm run test:e2e
 npm run postman:local         newman run of the Auth collection (needs a running server)
 npm run postman:shopping      newman run of the Shopping collection (needs seed:shopping)

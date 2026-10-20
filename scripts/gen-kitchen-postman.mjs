@@ -484,7 +484,7 @@ const catering = folder('9 · Catering (Qandeel Karahi House)', [
       addressId: '{{addressId}}',
       notes: 'Postman dawat',
     },
-    tests: ["pm.test('a CT- code, requested', () => { pm.expect(d.code).to.match(/^CT-[A-Z2-9]{6}$/); pm.expect(d.status).to.eql('requested'); });", set('cateringId', 'd.id')],
+    tests: ["pm.test('a CT- code, requested', () => { pm.expect(d.code).to.match(/^CT-[A-Z2-9]{6}$/); pm.expect(d.status).to.eql('requested'); });", set('cateringId', 'd.id'), set('cateringCode', 'd.code')],
   }),
   req('Vendor: quote v1', 'POST', '/food/vendor/catering/{{cateringId}}/quote', {
     as: 'qandeelToken',
@@ -674,11 +674,157 @@ const demand = folder('11 · Demand, menu engineering, experiments, batching', [
   }),
 ]);
 
+// ── 5C · AI assistants, nutrition, My Kitchen (AI_ENABLED=false: the deterministic paths) ──
+const assistant = folder('12 · Menu assistant and nutrition (Zafran)', [
+  req('Describe with AI off → the manual path', 'POST', '/food/vendor/kitchen/ai/describe', {
+    as: 'vendorToken',
+    status: 503,
+    body: { itemId: '{{dishId}}' },
+    tests: ["pm.test('AI_UNAVAILABLE with what to do instead', () => { pm.expect(body.error.code).to.eql('AI_UNAVAILABLE'); pm.expect(body.error.details.manual).to.match(/Write the description yourself/); });"],
+  }),
+  req('Combos: counted from orders, named by dish without AI', 'POST', '/food/vendor/kitchen/ai/combos', {
+    as: 'vendorToken',
+    ok200: true,
+    tests: [
+      "pm.test('60 days, 3+ orders', () => { pm.expect(d.days).to.eql(60); pm.expect(d.minTogether).to.eql(3); pm.expect(d.combos).to.be.an('array'); });",
+      "pm.test('dish names, bundle 10% off', () => d.combos.forEach((c) => { pm.expect(c.named).to.eql('rules'); pm.expect(c.bundlePrice).to.be.at.most(c.price); }));",
+    ],
+  }),
+  req('Review insights', 'GET', '/food/vendor/kitchen/review-insights', {
+    as: 'vendorToken',
+    tests: ["pm.test('latest, history and how many are needed', () => { pm.expect(d).to.include.keys('latest', 'history', 'newReviews'); pm.expect(d.needed).to.eql(5); });"],
+  }),
+  req('Nutrition mapping (seed part 3 confirmed the suggestions)', 'GET', '/food/vendor/kitchen/nutrition/mapping', {
+    as: 'vendorToken',
+    tests: ["pm.test('confirmed ingredients', () => pm.expect(d.summary.confirmed).to.be.above(5));", "pm.test('the Postman eggs are not mapped yet', () => pm.expect(d.items.find((i) => i.ingredientId === pm.collectionVariables.get('eggsId')).status).to.not.eql('confirmed'));"],
+  }),
+  req('Reference foods: egg', 'GET', '/food/vendor/kitchen/nutrition/foods?q=egg&pageSize=100', {
+    as: 'vendorToken',
+    tests: ["const egg = d.items.find((f) => f.key === 'egg');", "pm.test('USDA egg, per 100 g, 50 g a piece', () => { pm.expect(egg.per100g.kcal).to.eql(143); pm.expect(egg.pieceGrams).to.eql(50); });", set('eggFoodId', 'egg.id')],
+  }),
+  req('Map the Postman eggs', 'PUT', '/food/vendor/kitchen/nutrition/mapping/{{eggsId}}', {
+    as: 'vendorToken',
+    body: { nutritionFoodId: '{{eggFoodId}}', pieceGrams: 50 },
+    tests: ["pm.test('confirmed', () => pm.expect(d.items.find((i) => i.ingredientId === pm.collectionVariables.get('eggsId')).status).to.eql('confirmed'));"],
+  }),
+  req('The dish’s nutrition: 2 eggs = 143 kcal', 'GET', '/food/vendor/kitchen/nutrition/items/{{dishId}}', {
+    as: 'vendorToken',
+    tests: ["pm.test('from the recipe, by hand: 2 × 50 g × 143 / 100', () => pm.expect(d.nutrition).to.include({ method: 'recipe', lowConfidence: false }) && pm.expect(d.nutrition.perServing).to.include({ kcal: 143, proteinG: 12.6 }));", "pm.test('under 600 kcal', () => pm.expect(d.nutrition.badges).to.include('under_600_kcal'));"],
+  }),
+  req('Estimate with AI off → the manual path', 'POST', '/food/vendor/kitchen/nutrition/items/{{dishId}}/estimate', {
+    as: 'vendorToken',
+    ok200: true,
+    tests: ["pm.test('a usable recipe never calls the model', () => pm.expect(d.nutrition.method).to.eql('recipe'));"],
+  }),
+  req('Customer: the item sheet’s nutrition block', 'GET', '/food/items/{{dishId}}', {
+    as: 'customerToken',
+    tests: ["pm.test('labelled from the recipe', () => pm.expect(d.nutrition.label).to.eql('Estimated from the kitchen’s recipe'));"],
+  }),
+  req('Customer: vendors with a dish under 600 kcal', 'GET', '/food/vendors?lat=31.4834&lng=74.3256&maxKcal=600&pageSize=50', {
+    as: 'customerToken',
+    tests: ["pm.test('Zafran is in', () => pm.expect(d.items.map((v) => v.id)).to.include(pm.collectionVariables.get('vendorBrandId')));"],
+  }),
+  req('Customer: nutrition profile (Mifflin-St Jeor)', 'PUT', '/food/me/nutrition/profile', {
+    as: 'customerToken',
+    body: { goal: 'maintain', sex: 'female', age: 32, heightCm: 162, weightKg: 60, activity: 'light' },
+    tests: ["pm.test('a target with the formula cited', () => { pm.expect(d.targetMethod).to.eql('mifflin_st_jeor'); pm.expect(d.targetKcal).to.be.within(1600, 2000); pm.expect(d.formula.source).to.match(/1990/); });"],
+  }),
+  req('Vendor asking for a profile → 404', 'GET', '/food/me/nutrition/profile', { as: 'vendorToken', status: 404 }),
+  req('Customer: the ordered-food summary', 'GET', '/food/me/nutrition/summary?range=7d', {
+    as: 'customerToken',
+    tests: ["pm.test('7 days, labelled an estimate', () => { pm.expect(d.days).to.have.length(7); pm.expect(d.label).to.match(/ordered on MetroMatrix only/); });"],
+  }),
+  req('Customer: delete the profile', 'DELETE', '/food/me/nutrition/profile', {
+    as: 'customerToken',
+    tests: ["pm.test('deleted', () => pm.expect(d.deleted).to.be.true);"],
+  }),
+  req('Customer: gone', 'GET', '/food/me/nutrition/profile', { as: 'customerToken', status: 404 }),
+]);
+
+const myKitchen = folder('13 · My Kitchen (the Postman customer)', [
+  req('Pantry: palak, expiring tomorrow', 'POST', '/my-kitchen/pantry', {
+    as: 'customerToken',
+    pre: pkDates,
+    body: { name: 'Palak', qty: 1, unit: 'kg', expiresOn: '{{tomorrow}}' },
+    tests: ["pm.test('spinach, expiring', () => pm.expect(d).to.include({ canonical: 'spinach', expiring: true }));", set('palakId', 'd.id')],
+  }),
+  req('Pantry: paneer and aloo (voice-style batch)', 'POST', '/my-kitchen/pantry/batch', {
+    as: 'customerToken',
+    body: { items: [{ name: 'Paneer', qty: 400, unit: 'g', expiresOn: '{{openDate}}' }, { name: 'Aloo', qty: 2, unit: 'kg' }] },
+    tests: ["pm.test('canonical names', () => pm.expect(d.items.map((i) => i.canonical)).to.eql(['paneer', 'potato']));"],
+  }),
+  req('Pantry: expiring', 'GET', '/my-kitchen/pantry/expiring', {
+    as: 'customerToken',
+    tests: ["pm.test('palak first', () => pm.expect(d.items[0].id).to.eql(pm.collectionVariables.get('palakId')));"],
+  }),
+  req('Recipes from the pantry (the recipe book, AI off)', 'POST', '/my-kitchen/recipes/suggest', {
+    as: 'customerToken',
+    ok200: true,
+    tests: [
+      "pm.test('the recipe book, what expires first first', () => { pm.expect(d.source).to.eql('library'); pm.expect(d.recipes[0].expiringUsed).to.be.at.least(1); });",
+      "pm.test('missing items marked, with a bag link', () => { pm.expect(d.recipes[0].missing).to.be.an('array'); pm.expect(d.recipes[0].notCooking.path).to.match(/^\\/food\\/search\\?q=/); });",
+    ],
+  }),
+  req('Missing to bag: garlic and cream, cheapest per unit first', 'POST', '/my-kitchen/missing-to-bag', {
+    as: 'customerToken',
+    ok200: true,
+    body: { items: [{ name: 'lehsan' }, { name: 'cream' }] },
+    tests: [
+      "pm.test('grocery options from the demo grocer', () => pm.expect(d.items[0].options.length).to.be.above(0));",
+      "pm.test('sorted by price per unit', () => d.items.forEach((it) => { const p = it.options.filter((o) => o.pricePer).map((o) => o.pricePer.price); pm.expect(p).to.eql([...p].sort((a, b) => a - b)); }));",
+      "pm.test('the 1 litre cream beats the 200 ml one', () => pm.expect(d.items[1].options[0].pack).to.eql({ qty: 1, unit: 'l' }));",
+    ],
+  }),
+  req('Pantry: palak used', 'POST', '/my-kitchen/pantry/{{palakId}}/used', { as: 'customerToken', ok200: true }),
+  req('Stats: used vs wasted', 'GET', '/my-kitchen/stats?days=30', {
+    as: 'customerToken',
+    tests: ["pm.test('one used', () => pm.expect(d.used).to.be.at.least(1));"],
+  }),
+  req('Vendor calling My Kitchen → 403', 'GET', '/my-kitchen/pantry', { as: 'vendorToken', status: 403 }),
+]);
+
+const staff5c = folder('14 · Staff: nutrition foods, aliases, AI usage, lookup', [
+  req('Nutrition foods: tomato', 'GET', '/admin/nutrition/foods?q=tomato', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('the USDA tomato', () => pm.expect(d.items.find((f) => f.key === 'tomato').per100g.kcal).to.be.within(17, 19));"],
+  }),
+  req('Nutrition foods: CSV import (one bad row)', 'POST', '/admin/nutrition/foods/import', {
+    as: 'adminAccessToken',
+    ok200: true,
+    body: { csv: 'key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams\npostman-sheermal,Sheermal (Postman),شیرمال,Baked Products,330,8,55,9,2,400,80\nBAD KEY,x,,x,1,0,0,0,0,0,' },
+    tests: ["pm.test('1 in, 1 refused by line', () => { pm.expect(d.inserted + d.updated).to.eql(1); pm.expect(d.errors[0].line).to.eql(3); });"],
+  }),
+  req('Aliases: tomato', 'GET', '/admin/kitchen/aliases?canonical=tomato', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('tamatar is tomato', () => pm.expect(d.items.map((a) => a.alias)).to.include('tamatar'));"],
+  }),
+  req('AI usage (30 days)', 'GET', '/admin/ai/usage?days=30', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('totals, per feature, failures', () => pm.expect(d).to.include.keys('totals', 'byFeature', 'byBusiness', 'failures'));"],
+  }),
+  req('AI prompts and versions', 'GET', '/admin/ai/prompts', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('all ten prompts', () => pm.expect(d.items.map((p) => p.id + '@' + p.version)).to.include.members(['voice_intent@3', 'receipt_scan@1', 'packing_check@1', 'describe@1', 'specials@1', 'combos@1', 'photo_tips@1', 'review_themes@1', 'nutrition_estimate@1', 'pantry_recipes@1']));"],
+  }),
+  req('AI switches (no keys)', 'GET', '/admin/ai/settings', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('off for this run', () => pm.expect(d.enabled).to.be.false);", "pm.test('no key in the answer', () => pm.expect(JSON.stringify(d)).to.not.match(/apikey|api_key/i));"],
+  }),
+  req('Lookup: the Postman order', 'GET', '/admin/food/lookup?code={{orderCode}}', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('the order and its source', () => pm.expect(d).to.include({ kind: 'order', code: pm.collectionVariables.get('orderCode') }));"],
+  }),
+  req('Lookup: the Postman dawat', 'GET', '/admin/food/lookup?code={{cateringCode}}', {
+    as: 'adminAccessToken',
+    tests: ["pm.test('the catering request with its quotes', () => { pm.expect(d.kind).to.eql('catering'); pm.expect(d.quotes).to.have.length(2); });"],
+  }),
+]);
+
 const collection = {
   info: {
     name: 'MetroMatrix — Chunk 5 (Kitchen Intelligence)',
     description:
-      'Kitchen stock, recipes, purchases, costing, price watch, waste, forecast and prep, smart ETA, outage pause, Bachat Box, voice and the announcement (5A); tiffin, catering, Ramadan, storefront, story and hygiene, signature, demand map and curve, menu engineering, experiments and rider batching (5B). Needs seed:food + seed:kitchen and a server with AI_ENABLED=false (generated by scripts/gen-kitchen-postman.mjs).',
+      'Kitchen stock, recipes, purchases, costing, price watch, waste, forecast and prep, smart ETA, outage pause, Bachat Box, voice and the announcement (5A); tiffin, catering, Ramadan, storefront, story and hygiene, signature, demand map and curve, menu engineering, experiments and rider batching (5B); menu assistant, nutrition, My Kitchen and staff tools (5C). Needs seed:food + seed:kitchen and a server with AI_ENABLED=false (generated by scripts/gen-kitchen-postman.mjs).',
     schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
   },
   event: food.event,
@@ -689,9 +835,9 @@ const collection = {
     'challengeToken', 'totpCode', 'adminAccessToken',
     'tomorrow', 'lateDate', 'openDate', 'eventDate', 'pestDate', 'rukhsanaToken', 'rukhsanaBrandId', 'planId', 'tiffinKey',
     'subscriptionId', 'qandeelToken', 'qandeelBrandId', 'cateringId', 'calendarEventId', 'storeSlug', 'recipeCardId',
-    'experimentId',
+    'experimentId', 'cateringCode', 'eggFoodId', 'palakId',
   ].map((key) => ({ key, value: '' })),
-  item: [setup, stock, recipes, money, forecast, orders, surplus, staff, tiffin, catering, community, demand],
+  item: [setup, stock, recipes, money, forecast, orders, surplus, staff, tiffin, catering, community, demand, assistant, myKitchen, staff5c],
 };
 writeFileSync(join(root, 'postman/MetroMatrix-Kitchen.postman_collection.json'), JSON.stringify(collection, null, 2) + '\n');
 console.log(`postman/MetroMatrix-Kitchen.postman_collection.json: ${collection.item.reduce((s, f) => s + f.item.length, 0)} requests`);
