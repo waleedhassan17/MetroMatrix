@@ -104,7 +104,8 @@ export class ReviewInsightsService {
     }> = await m.query(
       `SELECT food_rating, text, created_at FROM food_reviews
           WHERE brand_id = $1 AND NOT is_hidden AND text IS NOT NULL AND length(trim(text)) > 0
-            AND date_trunc('milliseconds', created_at) > coalesce($2::timestamptz, '-infinity') AND created_at <= $3
+            AND date_trunc('milliseconds', created_at) > coalesce($2::timestamptz, '-infinity')
+            AND date_trunc('milliseconds', created_at) <= $3
           ORDER BY created_at DESC LIMIT ${INSIGHT_MAX_REVIEWS}`,
       [brandId, b.last, now],
     );

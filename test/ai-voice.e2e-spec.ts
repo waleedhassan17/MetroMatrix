@@ -491,8 +491,18 @@ describe('AI foundation — voice, quotas, kill switch (Chunk 5 P0)', () => {
     expect(board.status).toBe(403);
     const search = await voice(v, { context: 'food_search', text: 'biryani' });
     expect(search.status).toBe(403);
-    const pantry = await voice(c, { context: 'pantry', text: 'do kilo aloo' });
-    expect(pantry.status).toBe(404);
+    // The pantry screen arrived with My Kitchen (P11): customers only.
+    const pantry = await expectStatus(
+      await voice(c, { context: 'pantry', text: 'do kilo aloo' }),
+      200,
+    );
+    expect(pantry).toMatchObject({
+      intent: 'add_pantry',
+      proposedAction: { path: '/my-kitchen/pantry/batch' },
+    });
+    expect(
+      (await voice(v, { context: 'pantry', text: 'do kilo aloo' })).status,
+    ).toBe(403);
   });
 
   it('GET /ai/announce reads a new order aloud (Urdu, Roman Urdu, English); another vendor’s order is 404', async () => {

@@ -283,7 +283,17 @@ describe('My Kitchen: pantry, recipes, missing-to-bag, order drafts, reminders (
       200,
     );
     expect(r.city).toBe('Lahore');
-    const [creamOpts, garlicOpts] = r.items;
+    // Other suites' grocers may list garlic too: check the order overall, then this store's.
+    for (const it of r.items) {
+      const all = it.options.map((o: any) => o.pricePer.price);
+      expect(all).toEqual([...all].sort((a: number, b: number) => a - b));
+    }
+    const ours = (opts: any[]) =>
+      opts.filter((o: any) => o.store.id === storeId);
+    const [creamOpts, garlicOpts] = r.items.map((it: any) => ({
+      ...it,
+      options: ours(it.options),
+    }));
     expect(
       creamOpts.options.map((o: any) => [o.name, o.variant, o.pricePer.price]),
     ).toEqual([

@@ -7,6 +7,7 @@ import {
   asset,
   categoryId,
   listProduct,
+  storeOf,
 } from './utils/shopping';
 import { approvedDoctor } from './utils/health';
 import {
@@ -1430,7 +1431,13 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
       }),
       200,
     );
-    const prices = r.items[0].options.map((o: any) => o.pricePer.price);
+    // Other suites' grocers may list garlic too: every option is in order, and this grocer's are these.
+    const all = r.items[0].options.map((o: any) => o.pricePer.price);
+    expect(all).toEqual([...all].sort((a: number, b: number) => a - b));
+    const store = (await storeOf(grocer)).id;
+    const prices = r.items[0].options
+      .filter((o: any) => o.store.id === store)
+      .map((o: any) => o.pricePer.price);
     expect(prices).toEqual([366.67, 400, 480]);
     expect(r.items[0].options.every((o: any) => o.pricePer.per === 'kg')).toBe(
       true,
