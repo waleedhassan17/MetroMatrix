@@ -202,7 +202,14 @@ describe('Staff: nutrition foods, aliases, AI usage and prompts, support lookup 
     expect(
       u.byFeature.find((x: any) => x.feature === 'menu_assistant'),
     ).toMatchObject({ ok: expect.any(Number) });
-    expect(u.byBusiness.map((b: any) => b.businessId)).toContain(v.businessId);
+    // Top 20 by calls (in a full run other suites call more): ordered, and this vendor's call is counted.
+    const calls = u.byBusiness.map((b: any) => b.calls);
+    expect(calls).toEqual([...calls].sort((a: number, b: number) => b - a));
+    const [mine] = await sql(
+      `SELECT count(*)::int AS n FROM ai_usage WHERE business_id = $1 AND feature = 'menu_assistant'`,
+      [v.businessId],
+    );
+    expect(mine.n).toBe(1);
     const prompts = await expectStatus(
       await admin.api.get('/admin/ai/prompts'),
       200,

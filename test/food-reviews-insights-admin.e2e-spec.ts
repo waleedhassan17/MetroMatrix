@@ -809,7 +809,14 @@ describe('Food P7: reviews, insights, admin, nightly jobs (e2e)', () => {
       `UPDATE food_orders SET accept_by = now() + interval '90 seconds' WHERE id = $1`,
       [o.id],
     );
-    expect(await jobs.acceptNudges()).toEqual({ nudged: 1 });
+    // Counted for this order (other suites' unaccepted orders can be due in a full run).
+    const nudges = await jobs.acceptNudges();
+    expect(nudges.nudged).toBeGreaterThanOrEqual(1);
+    const [nudged] = await sql(
+      `SELECT accept_nudged_at FROM food_orders WHERE id = $1`,
+      [o.id],
+    );
+    expect(nudged.accept_nudged_at).not.toBeNull();
     expect(await jobs.acceptNudges()).toEqual({ nudged: 0 });
 
     // A scheduled order: start cooking at scheduled_for − prep − 10, once.
