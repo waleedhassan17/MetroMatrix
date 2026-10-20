@@ -369,3 +369,42 @@ npx newman@6.2.2 run postman/MetroMatrix-Auth.postman_collection.json \
   `npm run socket:food`: every realtime check passed.
 - Teardown: container removed, database dropped, the env file deleted, the local Postman
   environment restored.
+
+### Chunk 5C (Kitchen Intelligence: AI assistants, nutrition, My Kitchen), same procedure (20 October 2026)
+
+- Image rebuilt and run with `NODE_ENV=production` against an **empty** PostGIS database, with
+  the same settings as 5B (`AI_ENABLED=false`, no `GEMINI_API_KEY`).
+- `run-migrations.js` applied all 44 migrations, including the 443-row `nutrition_foods` seed
+  and the Grocery category tree. Then `seed:superadmin:prod`, `seed:shopping:prod`,
+  `seed:health:prod` and `seed:food:prod` (`--allow-production --placeholder-images`).
+- `seed:kitchen:prod` refused without `--allow-production`. With it:
+  - part 1 as in 5A: 48 ingredients, 32 recipe cards, 1,516 history orders, 135 purchases,
+    27 waste entries, 208 SPI prices and 224 forecasts (no Bachat Box: the run was after that
+    evening's pickup window);
+  - part 2 as in 5B: 152 QR/storefront orders and 179 demand cells;
+  - part 3: 44 ingredients mapped to nutrition foods; 28 dishes with recipe-based nutrition;
+    the fictional grocer "Taaza Mandi Online (demo)" with 20 products and pack sizes
+    (placeholder images); and 8 pantry items for the demo customer.
+- Docker HEALTHCHECK `healthy`; `/health` ok; **no error-level log lines**. Two warn lines,
+  both expected: the AI-off `describe` call returning `503 AI_UNAVAILABLE` (logged as a
+  warning since this chunk, not sent to Sentry), and the Auth collection's wrong-portal
+  sign-in. The food, kitchen and growth jobs ran (auto-reject, auto-resume, expiry alerts,
+  surplus expiry, tiffin, catering).
+- All green, with the container restarted between collections:
+
+  | Collection | Requests | Assertions |
+  |---|---|---|
+  | `MetroMatrix-Auth` | 40 | 109 |
+  | `MetroMatrix-Shopping` | 89 | 256 |
+  | `MetroMatrix-Health` | 80 | 247 |
+  | `MetroMatrix-Food` | 66 | 204 |
+  | `MetroMatrix-Kitchen` | 134 | 401 |
+
+  `npm run socket:food`: every realtime check passed.
+- An earlier 5C rehearsal (same results) logged the expected `AI_UNAVAILABLE` at error level.
+  The exception filter now logs it as a warning, and the image was rebuilt and rehearsed again
+  (above).
+- Teardown: container removed, database dropped, the env file deleted, the local Postman
+  environment restored.
+- AI on: `npm run voice:eval` with `voice_intent@3` on 20 October 2026: 21/21 audio clips
+  correct (`docs/VOICE.md`).
