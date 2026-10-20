@@ -26,6 +26,7 @@ import {
 import { RamadanService } from '../ramadan/ramadan.service';
 import { StoryService } from '../story/story.service';
 import { DemandService } from '../demand/demand.service';
+import { GrowthLookupService } from './growth-lookup.service';
 import { AdminDemandMapQueryDto } from '../demand/dto/demand.dto';
 
 /** Staff: the calendar, hygiene verification, signature moderation (P7) and the demand map (P8). Every write is audited. */
@@ -38,7 +39,17 @@ export class AdminGrowthController {
     private readonly ramadan: RamadanService,
     private readonly stories: StoryService,
     private readonly demand: DemandService,
+    private readonly lookups: GrowthLookupService,
   ) {}
+
+  @Get('lookup')
+  @ApiOperation({
+    summary:
+      '?code= a CT- catering code, an FC- order code, or a tiffin subscription id → the record (audited).',
+  })
+  lookup(@Query('code') code = '') {
+    return this.lookups.lookup(code.slice(0, 64));
+  }
 
   @Get('demand-map')
   @ApiOperation({

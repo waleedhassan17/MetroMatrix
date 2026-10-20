@@ -68,6 +68,7 @@ import { ReviewInsight } from './entities/review-insight.entity';
 import { MenuAssistantService } from './assistant/menu-assistant.service';
 import { KitchenAssistantController } from './assistant/assistant.controller';
 import { ReviewInsightsService } from './reviews/review-insights.service';
+import { AliasesService } from './admin/aliases.service';
 
 /**
  * Kitchen intelligence for Food Court vendors (Chunk 5): voice on the
@@ -144,6 +145,7 @@ import { ReviewInsightsService } from './reviews/review-insights.service';
     EngineeringService,
     MenuAssistantService,
     ReviewInsightsService,
+    AliasesService,
   ],
   exports: [
     KitchenVendors,

@@ -24,6 +24,7 @@ import { AiJobsService } from './ai-jobs.service';
 import { VoiceContexts } from './voice/voice-contexts';
 import { VoiceService } from './voice/voice.service';
 import { AiController } from './ai.controller';
+import { AiAdminController } from './ai-admin.controller';
 
 /**
  * The optional AI layer (Chunk 5): one provider (Gemini by default), the
@@ -39,7 +40,7 @@ import { AiController } from './ai.controller';
     PlansModule,
     MediaModule,
   ],
-  controllers: [AiController],
+  controllers: [AiController, AiAdminController],
   providers: [
     AiSettings,
     {

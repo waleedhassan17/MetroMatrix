@@ -11,8 +11,10 @@
  * mappings, forecasts, prep stats and tonight's Bachat Box. Part 2 (5B):
  * the Ramadan/Eid calendar and Zafran's windows, a tiffin plan with
  * subscribers, a quoted dawat request, kitchen stories, a signature dish,
- * QR/storefront attribution, anonymous demand data and an experiment.
- * Idempotent.
+ * QR/storefront attribution, anonymous demand data and an experiment. Part 3
+ * (5C): nutrition mappings and per-dish values, a fictional demo grocer with
+ * pack sizes (needs SEED_DEMO_PASSWORD; placeholder images) and a demo
+ * pantry. Idempotent.
  *
  * It boots the API's own application context, so stock, costing and
  * forecasts are written by the same services as the API. Jobs and real AI
@@ -29,6 +31,7 @@ import { DataSource } from 'typeorm';
 import { AppModule } from '../../app.module';
 import { seedKitchen } from './kitchen/seed-kitchen';
 import { seedGrowth } from './kitchen/seed-growth';
+import { seedMyKitchen } from './kitchen/seed-my-kitchen';
 
 /* eslint-disable no-console */
 async function main() {
@@ -56,6 +59,10 @@ async function main() {
       log: (line) => console.log(`[seed] ${line}`),
     });
     console.log(`[seed] growth: ${JSON.stringify(growth.created)}`);
+    const mine = await seedMyKitchen(app, {
+      log: (line) => console.log(`[seed] ${line}`),
+    });
+    console.log(`[seed] my kitchen: ${JSON.stringify(mine.created)}`);
   } finally {
     await app.close();
   }

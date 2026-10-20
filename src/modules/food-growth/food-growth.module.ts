@@ -37,6 +37,7 @@ import {
 } from './storefront/storefront.controller';
 import { GrowthDiscoveryService } from './discovery/growth-discovery.service';
 import { AdminGrowthController } from './admin/admin-growth.controller';
+import { GrowthLookupService } from './admin/growth-lookup.service';
 import { SearchEvent } from './demand/entities/search-event.entity';
 import { DemandCell } from './demand/entities/demand-cell.entity';
 import { DemandService } from './demand/demand.service';
@@ -87,6 +88,7 @@ import { VendorDemandController } from './demand/demand.controller';
     StorefrontService,
     GrowthDiscoveryService,
     DemandService,
+    GrowthLookupService,
   ],
   exports: [
     TiffinService,

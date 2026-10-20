@@ -1,7 +1,13 @@
 import { DateTime } from 'luxon';
 import { ApiClient, createTestApp, TestApp } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
-import { Admin, asset } from './utils/shopping';
+import {
+  Admin,
+  approvedPartner,
+  asset,
+  categoryId,
+  listProduct,
+} from './utils/shopping';
 import { approvedDoctor } from './utils/health';
 import {
   Vendor,
@@ -55,7 +61,7 @@ const answer = (
 
 /**
  * Chunk 5's release gate: one test per row of the Kitchen Intelligence QA
- * matrix (spec §8). Milestone 5A: rows 1–19 and 36–38; 5B: rows 20–28. Add rows; never
+ * matrix (spec §8). 5A: rows 1–19 and 36–38; 5B: rows 20–28; 5C: rows 29–35. Add rows; never
  * delete them. Tests never call a real model (FakeAiProvider).
  */
 describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
@@ -1161,6 +1167,274 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
     expect(s.batchWith.map((x: any) => x.orderId)).toEqual([near.id]);
     expect(s.batchWith[0].dropsApartKm).toBeLessThanOrEqual(2);
     expect(s.batchWith[0].bearingDiff).toBeLessThanOrEqual(45);
+  });
+
+  // ── Milestone 5C: AI assistants, nutrition, My Kitchen ───────────────
+
+  it('QA #29 an AI description → English + Urdu, no health claims, saved only on confirm', async () => {
+    const v = await kitchen('QA Describe');
+    const karahi = await itemId(t, v);
+    const ok = {
+      en: 'Chicken cooked hard and fast in a wok with tomato, green chilli and ginger.',
+      ur: 'ٹماٹر، ہری مرچ اور ادرک کے ساتھ تیز آنچ پر پکی چکن کڑاہی۔',
+    };
+    f.ai.answer(
+      {
+        en: 'A healthy, low-fat karahi that is good for your heart and diet.',
+        ur: ok.ur,
+      },
+      ok,
+    );
+    const d = await expectStatus(
+      await v.api.post('/food/vendor/kitchen/ai/describe', { itemId: karahi }),
+      200,
+    );
+    expect(d.draft).toEqual({ description: ok.en, descriptionUr: ok.ur });
+    expect(d.draft.description.length).toBeLessThanOrEqual(160);
+    expect(d.draft.descriptionUr).toMatch(/[؀-ۿ]/);
+    expect(d.draft.description).not.toMatch(/healthy|low-fat|diet/i);
+    const [before] = await sql(
+      `SELECT description, description_ur FROM menu_items WHERE id = $1`,
+      [karahi],
+    );
+    expect(before).toEqual({ description: null, description_ur: null });
+    await expectStatus(await v.api.patch(d.save.path, d.save.body), 200);
+    const [after] = await sql(
+      `SELECT description, description_ur FROM menu_items WHERE id = $1`,
+      [karahi],
+    );
+    expect(after).toEqual({ description: ok.en, description_ur: ok.ur });
+  });
+
+  it('QA #30 specials → only expiring, existing ingredients', async () => {
+    const v = await kitchen('QA Specials');
+    const day2 = DateTime.now().setZone(TZ).plus({ days: 2 }).toISODate()!;
+    const palak = await ingredient(v, {
+      name: 'QA Palak',
+      category: 'vegetable',
+      openingStock: { qty: 3, unit: 'kg', totalCost: 600, expiresOn: day2 },
+    });
+    const rice = await ingredient(v, {
+      name: 'QA Rice',
+      category: 'grain',
+      openingStock: { qty: 10, unit: 'kg', totalCost: 4000 },
+    });
+    const idea = (name: string, lines: object[]) => ({
+      name,
+      description: 'A simple daily special cooked fresh today.',
+      servings: 2,
+      lines,
+      why: 'Uses what expires.',
+    });
+    f.ai.answer({
+      ideas: [
+        idea('Palak Rice', [
+          { ingredientId: palak.id, qty: 500, unit: 'g' },
+          { ingredientId: rice.id, qty: 300, unit: 'g' },
+        ]),
+        idea('Mystery Curry', [
+          {
+            ingredientId: '00000000-0000-4000-8000-000000000001',
+            qty: 1,
+            unit: 'kg',
+          },
+        ]),
+        idea('Plain Rice', [{ ingredientId: rice.id, qty: 400, unit: 'g' }]),
+      ],
+    });
+    const r = await expectStatus(
+      await v.api.post('/food/vendor/kitchen/ai/specials'),
+      200,
+    );
+    expect(r.ideas.map((i: any) => i.name)).toEqual(['Palak Rice']);
+    expect(r.dropped).toBe(2);
+    const known = new Set([palak.id, rice.id]);
+    for (const i of r.ideas) {
+      expect(i.lines.every((l: any) => known.has(l.ingredientId))).toBe(true);
+      expect(i.lines.some((l: any) => l.expiring)).toBe(true);
+    }
+  });
+
+  async function mappedKarahi(name: string) {
+    const v = await kitchen(name);
+    const karahi = await itemId(t, v);
+    const chicken = await ingredient(v, {
+      name: 'Chicken',
+      category: 'meat',
+      openingStock: { qty: 10, unit: 'kg', totalCost: 7000 },
+    });
+    const tomato = await ingredient(v, {
+      name: 'Tamatar',
+      category: 'vegetable',
+      openingStock: { qty: 5, unit: 'kg', totalCost: 800 },
+    });
+    const ghee = await ingredient(v, {
+      name: 'Desi Ghee',
+      category: 'oil',
+      openingStock: { qty: 2, unit: 'kg', totalCost: 3000 },
+    });
+    await recipe(
+      v,
+      karahi,
+      [
+        { ingredientId: chicken.id, qty: 1, unit: 'kg' },
+        { ingredientId: tomato.id, qty: 300, unit: 'g' },
+        { ingredientId: ghee.id, qty: 100, unit: 'g' },
+      ],
+      { yieldServings: 4 },
+    );
+    await expectStatus(
+      await v.api.post(
+        '/food/vendor/kitchen/nutrition/mapping/accept-suggestions',
+      ),
+      200,
+    );
+    return { v, karahi };
+  }
+
+  it('QA #31 nutrition from a recipe → equals the hand calculation', async () => {
+    const { karahi } = await mappedKarahi('QA Nutrition Recipe');
+    // (1000 g × 119 + 300 g × 18 + 100 g × 900 kcal per 100 g) ÷ 4 servings = 536 kcal.
+    const sheet = await expectStatus(
+      await anon().get(`/food/items/${karahi}`),
+      200,
+    );
+    expect(sheet.nutrition).toMatchObject({
+      perServing: { kcal: 536, proteinG: 54.1 },
+      method: 'recipe',
+      lowConfidence: false,
+    });
+  });
+
+  it('QA #32 nutrition without a recipe → an AI estimate, labelled low confidence', async () => {
+    const v = await kitchen('QA Nutrition Estimate');
+    const daal = await dish(v, `QA Daal ${++seq}`, 350, {
+      description: 'Yellow lentils with a garlic tarka.',
+    });
+    f.ai.answer({
+      servingGrams: 300,
+      kcal: 360,
+      proteinG: 18,
+      carbsG: 45,
+      fatG: 12,
+      fibreG: 8,
+      sodiumMg: 700,
+      confidence: 0.9,
+    });
+    const r = await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/nutrition/items/${daal.id}/estimate`,
+      ),
+      200,
+    );
+    expect(r.nutrition).toMatchObject({
+      method: 'ai_estimate',
+      confidence: 0.4,
+      lowConfidence: true,
+      label: 'AI estimate — low confidence',
+    });
+    const sheet = await expectStatus(
+      await anon().get(`/food/items/${daal.id}`),
+      200,
+    );
+    expect(sheet.nutrition).toMatchObject({
+      lowConfidence: true,
+      label: 'AI estimate — low confidence',
+    });
+  });
+
+  it('QA #33 a vendor requesting a customer’s nutrition profile → 404', async () => {
+    const v = await kitchen('QA Profile Vendor');
+    const c = await foodCustomer(t, ATD);
+    await expectStatus(
+      await c.api.put('/food/me/nutrition/profile', {
+        goal: 'lose',
+        manualTargetKcal: 1800,
+      }),
+      200,
+    );
+    expect((await v.api.get('/food/me/nutrition/profile')).status).toBe(404);
+    expect(
+      (await v.api.get(`/food/me/nutrition/profile?userId=${c.userId}`)).status,
+    ).toBe(404);
+    expect(
+      (await v.api.get(`/food/vendor/customers/${c.userId}/nutrition`)).status,
+    ).toBe(404);
+    expect(
+      (await expectStatus(await c.api.get('/food/me/nutrition/profile'), 200))
+        .targetKcal,
+    ).toBe(1800);
+  });
+
+  it('QA #34 pantry recipe suggestions → prefer expiring items and mark missing ones', async () => {
+    aiSettings(t).enabled = false;
+    const c = await foodCustomer(t, ATD);
+    const d = (n: number) =>
+      DateTime.now().setZone(TZ).plus({ days: n }).toISODate()!;
+    for (const [name, qty, unit, exp] of [
+      ['Palak', 1, 'kg', d(1)],
+      ['Paneer', 400, 'g', d(2)],
+      ['Aloo', 2, 'kg', d(30)],
+      ['Anday', 12, 'piece', d(20)],
+    ] as const)
+      await expectStatus(
+        await c.api.post('/my-kitchen/pantry', {
+          name,
+          qty,
+          unit,
+          expiresOn: exp,
+        }),
+        201,
+      );
+    const r = await expectStatus(
+      await c.api.post('/my-kitchen/recipes/suggest'),
+      200,
+    );
+    const [top] = r.recipes;
+    expect(top.expiringUsed).toBe(2);
+    expect(
+      top.uses
+        .filter((u: any) => u.expiring)
+        .map((u: any) => u.name)
+        .sort(),
+    ).toEqual(['Palak', 'Paneer']);
+    expect(top.missing.length).toBeGreaterThan(0);
+    for (const x of r.recipes.slice(1))
+      expect(x.expiringUsed).toBeLessThanOrEqual(top.expiringUsed);
+  });
+
+  it('QA #35 missing-to-bag → Shopping products sorted by price per unit', async () => {
+    const grocer = await approvedPartner(t, admin, 'store', 'QA Grocer');
+    const veg = await categoryId(t, 'grocery-vegetables-fruit');
+    const product = (
+      name: string,
+      basePrice: number,
+      packQty: number,
+      packUnit: string,
+    ) =>
+      listProduct(t, grocer, {
+        name,
+        categoryId: veg,
+        basePrice,
+        packQty,
+        packUnit,
+        variants: [{ option1: `${packQty} ${packUnit}`, stock: 9 }],
+      });
+    await product('Garlic small pack', 120, 250, 'g'); // Rs 480 / kg
+    await product('Garlic big bag', 1100, 3, 'kg'); // Rs 366.67 / kg
+    await product('Garlic 1 kg', 400, 1, 'kg'); // Rs 400 / kg
+    const c = await foodCustomer(t, ATD);
+    const r = await expectStatus(
+      await c.api.post('/my-kitchen/missing-to-bag', {
+        items: [{ name: 'lehsan' }],
+      }),
+      200,
+    );
+    const prices = r.items[0].options.map((o: any) => o.pricePer.price);
+    expect(prices).toEqual([366.67, 400, 480]);
+    expect(r.items[0].options.every((o: any) => o.pricePer.per === 'kg')).toBe(
+      true,
+    );
   });
 
   it('QA #36 a voice recording is deleted after 24 h', async () => {

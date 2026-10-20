@@ -27,7 +27,8 @@ export interface DemoProduct {
 }
 
 export interface DemoStore {
-  key: 'fashion' | 'beauty' | 'home' | 'handmade';
+  /** `grocery` is seed:kitchen part 3's demo grocer (Chunk 5). */
+  key: 'fashion' | 'beauty' | 'home' | 'handmade' | 'grocery';
   name: string;
   ownerName: string;
   city: string;

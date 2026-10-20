@@ -13,6 +13,8 @@ import {
   CustomerNutritionController,
   VendorNutritionController,
 } from './nutrition.controller';
+import { AdminNutritionService } from './admin-nutrition.service';
+import { AdminNutritionController } from './admin-nutrition.controller';
 
 /**
  * Nutrition (Chunk 5, P10): USDA reference foods, ingredient mapping,
@@ -29,12 +31,17 @@ import {
     FoodModule,
     KitchenModule,
   ],
-  controllers: [VendorNutritionController, CustomerNutritionController],
+  controllers: [
+    VendorNutritionController,
+    CustomerNutritionController,
+    AdminNutritionController,
+  ],
   providers: [
     ItemNutritionService,
     NutritionMappingService,
     NutritionProfileService,
     NutritionDiscoveryService,
+    AdminNutritionService,
   ],
   exports: [ItemNutritionService, NutritionMappingService],
 })

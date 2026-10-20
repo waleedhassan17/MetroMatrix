@@ -64,7 +64,7 @@ export interface SeedShoppingResult {
 const hashInt = (s: string, mod: number) =>
   parseInt(createHash('sha1').update(s).digest('hex').slice(0, 8), 16) % mod;
 
-function variantRows(spec: VariantSpec) {
+export function variantRows(spec: VariantSpec) {
   const rows: Array<{
     option1: string | null;
     option2: string | null;
@@ -271,7 +271,7 @@ export async function seedShopping(
   return { stores: result, created };
 }
 
-async function ensurePartner(
+export async function ensurePartner(
   m: EntityManager,
   demo: DemoStore,
   hash: string,
@@ -299,7 +299,7 @@ async function ensurePartner(
   );
 }
 
-async function ensureBusiness(
+export async function ensureBusiness(
   m: EntityManager,
   demo: DemoStore,
   ownerId: string,
@@ -331,7 +331,7 @@ async function ensureBusiness(
   );
 }
 
-async function ensureStore(
+export async function ensureStore(
   m: EntityManager,
   demo: DemoStore,
   business: Business,
@@ -414,7 +414,7 @@ async function ensureStore(
   return m.findOneByOrFail(Store, { id: store.id });
 }
 
-async function ensureAccounts(
+export async function ensureAccounts(
   m: EntityManager,
   demo: DemoStore,
   storeId: string,
@@ -468,7 +468,7 @@ async function ensureCollections(
   return out;
 }
 
-async function ensureProduct(
+export async function ensureProduct(
   m: EntityManager,
   demo: DemoStore,
   p: DemoProduct,
