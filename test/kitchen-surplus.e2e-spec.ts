@@ -159,7 +159,13 @@ describe('Bachat Box, donations, packing proof, expiry alerts (Chunk 5 P4)', () 
     );
     const closed = await reserve(await foodCustomer(t, SUK), b.id);
     expect(closed.body.error.code).toBe('SURPLUS_WINDOW_CLOSED');
-    expect(await jobs.expireSurplus()).toEqual({ expired: 1 });
+    // Checked on this box: other suites' boxes can close during a full run.
+    expect((await jobs.expireSurplus()).expired).toBeGreaterThanOrEqual(1);
+    const [closedBox] = await sql(
+      `SELECT status FROM surplus_boxes WHERE id = $1`,
+      [b.id],
+    );
+    expect(closedBox.status).not.toBe('live');
     expect(await jobs.expireSurplus()).toEqual({ expired: 0 });
     expect(
       (await sql(`SELECT status FROM surplus_boxes WHERE id = $1`, [b.id]))[0]

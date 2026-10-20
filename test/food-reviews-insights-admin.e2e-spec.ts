@@ -825,7 +825,14 @@ describe('Food P7: reviews, insights, admin, nightly jobs (e2e)', () => {
       `UPDATE food_orders SET scheduled_for = now() + interval '25 minutes' WHERE id = $1`,
       [o.id],
     );
-    expect(await jobs.kitchenReminders()).toEqual({ reminded: 1 });
+    // Counted for this order (tiffin and catering orders from other suites are scheduled too).
+    const reminders = await jobs.kitchenReminders();
+    expect(reminders.reminded).toBeGreaterThanOrEqual(1);
+    const [cooked] = await sql(
+      `SELECT kitchen_reminded_at FROM food_orders WHERE id = $1`,
+      [o.id],
+    );
+    expect(cooked.kitchen_reminded_at).not.toBeNull();
     expect(await jobs.kitchenReminders()).toEqual({ reminded: 0 });
     const owner = (
       await sql(`SELECT owner_user_id FROM businesses WHERE id = $1`, [

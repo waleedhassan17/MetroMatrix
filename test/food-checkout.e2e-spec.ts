@@ -791,12 +791,18 @@ describe('Food P4: cart, promotions, preview, checkout, jobs (e2e)', () => {
     const order = await expectStatus(await checkout(c), 201);
     expect(await remaining(v, karahi)).toBe(18);
 
-    expect(await jobs.autoReject()).toEqual({ autoRejected: 0 });
+    // Checked on this order: other suites' orders can fall due in a full run.
+    const statusOf = async (id: string) =>
+      (await sql(`SELECT status FROM food_orders WHERE id = $1`, [id]))[0]
+        .status;
+    await jobs.autoReject();
+    expect(await statusOf(order.id)).toBe('placed');
     await sql(
       `UPDATE food_orders SET accept_by = now() - interval '1 second' WHERE id = $1`,
       [order.id],
     );
-    expect(await jobs.autoReject()).toEqual({ autoRejected: 1 });
+    expect((await jobs.autoReject()).autoRejected).toBeGreaterThanOrEqual(1);
+    expect(await statusOf(order.id)).toBe('auto_rejected');
     expect(await jobs.autoReject()).toEqual({ autoRejected: 0 });
 
     const after = await expectStatus(
@@ -851,12 +857,20 @@ describe('Food P4: cart, promotions, preview, checkout, jobs (e2e)', () => {
         new Date(order.placedAt).getTime(),
     ).toBeCloseTo(10 * 60_000, -3);
 
-    expect(await jobs.cancelUnpaidTransfers()).toEqual({ cancelled: 0 });
+    // Checked on this order: other suites' transfers can fall due in a full run.
+    const stateOf = async () =>
+      (await sql(`SELECT status FROM food_orders WHERE id = $1`, [order.id]))[0]
+        .status;
+    await jobs.cancelUnpaidTransfers();
+    expect(await stateOf()).not.toBe('cancelled');
     await sql(
       `UPDATE food_orders SET pay_by = now() - interval '1 second' WHERE id = $1`,
       [order.id],
     );
-    expect(await jobs.cancelUnpaidTransfers()).toEqual({ cancelled: 1 });
+    expect(
+      (await jobs.cancelUnpaidTransfers()).cancelled,
+    ).toBeGreaterThanOrEqual(1);
+    expect(await stateOf()).toBe('cancelled');
     expect(await jobs.cancelUnpaidTransfers()).toEqual({ cancelled: 0 });
     const after = await expectStatus(
       await c.api.get(`/food/orders/${order.code}`),
