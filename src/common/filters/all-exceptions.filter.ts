@@ -24,6 +24,9 @@ export const GENERIC_ERROR_MESSAGE = 'An unexpected error occurred';
 const RATE_LIMITED_MESSAGE =
   'Too many requests. Please wait a moment and try again.';
 
+/** 5xx answers that are part of the contract (the AI layer's manual path). */
+export const EXPECTED_UNAVAILABLE = new Set<string>([ErrorCode.AI_UNAVAILABLE]);
+
 /**
  * Maps exceptions into the unified error envelope.
  * Supports throwing NestJS HttpExceptions where the response body is either:
@@ -100,7 +103,11 @@ export class AllExceptionsFilter implements ExceptionFilter {
       },
     };
 
-    if (status >= 500) {
+    // "AI is off or unavailable — here is the manual path" is an expected
+    // answer, not a fault: logged as a warning, never sent to Sentry.
+    if (EXPECTED_UNAVAILABLE.has(code)) {
+      this.logger.warn(`[${req.method}] ${req.path} -> ${status} ${code}`);
+    } else if (status >= 500) {
       this.logger.error(
         `[${req.method}] ${req.path} -> ${status} ${code}: ${message}`,
       );
