@@ -44,13 +44,14 @@ describe('Staff: nutrition foods, aliases, AI usage and prompts, support lookup 
     const v = await kitchen('Admin Nutrition Kitchen');
     expect((await v.api.get('/admin/nutrition/foods')).status).toBe(403);
     const found = await expectStatus(
-      await admin.api.get('/admin/nutrition/foods?q=tomato'),
+      await admin.api.get('/admin/nutrition/foods?q=apricot'),
       200,
     );
-    const tomato = found.items.find((x: any) => x.key === 'tomato');
-    expect(tomato).toMatchObject({
+    // A row no other suite or seed reads: editing it can't change their sums.
+    const apricot = found.items.find((x: any) => x.key === 'apricots-raw');
+    expect(apricot).toMatchObject({
       source: 'usda_sr_legacy',
-      fdcId: 170457,
+      fdcId: 171697,
       isActive: true,
     });
 
@@ -83,21 +84,24 @@ describe('Staff: nutrition foods, aliases, AI usage and prompts, support lookup 
       sodiumMg: 0,
     });
     expect(dup.status).toBe(409);
-    const heavy = await admin.api.patch(`/admin/nutrition/foods/${tomato.id}`, {
-      proteinG: 60,
-      carbsG: 50,
-    });
+    const heavy = await admin.api.patch(
+      `/admin/nutrition/foods/${apricot.id}`,
+      {
+        proteinG: 60,
+        carbsG: 50,
+      },
+    );
     expect(heavy.status).toBe(400);
     const edited = await expectStatus(
-      await admin.api.patch(`/admin/nutrition/foods/${tomato.id}`, {
-        nameUr: 'ٹماٹر (تازہ)',
+      await admin.api.patch(`/admin/nutrition/foods/${apricot.id}`, {
+        nameUr: 'خوبانی',
       }),
       200,
     );
     expect(edited).toMatchObject({
       source: 'staff',
-      fdcId: 170457,
-      nameUr: 'ٹماٹر (تازہ)',
+      fdcId: 171697,
+      nameUr: 'خوبانی',
     });
 
     await expectStatus(
@@ -115,7 +119,7 @@ describe('Staff: nutrition foods, aliases, AI usage and prompts, support lookup 
         csv: [
           'key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams',
           'sheermal,Sheermal,شیرمال,Baked Products,330,8,55,9,2,400,80',
-          'tomato,Tomato (staff),,Vegetables,18,0.9,3.9,0.2,1.2,5,',
+          'apricots-raw,Apricots (staff),,Fruits,48,1.4,11.1,0.4,2,1,',
           'Bad Key,Oops,,x,1,0,0,0,0,0,',
           'heavy,Too heavy,,x,500,60,50,20,0,0,',
         ].join('\n'),
