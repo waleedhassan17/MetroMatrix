@@ -50,7 +50,7 @@ export class ThemesAnswer {
   @Type(() => ThemeAnswer)
   themes!: ThemeAnswer[];
 }
-const THEMES_SCHEMA = {
+export const THEMES_SCHEMA = {
   type: 'object',
   properties: {
     themes: {
@@ -69,6 +69,11 @@ const THEMES_SCHEMA = {
   },
   required: ['themes'],
 };
+/** No theme can be mentioned by more reviews than were read. */
+export const themesCheck = (reviews: number) => (a: ThemesAnswer) =>
+  a.themes
+    .filter((t) => t.count > reviews)
+    .map((t) => `${t.theme}: count is more than the ${reviews} reviews`);
 
 /**
  * Review insights (Chunk 5, P9): nightly, for each kitchen with at least 5
@@ -123,13 +128,7 @@ export class ReviewInsightsService {
         input: { reviews: input },
         schema: THEMES_SCHEMA,
         dto: ThemesAnswer,
-        check: (a) =>
-          a.themes
-            .filter((t) => t.count > input.length)
-            .map(
-              (t) =>
-                `${t.theme}: count is more than the ${input.length} reviews`,
-            ),
+        check: themesCheck(input.length),
         actor: { businessId: b.business_id, userId: b.owner_user_id },
         temperature: 0.2,
       });

@@ -41,7 +41,7 @@ export class DescribeAnswer {
   @IsString() @Length(40, 160) en!: string;
   @IsString() @Length(20, 160) ur!: string;
 }
-const DESCRIBE_SCHEMA = {
+export const DESCRIBE_SCHEMA = {
   type: 'object',
   properties: { en: { type: 'string' }, ur: { type: 'string' } },
   required: ['en', 'ur'],
@@ -72,7 +72,7 @@ export class SpecialsAnswer {
   @Type(() => SpecialIdeaAnswer)
   ideas!: SpecialIdeaAnswer[];
 }
-const SPECIALS_SCHEMA = {
+export const SPECIALS_SCHEMA = {
   type: 'object',
   properties: {
     ideas: {
@@ -119,7 +119,7 @@ export class CombosAnswer {
   @Type(() => ComboNameAnswer)
   combos!: ComboNameAnswer[];
 }
-const COMBOS_SCHEMA = {
+export const COMBOS_SCHEMA = {
   type: 'object',
   properties: {
     combos: {
@@ -147,7 +147,7 @@ export class PhotoTipsAnswer {
   @IsBoolean() looksLikeFood!: boolean;
   @IsOptional() @IsBoolean() matchesDish?: boolean | null;
 }
-const PHOTO_SCHEMA = {
+export const PHOTO_SCHEMA = {
   type: 'object',
   properties: {
     tips: { type: 'array', items: { type: 'string' } },
@@ -156,6 +156,23 @@ const PHOTO_SCHEMA = {
   },
   required: ['tips', 'looksLikeFood'],
 };
+
+/** The menu text rules, in English and in Urdu script. */
+export const describeCheck = (a: DescribeAnswer) => [
+  ...menuTextProblems('en', a.en),
+  ...menuTextProblems('ur', a.ur),
+  ...(isUrduScript(a.ur)
+    ? []
+    : ['ur: write it in Urdu script, not Roman Urdu']),
+];
+export const specialsCheck = (a: SpecialsAnswer) =>
+  a.ideas.flatMap((x, i) =>
+    menuTextProblems(`ideas.${i}.description`, x.description),
+  );
+export const combosCheck = (a: CombosAnswer) =>
+  a.combos.flatMap((c) =>
+    menuTextProblems(c.key, `${c.name} ${c.description}`),
+  );
 
 const DESCRIBE_MANUAL =
   'Write the description yourself on the dish screen (at most 160 characters, no health claims).';
@@ -245,13 +262,7 @@ export class MenuAssistantService {
       },
       schema: DESCRIBE_SCHEMA,
       dto: DescribeAnswer,
-      check: (a) => [
-        ...menuTextProblems('en', a.en),
-        ...menuTextProblems('ur', a.ur),
-        ...(isUrduScript(a.ur)
-          ? []
-          : ['ur: write it in Urdu script, not Roman Urdu']),
-      ],
+      check: describeCheck,
       actor: this.actor(v),
       cacheSeconds: 86_400,
       temperature: 0.6,
@@ -352,10 +363,7 @@ export class MenuAssistantService {
       },
       schema: SPECIALS_SCHEMA,
       dto: SpecialsAnswer,
-      check: (a) =>
-        a.ideas.flatMap((x, i) =>
-          menuTextProblems(`ideas.${i}.description`, x.description),
-        ),
+      check: specialsCheck,
       actor: this.actor(v),
       temperature: 0.7,
     });
@@ -549,10 +557,7 @@ export class MenuAssistantService {
         },
         schema: COMBOS_SCHEMA,
         dto: CombosAnswer,
-        check: (a) =>
-          a.combos.flatMap((c) =>
-            menuTextProblems(c.key, `${c.name} ${c.description}`),
-          ),
+        check: combosCheck,
         actor: this.actor(v),
         cacheSeconds: 86_400,
         temperature: 0.7,

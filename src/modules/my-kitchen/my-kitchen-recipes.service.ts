@@ -64,7 +64,7 @@ export class PantryRecipesAnswer {
   @Type(() => PantryRecipeAnswer)
   recipes!: PantryRecipeAnswer[];
 }
-const RECIPES_SCHEMA = {
+export const RECIPES_SCHEMA = {
   type: 'object',
   properties: {
     recipes: {
@@ -95,6 +95,14 @@ const RECIPES_SCHEMA = {
   },
   required: ['recipes'],
 };
+/** Every item a recipe uses must be one of the pantry's. */
+export const pantryCheck =
+  (pantry: { has(id: string): boolean }) => (a: PantryRecipesAnswer) =>
+    a.recipes.flatMap((r, i) =>
+      r.uses
+        .filter((id) => !pantry.has(id))
+        .map((id) => `recipes.${i}.uses: ${id} is not in the pantry`),
+    );
 
 /** A pantry's AI suggestions are reused for this long (same pantry, same answer). */
 export const PANTRY_CACHE_SECONDS = 6 * 3600;
@@ -174,12 +182,7 @@ export class MyKitchenRecipesService {
         },
         schema: RECIPES_SCHEMA,
         dto: PantryRecipesAnswer,
-        check: (a) =>
-          a.recipes.flatMap((r, i) =>
-            r.uses
-              .filter((id) => !byId.has(id))
-              .map((id) => `recipes.${i}.uses: ${id} is not in the pantry`),
-          ),
+        check: pantryCheck(byId),
         actor: { businessId: null, userId: user.id },
         cacheSeconds: PANTRY_CACHE_SECONDS,
         temperature: 0.6,

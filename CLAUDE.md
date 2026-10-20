@@ -325,7 +325,9 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   text changes.
 - **Tests never call a real model.** Override `AiProvider` with `FakeAiProvider` and
   `MediaStorage` with `FakeMediaStorage` (`test/utils/fake-ai.ts`). Real calls only in
-  `npm run voice:eval` (free-tier quota: about 20 a model a day).
+  `npm run voice:eval` and `npm run ai:smoke` (free-tier quota: about 20 a model a day).
+  A new AI feature exports its schema and its check from the service, so the smoke validates
+  exactly as the app does.
 - **Voice screens** register in `onModuleInit` through `VoiceContexts.register`, so ai/ never
   imports Food. Readings go through `combineReadings`: the model, completed by the rule
   parser (`voice/rule-parser.ts`, `voice/lexicon.ts`). `voice-eval/manifest.json` is the
@@ -401,8 +403,8 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   `seed:food`), plus `scripts/food-socket-check.mjs` (`npm run socket:food`), and
   `postman/MetroMatrix-Kitchen.postman_collection.json` (`npm run postman:kitchen`, needs
   `seed:food` + `seed:kitchen`). These are runnable flows against a local server plus Mailpit.
-- `docs/API_KITCHEN.md`, `docs/AI.md`, `docs/VOICE.md` (and its accuracy table, written by
-  `npm run voice:eval`).
+- `docs/API_KITCHEN.md`, `docs/AI.md` (its smoke table, written by `npm run ai:smoke`),
+  `docs/VOICE.md` (its accuracy table, written by `npm run voice:eval`).
 - `.env.example` and `env.validation.ts` — together, always.
 
 ## Commands
@@ -425,6 +427,7 @@ npm run postman:food          newman run of the Food Court collection (needs see
 npm run socket:food           Socket.IO check of the Food realtime flow (needs seed:food)
 npm run postman:kitchen       newman run of the Kitchen collection (needs seed:food + seed:kitchen; AI_ENABLED=false)
 npm run voice:eval            voice accuracy against Gemini (real calls; resumes; never in CI)
+npm run ai:smoke              one real call per assistant prompt, checked as the app checks (never in CI)
 ```
 
 Deploying: see `DEPLOYMENT.md` (nothing is provisioned by default — the owner decides).

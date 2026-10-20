@@ -44,6 +44,7 @@
     "postman:kitchen": "COLLECTION=kitchen bash scripts/postman-local.sh --delay-request 700",
     "socket:food": "node scripts/food-socket-check.mjs",
     "voice:eval": "ts-node -r tsconfig-paths/register src/scripts/voice-eval.ts",
+    "ai:smoke": "ts-node -r tsconfig-paths/register src/scripts/ai-smoke.ts",
     "backfill:stores": "ts-node -r tsconfig-paths/register src/database/backfill-stores.ts",
     "backfill:stores:prod": "node dist/database/backfill-stores.js"
   },

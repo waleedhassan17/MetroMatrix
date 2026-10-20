@@ -30,7 +30,7 @@ export class EstimateAnswer {
   @IsNumber() @Min(0) @Max(10000) sodiumMg!: number;
   @IsNumber() @Min(0) @Max(1) confidence!: number;
 }
-const ESTIMATE_SCHEMA = {
+export const ESTIMATE_SCHEMA = {
   type: 'object',
   properties: Object.fromEntries(
     [
@@ -54,6 +54,13 @@ const ESTIMATE_SCHEMA = {
     'sodiumMg',
     'confidence',
   ],
+};
+/** kcal must fit the macros (Atwater 4/4/9) within 25% or 60 kcal. */
+export const estimateCheck = (a: EstimateAnswer) => {
+  const atwater = 4 * a.proteinG + 4 * a.carbsG + 9 * a.fatG;
+  return Math.abs(atwater - a.kcal) > Math.max(60, a.kcal * 0.25)
+    ? [`kcal ${a.kcal} doesn't fit the macros (≈ ${Math.round(atwater)})`]
+    : [];
 };
 
 /** A recipe-based value is this sure; an AI estimate is never surer than ESTIMATE_MAX. */
@@ -273,12 +280,7 @@ export class ItemNutritionService implements OnModuleInit {
       },
       schema: ESTIMATE_SCHEMA,
       dto: EstimateAnswer,
-      check: (a) => {
-        const atwater = 4 * a.proteinG + 4 * a.carbsG + 9 * a.fatG;
-        return Math.abs(atwater - a.kcal) > Math.max(60, a.kcal * 0.25)
-          ? [`kcal ${a.kcal} doesn't fit the macros (≈ ${Math.round(atwater)})`]
-          : [];
-      },
+      check: estimateCheck,
       actor: { businessId: v.businessId, userId: v.ownerUserId },
       cacheSeconds: 7 * 86_400,
       temperature: 0.2,

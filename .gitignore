@@ -14,3 +14,4 @@ npm-debug.log*
 voice-eval/clips/
 voice-eval/recordings/
 voice-eval/results.json
+ai-smoke/

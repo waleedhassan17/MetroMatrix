@@ -48,5 +48,6 @@ npm run migration:check  # entities and migrations agree
 Against a running server with the demo data: `npm run postman:local` (Auth),
 `postman:shopping`, `postman:health`, `postman:food`, `postman:kitchen`, and
 `npm run socket:food` (the Food realtime flow). `npm run voice:eval` measures voice accuracy
-against Gemini (real calls, `GEMINI_API_KEY`; see `docs/VOICE.md`).
+against Gemini (real calls, `GEMINI_API_KEY`; see `docs/VOICE.md`), and `npm run ai:smoke`
+makes one real call per assistant prompt (`docs/AI.md` §9).
 # MetroMatrix

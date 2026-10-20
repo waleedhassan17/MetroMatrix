@@ -41,9 +41,11 @@ an ai_usage row for every outcome
 - **Model: `AI_MODEL`, default `gemini-3.5-flash`.** The symptom checker keeps its own
   `GEMINI_MODEL`. In the voice eval, `gemini-3.8-flash` read written commands well (16/16),
   but every audio call to it timed out at 30 s. `gemini-3.5-flash` answered audio in about 3 s.
+  In the smoke (§9), `gemini-3.8-flash` answered every assistant prompt validly but took
+  14–41 s, so all of them ran past the 12 s budget; keep `AI_MODEL` on 3.5-flash.
 - Tests replace the provider with `FakeAiProvider` (`test/utils/fake-ai.ts`), which scripts
   answers, timeouts and invalid JSON. **No test ever calls a real model.** Real calls happen
-  only in `npm run voice:eval`.
+  only in `npm run voice:eval` and `npm run ai:smoke` (§9).
 - Speech adapters for Google Cloud Speech-to-Text (`STT_PROVIDER=google`, ur-PK with en-PK)
   and Text-to-Speech (`TTS_PROVIDER=google`, for announcements) are built but **off**. They
   need `GOOGLE_CLOUD_API_KEY` and a billing account; nothing is provisioned.
@@ -149,3 +151,46 @@ it fills the slots the model left empty — the count of plates, a line's price
 - The 24 h cache, the per-screen schema and short prompts keep calls small. Nothing is called
   in the background except what a person triggers (5C adds a nightly review-themes job,
   metered the same way).
+
+## 9. Real-model smoke (`npm run ai:smoke`)
+
+One real call for each assistant prompt, made the way `AiService.run` makes it: the prompt's
+text, the feature's response schema, the `AI_TIMEOUT_MS` budget for both attempts, and one
+retry that carries the validation errors. Each answer is checked by the feature's own DTO and
+rules (`describeCheck`, `specialsCheck`, `themesCheck`, `estimateCheck`, `pantryCheck`…), so
+"ok" means the service would have used it. Voice is measured by `npm run voice:eval`.
+
+- `npm run ai:smoke -- --model gemini-3.5-flash --only describe,specials --timeout 20000`.
+- Images come from `ai-smoke/` (git-ignored): `receipt.jpg|png` (a photographed bill),
+  `packed.jpg` and `dish.jpg`. Without the last two, a credited demo food photo
+  (`seeds/food/CREDITS.md`) is downloaded once; without a receipt photo that row is skipped.
+- Answers are kept in `ai-smoke/results.json`. The table below is rewritten by each run.
+- It uses the real key and the free tier's daily calls (about 20 a model): never in CI or
+  tests.
+
+<!-- ai-smoke:start -->
+Measured 2026-10-21: model gemini-3.8-flash, budget 60 s.
+
+| Prompt | Feature | Result | Tries | Latency | Tokens in / out | What came back |
+|---|---|---|---|---|---|---|
+| `describe@1` | menu_assistant | ok | 1 | 41.2 s | 429 / 77 | “Tender chicken cooked in rich oil with fresh ginger and spicy green chillies, prepared in a traditional wok.” / “تازہ ادرک اور تیکھی ہری مرچوں کے ساتھ کڑاہی م… |
+| `specials@1` | specials | ok | 1 | 41.0 s | 871 / 1092 | Palak Chicken, Dahi Chicken Curry, Tamatar Pulao — 3 of 3 kept |
+| `combos@1` | combos | ok | 1 | 14.1 s | 278 / 74 | Biryani & Raita Combo, Karahi & Naan Pairing |
+| `photo_tips@1` | photo_check | ok | 1 | 24.8 s | 1392 / 48 | food true, matches true; Step back slightly so the full plate of biryani fits comfortably in the frame Place the main piece of chicken closer to the center of … |
+| `receipt_scan@1` | receipt_scan | error | 1 | 2.2 s | 0 / 0 | gemini HTTP 503 |
+| `packing_check@1` | packing_check | ok | 1 | 20.5 s | 1386 / 55 | match true, saw Chicken Biryani (Full) ×1, Raita ×1; missing —; confidence 0.95 |
+| `review_themes@1` | review_insights | ok | 1 | 16.1 s | 390 / 179 | cold fries (negative, 2), late delivery (negative, 2), tasty food (positive, 2), generous portions (positive, 1), soggy burger (negative, 1), leaking packaging… |
+| `nutrition_estimate@1` | nutrition | ok | 1 | 13.8 s | 322 / 53 | 250 g: 460 kcal, protein 38 g, carbs 8 g, fat 31 g; confidence 0.4 |
+| `pantry_recipes@1` | pantry_recipes | ok | 1 | 22.0 s | 712 / 887 | Palak Paneer (needs Lehsan, Adrak, Hari Mirch), Aloo Palak (needs Tamatar, Hari Mirch, Lehsan), Palak Anda Ghotala (needs Hari Mirch, Tamatar), Paneer Bhurji (… |
+<!-- ai-smoke:end -->
+
+### Runs so far
+
+| Date | Model | Budget | Result |
+|---|---|---|---|
+| 2026-10-21 | gemini-3.8-flash | 12 s | 8 over the budget, 1 HTTP 503: too slow for the app's budget. |
+| 2026-10-21 | gemini-3.8-flash | 60 s | 8 of 9 valid on the first try (table above). `receipt_scan` got HTTP 503 twice; the same request sent again a minute later read the bill exactly — 5 of 5 lines with Roman Urdu names matched to the kitchen's ingredients (Tamatar → Tomato, Dahi → Yogurt), supplier, date and total Rs 4,840 — in 7.5 s. Then the day's limit. |
+
+The receipt was a rendered stand-in photo of a fictional mandi bill; a real photographed bill
+in `ai-smoke/receipt.jpg` is the better test. On `gemini-3.5-flash` (the default) the smoke
+has not run yet: that model's daily calls went to the voice eval.

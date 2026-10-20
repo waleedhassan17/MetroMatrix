@@ -46,7 +46,7 @@ export class PackingAnswerDto {
   @IsOptional() @IsString() @MaxLength(240) note?: string;
 }
 
-const PACKING_SCHEMA = {
+export const PACKING_SCHEMA = {
   type: 'object',
   properties: {
     detectedItems: {
