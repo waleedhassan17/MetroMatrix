@@ -1,3 +1,4 @@
+import { effectivePack, PackUnit, pricePerUnit } from '../common/pack';
 import {
   BadRequestException,
   Injectable,
@@ -68,6 +69,8 @@ export function partnerProductView(
     basePrice: p.basePrice,
     salePrice: p.salePrice,
     price: p.salePrice ?? p.basePrice,
+    pack: effectivePack(p),
+    pricePer: pricePerUnit(p.salePrice ?? p.basePrice, effectivePack(p)),
     status: p.status,
     removedReason: p.removedReason,
     tags: p.tags,
@@ -94,6 +97,8 @@ export function partnerProductView(
       sku: v.sku,
       priceDelta: v.priceDelta,
       price: unitPrice(p, v),
+      pack: effectivePack(p, v),
+      pricePer: pricePerUnit(unitPrice(p, v), effectivePack(p, v)),
       stock: v.stock,
       isActive: v.isActive,
       lowStock: v.isActive && v.stock <= LOW_STOCK_THRESHOLD,
@@ -191,6 +196,9 @@ export class ProductsService {
 
   async create(storeId: string, ownerUserId: string, dto: CreateProductDto) {
     this.checkPrices(dto.basePrice, dto.salePrice ?? null);
+    this.checkPack(dto, 'pack');
+    for (const [i, v] of (dto.variants ?? []).entries())
+      this.checkPack(v, `variants.${i}.pack`);
     const variants: ProductVariantDto[] = dto.variants?.length
       ? dto.variants
       : [{ option1: null, option2: null, stock: 0 }];
@@ -221,6 +229,8 @@ export class ProductsService {
           description: dto.description,
           basePrice: dto.basePrice,
           salePrice: dto.salePrice ?? null,
+          packQty: dto.packQty ?? null,
+          packUnit: dto.packUnit ?? null,
           status,
           tags: this.cleanTags(dto.tags),
           publishedAt: status === 'active' ? new Date() : null,
@@ -259,6 +269,13 @@ export class ProductsService {
       const salePrice =
         dto.salePrice !== undefined ? dto.salePrice : product.salePrice;
       this.checkPrices(basePrice, salePrice);
+      if (dto.packQty !== undefined || dto.packUnit !== undefined) {
+        this.checkPack(dto, 'pack');
+        product.packQty = dto.packQty ?? null;
+        product.packUnit = dto.packUnit ?? null;
+      }
+      for (const [i, v] of (dto.variants ?? []).entries())
+        this.checkPack(v, `variants.${i}.pack`);
       if (dto.categoryId !== undefined || dto.collectionId !== undefined) {
         await this.checkRefs(
           m,
@@ -393,6 +410,15 @@ export class ProductsService {
   }
 
   // ── rules ─────────────────────────────────────────────────────────────────
+
+  /** A pack is both a quantity and a unit, or neither. */
+  private checkPack(
+    x: { packQty?: number | null; packUnit?: string | null },
+    field: string,
+  ) {
+    if (((x.packQty ?? null) === null) !== ((x.packUnit ?? null) === null))
+      throw invalid(field, 'Give packQty and packUnit together, or neither.');
+  }
 
   private checkPrices(basePrice: number, salePrice: number | null) {
     if (salePrice !== null && salePrice >= basePrice) {
@@ -530,6 +556,8 @@ export class ProductsService {
         priceDelta: v.priceDelta ?? 0,
         stock: v.stock ?? 0,
         isActive: v.isActive ?? true,
+        packQty: v.packQty ?? null,
+        packUnit: v.packUnit ?? null,
         sort,
       }),
     );
@@ -583,6 +611,11 @@ export class ProductsService {
             pick('colorHex', target?.colorHex ?? null)?.toUpperCase() ?? null,
           sku: pick('sku', target?.sku ?? null),
           priceDelta: pick('priceDelta', target?.priceDelta ?? 0) ?? 0,
+          packQty: pick('packQty', target?.packQty ?? null) ?? null,
+          packUnit: (pick(
+            'packUnit',
+            (target?.packUnit as PackUnit | null) ?? null,
+          ) ?? null) as PackUnit | null,
           isActive: w.isActive ?? true,
           stock: w.stock,
         },

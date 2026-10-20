@@ -1,3 +1,4 @@
+import { effectivePack, pricePerUnit } from '../common/pack';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ErrorCode } from '../../../common/errors/codes';
@@ -242,7 +243,7 @@ export class CatalogService {
               s.logo_url AS store_logo_url, s.brand_color, s.on_brand_color,
               s.rating_avg AS store_rating_avg, s.rating_count AS store_rating_count,
               s.return_window_days, s.cod_enabled, s.shipping_flat_fee, s.free_shipping_over,
-              s.dispatch_days_min, s.dispatch_days_max
+              s.dispatch_days_min, s.dispatch_days_max, p.pack_qty, p.pack_unit
          ${PRODUCT_FROM_SQL}
         WHERE p.id = $1 AND ${VISIBLE_PRODUCT_SQL}`,
       [id],
@@ -255,13 +256,14 @@ export class CatalogService {
         [id],
       ),
       this.dataSource.query(
-        `SELECT id, option1, option2, color_hex, price_delta, stock
+        `SELECT id, option1, option2, color_hex, price_delta, stock, pack_qty, pack_unit
            FROM product_variants WHERE product_id = $1 AND is_active ORDER BY sort, created_at, id`,
         [id],
       ),
       this.reviews.breakdown(id),
     ]);
     const card = productCard(row);
+    const productPack = { packQty: row.pack_qty, packUnit: row.pack_unit };
     const distinct = (key: 'option1' | 'option2') =>
       [
         ...new Set(variants.map((v: any) => v[key]).filter(Boolean)),
@@ -272,6 +274,8 @@ export class CatalogService {
       tags: row.tags,
       categoryId: row.category_id,
       collectionId: row.collection_id,
+      pack: effectivePack(productPack),
+      pricePer: pricePerUnit(card.price, effectivePack(productPack)),
       images: images.map((i: any) => ({ id: i.id, url: i.url })),
       options: { option1: distinct('option1'), option2: distinct('option2') },
       variants: variants.map((v: any) => ({
@@ -281,6 +285,17 @@ export class CatalogService {
         label: variantLabel(v),
         colorHex: v.color_hex,
         price: card.price + v.price_delta,
+        pack: effectivePack(productPack, {
+          packQty: v.pack_qty,
+          packUnit: v.pack_unit,
+        }),
+        pricePer: pricePerUnit(
+          card.price + v.price_delta,
+          effectivePack(productPack, {
+            packQty: v.pack_qty,
+            packUnit: v.pack_unit,
+          }),
+        ),
         // Flags only: customers never learn exact stock numbers.
         inStock: v.stock > 0,
         lowStock: v.stock > 0 && v.stock <= LOW_STOCK_THRESHOLD,

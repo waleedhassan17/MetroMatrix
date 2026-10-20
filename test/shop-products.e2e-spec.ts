@@ -894,7 +894,13 @@ describe('Shopping P2: products, inventory, catalogue (e2e)', () => {
 
     it('home and categories; a signed-in caller is optional', async () => {
       const cats = await anon.get('/shop/categories').expect(200);
-      expect(cats.body.data).toHaveLength(8);
+      // Eight original roots plus Grocery (Chunk 5, My Kitchen).
+      expect(cats.body.data).toHaveLength(9);
+      expect(
+        cats.body.data
+          .find((c: any) => c.slug === 'grocery')
+          .children.map((c: any) => c.slug),
+      ).toContain('grocery-dairy-eggs');
       const women = cats.body.data.find((c: any) => c.slug === 'women');
       expect(women.children.map((c: any) => c.slug)).toContain(
         'women-footwear',

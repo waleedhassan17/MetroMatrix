@@ -6,6 +6,7 @@ import {
   IsArray,
   IsBoolean,
   IsIn,
+  IsNumber,
   IsInt,
   IsOptional,
   IsString,
@@ -22,6 +23,7 @@ import { Trim } from '../../../../common/validation/transforms';
 import { HEX_COLOR } from '../../common/contrast';
 import { PaginationQueryDto } from '../../../../common/pagination/pagination';
 import { PRODUCT_STATUSES, ProductStatus } from '../entities/product.entity';
+import { PACK_UNITS, PackUnit } from '../../common/pack';
 
 export const MAX_IMAGES = 8;
 export const MAX_VARIANTS = 100;
@@ -107,6 +109,25 @@ export class ProductVariantDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiPropertyOptional({
+    example: 1,
+    nullable: true,
+    description:
+      'Grocery pack size (with packUnit): price per kg / l / piece is shown and compared.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  @Max(100000)
+  packQty?: number | null;
+
+  @ApiPropertyOptional({ enum: PACK_UNITS, nullable: true })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsIn(PACK_UNITS)
+  packUnit?: PackUnit | null;
 }
 
 const PARTNER_STATUSES = ['draft', 'active', 'archived'] as const;
@@ -187,6 +208,25 @@ export class CreateProductDto {
   @IsOptional()
   @IsIn(['draft', 'active'])
   status?: 'draft' | 'active';
+
+  @ApiPropertyOptional({
+    example: 1,
+    nullable: true,
+    description:
+      'Grocery pack size (with packUnit): price per kg / l / piece is shown and compared.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  @Max(100000)
+  packQty?: number | null;
+
+  @ApiPropertyOptional({ enum: PACK_UNITS, nullable: true })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsIn(PACK_UNITS)
+  packUnit?: PackUnit | null;
 }
 
 export class UpdateProductDto {
@@ -259,6 +299,25 @@ export class UpdateProductDto {
   @IsOptional()
   @IsIn([...PARTNER_STATUSES])
   status?: (typeof PARTNER_STATUSES)[number];
+
+  @ApiPropertyOptional({
+    example: 1,
+    nullable: true,
+    description:
+      'Grocery pack size (with packUnit): price per kg / l / piece is shown and compared.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsNumber()
+  @Min(0.001)
+  @Max(100000)
+  packQty?: number | null;
+
+  @ApiPropertyOptional({ enum: PACK_UNITS, nullable: true })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsIn(PACK_UNITS)
+  packUnit?: PackUnit | null;
 }
 
 export class PartnerProductQueryDto extends PaginationQueryDto {

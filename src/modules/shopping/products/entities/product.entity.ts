@@ -43,6 +43,10 @@ const decimal = {
   'CHK_products_prices',
   '"base_price" > 0 AND ("sale_price" IS NULL OR ("sale_price" > 0 AND "sale_price" < "base_price"))',
 )
+@Check(
+  'CHK_products_pack',
+  '("pack_qty" IS NULL) = ("pack_unit" IS NULL) AND ("pack_qty" IS NULL OR "pack_qty" > 0) AND ("pack_unit" IS NULL OR "pack_unit" IN (\'g\', \'kg\', \'ml\', \'l\', \'piece\', \'dozen\'))',
+)
 @Index(['storeId', 'slug'], { unique: true })
 @Index(['storeId', 'status'])
 @Index(['status', 'publishedAt'])
@@ -50,6 +54,24 @@ const decimal = {
 export class Product extends BaseEntity {
   @Column({ type: 'uuid', name: 'store_id' })
   storeId!: string;
+
+  /** Grocery pack size (Chunk 5): "500 g", "1 l", "12 piece". Both or neither. */
+  @Column({
+    type: 'numeric',
+    precision: 10,
+    scale: 3,
+    name: 'pack_qty',
+    nullable: true,
+    transformer: {
+      to: (v: number | null | undefined) => v,
+      from: (v: string | null) =>
+        v === null || v === undefined ? null : Number(v),
+    },
+  })
+  packQty!: number | null;
+
+  @Column({ type: 'varchar', length: 8, name: 'pack_unit', nullable: true })
+  packUnit!: string | null;
 
   @ManyToOne(() => Store, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'store_id' })

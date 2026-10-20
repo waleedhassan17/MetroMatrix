@@ -13,6 +13,10 @@ import { Product } from './product.entity';
  */
 @Entity('product_variants')
 @Check('CHK_product_variants_stock', '"stock" >= 0')
+@Check(
+  'CHK_product_variants_pack',
+  '("pack_qty" IS NULL) = ("pack_unit" IS NULL) AND ("pack_qty" IS NULL OR "pack_qty" > 0) AND ("pack_unit" IS NULL OR "pack_unit" IN (\'g\', \'kg\', \'ml\', \'l\', \'piece\', \'dozen\'))',
+)
 // (product_id, option1, option2) UNIQUE NULLS NOT DISTINCT — defined in the
 // ShopProducts migration; declared here so schema sync leaves it alone.
 @Index('UQ_product_variants_options', { synchronize: false })
@@ -52,4 +56,22 @@ export class ProductVariant extends BaseEntity {
   /** Display order, as the partner listed the variants. */
   @Column({ type: 'int', default: 0 })
   sort!: number;
+
+  /** This size's pack, overriding the product's (a 5 kg bag next to the 1 kg one). */
+  @Column({
+    type: 'numeric',
+    precision: 10,
+    scale: 3,
+    name: 'pack_qty',
+    nullable: true,
+    transformer: {
+      to: (v: number | null | undefined) => v,
+      from: (v: string | null) =>
+        v === null || v === undefined ? null : Number(v),
+    },
+  })
+  packQty!: number | null;
+
+  @Column({ type: 'varchar', length: 8, name: 'pack_unit', nullable: true })
+  packUnit!: string | null;
 }

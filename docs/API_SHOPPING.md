@@ -344,12 +344,12 @@ deleting it never changes an order. Push: Expo tokens registered via `PUT /users
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/shop/home` | `{ banners, featuredStores: StoreCard[], newArrivals: ProductCard[], trending: ProductCard[], categories }` — one call for the home screen. `trending` = units sold in the last 14 days (cancelled orders excluded), topped up by all-time sales. Banners are active, inside their window, and only point at things a customer can open. |
-| GET | `/shop/categories` | `[{ id, name, slug, icon, children: [{ id, name, slug, icon }] }]` |
+| GET | `/shop/categories` | `[{ id, name, slug, icon, children: [{ id, name, slug, icon }] }]` — includes *(Chunk 5)* the **Grocery** root (`grocery`) and its aisles (`grocery-vegetables-fruit`, `-meat-poultry`, `-dairy-eggs`, `-rice-flour`, `-pulses`, `-spices`, `-oil-ghee`, `-bakery`, `-sauces`, `-beverages`, `-snacks`). |
 | GET | `/shop/stores` | `?q&categoryId&city&featured=true&page&pageSize` → `StoreCard` list. `categoryId` (root matches its subtree) = stores selling there; `city` = stores delivering there. |
 | GET | `/shop/stores/:slug` | `StoreCard` + `{ about, socials, collections: [{ id, name, slug, productCount }], policies: { shippingFlatFee, freeShippingOver, returnWindowDays, dispatchDaysMin, dispatchDaysMax, deliveryCities, paymentMethods: ["cod","transfer"], codLimit, transferVia: ["bank","jazzcash"] } }` — **never account numbers**. |
 | GET | `/shop/products` | `?q&storeId&categoryId&collectionId&minPrice&maxPrice&inStock=true&minRating&onSale=true&sort&page&pageSize` → `ProductCard` list. `sort`: `relevance` (default; with `q` = text rank, without = popularity) `newest`, `price_asc`, `price_desc`, `rating`, `popular`. Prices filter/sort on the effective price. `categoryId` of a root matches its children. `q` supports words, `"phrases"` and `-exclusions`; when nothing matches, a typo-tolerant name match runs instead ("kurtta" finds "kurta"). |
 | GET | `/shop/products/suggest` | `?q` (required) → `{ products: ProductCard[≤5], stores: StoreCard[≤3] }` for search-as-you-type. |
-| GET | `/shop/products/:id` | `ProductCard` + `{ description, tags, categoryId, collectionId, images: [{ id, url }], options: { option1: ["S","M"], option2: ["Maroon"] }, variants: [{ id, option1, option2, label, colorHex, price, inStock, lowStock }], store: { …StoreCard essentials, returnWindowDays, codEnabled, shippingFlatFee, freeShippingOver, dispatchDaysMin, dispatchDaysMax }, ratingBreakdown: { "1": 0, …, "5": 7 }, isWishlisted }` |
+| GET | `/shop/products/:id` | `ProductCard` + `{ description, tags, categoryId, collectionId, images: [{ id, url }], options: { option1: ["S","M"], option2: ["Maroon"] }, variants: [{ id, option1, option2, label, colorHex, price, pack, pricePer, inStock, lowStock }], pack, pricePer, store: { …StoreCard essentials, returnWindowDays, codEnabled, shippingFlatFee, freeShippingOver, dispatchDaysMin, dispatchDaysMax }, ratingBreakdown: { "1": 0, …, "5": 7 }, isWishlisted }` |
 | GET | `/shop/products/:id/reviews` | `?rating=1..5&withPhotos=true&page` → `Review` list + `summary: { ratingAvg, ratingCount, breakdown }` |
 | GET | `/shop/products/:id/related` | up to 10 `ProductCard`s from the same category, other stores first |
 
@@ -413,7 +413,7 @@ Visible = business approved, store not paused, product `active`. Anything else i
 | Method | Path | Body | Response |
 |---|---|---|---|
 | GET | `/products` | `?status&q&collectionId&lowStock=true&page` | list of `{ id, name, slug, status, basePrice, salePrice, price, categoryId, collectionId, coverUrl, variantCount, totalStock, lowStock, soldCount, ratingAvg, updatedAt }` |
-| POST | `/products` | `{ name, description, categoryId, collectionId?, basePrice, salePrice?, tags?, images?: [{ url, publicId }] (≤8, first = cover), variants?: [{ option1?, option2?, colorHex?, sku?, priceDelta?, stock?, isActive? }] (1–100; omit = one default variant), status?: draft\|active }` | `201 PartnerProduct`. `salePrice ≥ basePrice` → 400; publishing needs ≥ 1 image and ≥ 1 active variant; option combinations unique; every variant price > 0. |
+| POST | `/products` | `{ name, description, categoryId, collectionId?, basePrice, salePrice?, tags?, images?: [{ url, publicId }] (≤8, first = cover), variants?: [{ option1?, option2?, colorHex?, sku?, priceDelta?, stock?, isActive?, packQty?, packUnit? }] (1–100; omit = one default variant), status?: draft\|active, packQty?, packUnit? }` | `201 PartnerProduct`. `salePrice ≥ basePrice` → 400; publishing needs ≥ 1 image and ≥ 1 active variant; option combinations unique; every variant price > 0. |
 | GET / PATCH | `/products/:id` | PATCH: any create field + `status: draft\|active\|archived`; `variants` is the full desired set (with `id` = update, without = add or revive by options, missing = deactivated) | `PartnerProduct` (exact stock per variant). A `removed` product can't change status (`409 INVALID_TRANSITION`). |
 | DELETE | `/products/:id` | | `{ archived, deleted }` — archived if it was ever ordered, otherwise deleted |
 | POST | `/products/:id/duplicate` | | `201 PartnerProduct` (draft copy, stock 0) |
@@ -462,6 +462,17 @@ All order actions return `PartnerStoreOrder`.
 | POST | `/reviews/:id/hide` · `/unhide` | `{ reason }` for hide; ratings recomputed |
 
 ---
+
+### 5.6 Pack size and price per unit (Chunk 5, My Kitchen)
+
+- Grocery products carry a **pack size**: `packQty` with `packUnit` (`g`, `kg`, `ml`, `l`, `piece`,
+  `dozen`) on the product, and optionally on a variant, which overrides it (a 5 kg bag next to a
+  1 kg one). Both are given or neither (`400 VALIDATION_FAILED` on `pack`).
+- Product and variant views add `pack: { qty, unit } | null` and
+  `pricePer: { price, per: kg|l|piece } | null` — the effective price ÷ the pack in kg, l or
+  pieces (`shopping/common/pack.ts`).
+- My Kitchen's missing-to-bag compare (`POST /my-kitchen/missing-to-bag`, `docs/API_KITCHEN.md`
+  §34) sorts grocery products by it.
 
 ## 6. Error codes added in Chunk 2
 
