@@ -135,7 +135,7 @@ script, Roman Urdu, English) across every screen.
 Three readers are measured:
 
 - **Rules**: the deterministic parser, on written phrases.
-- **Model, text**: `voice_intent@1`, on written phrases.
+- **Model, text**: the current `voice_intent` prompt, on written phrases.
 - **Model, audio**: the same prompt on spoken clips. The model transcribes and reads in one
   call. Clips are synthesised with Gemini TTS (varied voices) into `voice-eval/clips/`;
   **real recordings** dropped in `voice-eval/recordings/<id>.<ext>` replace them. Both
@@ -145,19 +145,19 @@ Three readers are measured:
 numbers exactly, names at similarity ≥ 0.6, purchase/pantry lines in order.
 
 <!-- voice-eval:start -->
-Measured 2026-10-20: model gemini-3.5-flash, voice_intent@3; 0 of 60 phrases read as text, 21 as audio (21 clips synthesised with gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, 0 real recordings).
+Measured 2026-10-21: model gemini-3.5-flash, voice_intent@3; 0 of 60 phrases read as text, 22 as audio (22 clips synthesised with gemini-3.8-flash-tts, gemini-3.8-flash-lite-tts, 0 real recordings).
 1 model calls returned no answer (timeout or HTTP error) and are not counted; the next run retries them.
 
 | Phrases | Rules, tuning (40) | Rules, held-out (20) | Model, text | Model, audio |
 |---|---|---|---|---|
-| Intent — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (2/2) |
+| Intent — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (3/3) |
 | Intent — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 100% (8/8) |
 | Intent — English | 100% (14/14) | 100% (6/6) | — | 100% (11/11) |
-| Intent — All | 100% (40/40) | 95% (19/20) | — | 100% (21/21) |
-| Intent + slots — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (2/2) |
+| Intent — All | 100% (40/40) | 95% (19/20) | — | 100% (22/22) |
+| Intent + slots — Urdu script | 100% (7/7) | 100% (4/4) | — | 100% (3/3) |
 | Intent + slots — Roman Urdu | 100% (19/19) | 90% (9/10) | — | 100% (8/8) |
 | Intent + slots — English | 100% (14/14) | 100% (6/6) | — | 100% (11/11) |
-| Intent + slots — All | 100% (40/40) | 95% (19/20) | — | 100% (21/21) |
+| Intent + slots — All | 100% (40/40) | 95% (19/20) | — | 100% (22/22) |
 <!-- voice-eval:end -->
 
 ### Runs so far
@@ -173,6 +173,7 @@ Every run so far:
 | 2026-10-19 | model, audio | gemini-3.8-flash | voice_intent@2 | 0 — all 20 calls timed out at 30 s | — | — |
 | 2026-10-19 | model, audio | gemini-3.5-flash | voice_intent@2 | 17 clips (9 English, 8 Urdu) (+2 no answer) | 100% (17/17) | 71% (12/17) |
 | 2026-10-20 | model, audio | gemini-3.5-flash | voice_intent@3 | 21 clips (11 English, 2 Urdu script, 8 Roman Urdu) (+1 HTTP 503) | 100% (21/21) | 100% (21/21) |
+| 2026-10-21 | model, audio | gemini-3.5-flash | voice_intent@3 | 1 clip (Urdu script) (+1 HTTP 503), then the daily limit | 100% (1/1) | 100% (1/1) |
 
 What changed between versions:
 
