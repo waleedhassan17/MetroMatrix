@@ -88,6 +88,21 @@ export const envValidationSchema = Joi.object({
     .pattern(/^\d+[smhd]$/)
     .default('30d'),
   REFRESH_REUSE_GRACE_SECONDS: Joi.number().min(0).max(10).default(10),
+
+  // Web console (docs/ADMIN_API.md). Unset origin: the cookie endpoints refuse.
+  ADMIN_WEB_ORIGIN: Joi.string()
+    .uri({ scheme: ['https', 'http'] })
+    .optional()
+    .allow(''),
+  ADMIN_REFRESH_TTL: Joi.string()
+    .pattern(/^\d+[smhd]$/)
+    .empty('')
+    .default('12h'),
+  ADMIN_IDLE_MINUTES: Joi.number().min(5).max(720).empty('').default(30),
+  ADMIN_ACCESS_EXPIRES_IN: Joi.string()
+    .pattern(/^\d+[smhd]$/)
+    .empty('')
+    .default('10m'),
   OTP_PEPPER: Joi.string().min(32).required(),
   TOTP_ENC_KEY: base64Key32.required(),
   BCRYPT_ROUNDS: Joi.number()

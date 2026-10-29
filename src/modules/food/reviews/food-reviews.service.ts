@@ -250,12 +250,15 @@ export class FoodReviewsService implements OnModuleInit {
   }
 
   async setHidden(id: string, hidden: boolean, reason: string | null) {
+    let before: { isHidden: boolean; hiddenReason: string | null } | null =
+      null;
     const r = await this.dataSource.transaction(async (m) => {
       const r = await m.findOne(FoodReview, {
         where: { id },
         lock: { mode: 'pessimistic_write' },
       });
       if (!r) throw notFound();
+      before = { isHidden: r.isHidden, hiddenReason: r.hiddenReason };
       r.isHidden = hidden;
       r.hiddenReason = hidden ? reason : null;
       await m.save(r);
@@ -266,7 +269,9 @@ export class FoodReviewsService implements OnModuleInit {
       action: hidden ? 'food.review.hide' : 'food.review.unhide',
       targetType: 'food_review',
       targetId: r.id,
-      details: { reason, vendorId: r.brandId },
+      details: { vendorId: r.brandId },
+      before,
+      after: { isHidden: r.isHidden, hiddenReason: r.hiddenReason },
     });
     return { id: r.id, isHidden: r.isHidden, hiddenReason: r.hiddenReason };
   }

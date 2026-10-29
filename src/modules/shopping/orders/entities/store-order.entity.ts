@@ -35,6 +35,8 @@ export interface PaymentAccountSnapshot {
 @Entity('store_orders')
 @Index(['code'], { unique: true })
 @Index(['groupId'])
+// Platform-wide counts by period (admin overview, analytics).
+@Index('IDX_store_orders_created_at', ['createdAt'])
 @Index('IDX_store_orders_store_status_created', { synchronize: false })
 @Index(['userId', 'createdAt'])
 @Index(['paymentStatus', 'payBy'])

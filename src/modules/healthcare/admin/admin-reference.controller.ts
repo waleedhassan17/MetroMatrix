@@ -1,4 +1,21 @@
 import {
+  AdminAppointmentsCancelView,
+  AdminAppointmentsDetailView,
+  AdminAppointmentsListView,
+  AdminAppointmentsOverviewView,
+  AdminReferenceConditionsView,
+  AdminReferenceCreateConditionView,
+  AdminReferenceCreateSpecialtyView,
+  AdminReferenceMapConditionView,
+  AdminReferenceSpecialtiesView,
+  AdminReferenceUpdateConditionView,
+  AdminReferenceUpdateSpecialtyView,
+} from './admin-reference.response';
+import {
+  ApiEnvelopeOk,
+  ApiPagedOk,
+} from '../../../common/swagger/api-envelope';
+import {
   Body,
   Controller,
   Get,
@@ -25,6 +42,7 @@ import {
   UpdateSpecialtyDto,
 } from './dto/admin-health.dto';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -33,6 +51,7 @@ import {
 @ApiTags('admin · health')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageHealthcare')
 @Controller('admin/health')
 export class AdminReferenceController {
   constructor(private readonly reference: AdminReferenceService) {}
@@ -41,11 +60,13 @@ export class AdminReferenceController {
   @ApiOperation({
     summary: 'All specialties (inactive too) with doctor counts.',
   })
+  @ApiEnvelopeOk(AdminReferenceSpecialtiesView, { isArray: true })
   specialties() {
     return this.reference.specialties();
   }
 
   @Post('specialties')
+  @ApiEnvelopeOk(AdminReferenceCreateSpecialtyView, { status: 201 })
   createSpecialty(@Body() dto: SpecialtyDto) {
     return this.reference.createSpecialty(dto);
   }
@@ -55,6 +76,7 @@ export class AdminReferenceController {
     summary:
       'Edit or deactivate (isActive: false). Refreshes affected doctors’ search. Audited.',
   })
+  @ApiEnvelopeOk(AdminReferenceUpdateSpecialtyView)
   updateSpecialty(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateSpecialtyDto,
@@ -64,16 +86,19 @@ export class AdminReferenceController {
 
   @Get('conditions')
   @ApiOperation({ summary: '?q&page — with their ranked specialties.' })
+  @ApiPagedOk(AdminReferenceConditionsView)
   conditions(@Query() q: AdminConditionQueryDto) {
     return this.reference.conditions(q);
   }
 
   @Post('conditions')
+  @ApiEnvelopeOk(AdminReferenceCreateConditionView, { status: 201 })
   createCondition(@Body() dto: ConditionDto) {
     return this.reference.createCondition(dto);
   }
 
   @Patch('conditions/:id')
+  @ApiEnvelopeOk(AdminReferenceUpdateConditionView)
   updateCondition(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateConditionDto,
@@ -87,6 +112,7 @@ export class AdminReferenceController {
     summary:
       '[{ specialtyId, rank }] — replaces the mapping; rank 1 is the first choice.',
   })
+  @ApiEnvelopeOk(AdminReferenceMapConditionView)
   mapCondition(
     @Param('id', ParseUUIDPipe) id: string,
     @Body(new ParseArrayPipe({ items: ConditionSpecialtyDto, whitelist: true }))
@@ -99,6 +125,7 @@ export class AdminReferenceController {
 @ApiTags('admin · health')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageHealthcare')
 @Controller('admin/health')
 export class AdminAppointmentsController {
   constructor(private readonly appointments: AdminAppointmentsService) {}
@@ -108,12 +135,14 @@ export class AdminAppointmentsController {
     summary:
       'Doctors (listed, awaiting PMDC), today by status, last 7 days, reviews, symptom checks, top specialties.',
   })
+  @ApiEnvelopeOk(AdminAppointmentsOverviewView)
   overview() {
     return this.appointments.overview();
   }
 
   @Get('appointments')
   @ApiOperation({ summary: '?code&doctorId&patientUserId&status&date&page' })
+  @ApiPagedOk(AdminAppointmentsListView)
   list(@Query() q: AdminAppointmentQueryDto) {
     return this.appointments.list(q);
   }
@@ -123,6 +152,7 @@ export class AdminAppointmentsController {
     summary:
       'Booking facts, payment trail and timeline — never notes, prescriptions or records. Audited.',
   })
+  @ApiEnvelopeOk(AdminAppointmentsDetailView)
   detail(@Param('code') code: string) {
     return this.appointments.detail(code);
   }
@@ -133,6 +163,7 @@ export class AdminAppointmentsController {
     summary:
       '{ reason } — on a patient’s or doctor’s behalf; both are told. Audited.',
   })
+  @ApiEnvelopeOk(AdminAppointmentsCancelView)
   cancel(
     @CurrentUser() me: AuthenticatedUser,
     @Param('code') code: string,

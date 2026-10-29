@@ -1175,6 +1175,9 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
   it('QA #29 an AI description → English + Urdu, no health claims, saved only on confirm', async () => {
     const v = await kitchen('QA Describe');
     const karahi = await itemId(t, v);
+    // Every demo kitchen's karahi is the same dish, so another suite's
+    // cached description would answer instead of the model: start clean.
+    await t.ds.query(`DELETE FROM ai_cache WHERE prompt_id = 'describe'`);
     const ok = {
       en: 'Chicken cooked hard and fast in a wok with tomato, green chilli and ginger.',
       ur: 'ٹماٹر، ہری مرچ اور ادرک کے ساتھ تیز آنچ پر پکی چکن کڑاہی۔',

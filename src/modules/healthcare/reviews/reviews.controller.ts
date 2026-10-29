@@ -1,4 +1,13 @@
 import {
+  AdminReviewsHideView,
+  AdminReviewsListView,
+  AdminReviewsUnhideView,
+} from './reviews.response';
+import {
+  ApiEnvelopeOk,
+  ApiPagedOk,
+} from '../../../common/swagger/api-envelope';
+import {
   Body,
   Controller,
   Get,
@@ -19,6 +28,7 @@ import {
   ReviewQueryDto,
 } from './dto/review.dto';
 import { HealthDoctor, HealthPatient } from '../common/health-roles.decorator';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import {
   CurrentDoctor,
   CurrentDoctorRef,
@@ -107,12 +117,14 @@ export class DoctorReviewsController {
 @ApiTags('admin · health')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageHealthcare')
 @Controller('admin/health/reviews')
 export class AdminReviewsController {
   constructor(private readonly reviews: ReviewsService) {}
 
   @Get()
   @ApiOperation({ summary: '?doctorId&hidden=true|false&page' })
+  @ApiPagedOk(AdminReviewsListView)
   list(@Query() q: AdminReviewQueryDto) {
     return this.reviews.adminList(q);
   }
@@ -122,6 +134,7 @@ export class AdminReviewsController {
   @ApiOperation({
     summary: '{ reason } — off public lists and the rating. Audited.',
   })
+  @ApiEnvelopeOk(AdminReviewsHideView)
   hide(
     @CurrentUser() me: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,
@@ -132,6 +145,7 @@ export class AdminReviewsController {
 
   @Post(':id/unhide')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminReviewsUnhideView)
   unhide(
     @CurrentUser() me: AuthenticatedUser,
     @Param('id', ParseUUIDPipe) id: string,

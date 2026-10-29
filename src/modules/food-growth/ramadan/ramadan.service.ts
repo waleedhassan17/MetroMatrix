@@ -348,8 +348,10 @@ export class RamadanService implements OnModuleInit {
       action: 'calendar_event.create',
       targetType: 'calendar_event',
       targetId: e.id,
-      details: {
+      before: null,
+      after: {
         kind: e.kind,
+        name: e.name,
         startsOn: e.startsOn,
         endsOn: e.endsOn,
         city: e.city,
@@ -373,7 +375,14 @@ export class RamadanService implements OnModuleInit {
       action: 'calendar_event.update',
       targetType: 'calendar_event',
       targetId: id,
-      details: { changed: Object.keys(dto) },
+      before: {
+        kind: e.kind,
+        name: e.name,
+        startsOn: e.startsOn,
+        endsOn: e.endsOn,
+        city: e.city,
+      },
+      after: next,
     });
     return this.eventView(await this.event(id));
   }
@@ -385,7 +394,14 @@ export class RamadanService implements OnModuleInit {
       action: 'calendar_event.delete',
       targetType: 'calendar_event',
       targetId: id,
-      details: { kind: e.kind, name: e.name },
+      before: {
+        kind: e.kind,
+        name: e.name,
+        startsOn: e.startsOn,
+        endsOn: e.endsOn,
+        city: e.city,
+      },
+      after: null,
     });
     return { removed: true };
   }

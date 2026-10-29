@@ -168,6 +168,28 @@ export const ErrorCode = {
   PLAN_LIMIT_REACHED: 'PLAN_LIMIT_REACHED',
   /** A home kitchen goes live only after MetroMatrix's food-safety check. */
   FOOD_SAFETY_CHECK_REQUIRED: 'FOOD_SAFETY_CHECK_REQUIRED',
+
+  // ── Super admin ──
+  /** An admin signed in with a temporary password: change it first. */
+  PASSWORD_CHANGE_REQUIRED: 'PASSWORD_CHANGE_REQUIRED',
+  /** This action needs a fresh authenticator code in the body (`totpCode`). */
+  STEP_UP_REQUIRED: 'STEP_UP_REQUIRED',
+  /** Admins cannot disable, reset or re-permission their own account. */
+  SELF_ACTION_FORBIDDEN: 'SELF_ACTION_FORBIDDEN',
+  /** The change would leave no active super admin. */
+  LAST_SUPER_ADMIN: 'LAST_SUPER_ADMIN',
+  /** New accounts of this kind are paused (details.role). */
+  SIGNUPS_PAUSED: 'SIGNUPS_PAUSED',
+  /** This service is switched off for now (details.service). */
+  SERVICE_PAUSED: 'SERVICE_PAUSED',
+  /** The platform is in maintenance (details.message). */
+  MAINTENANCE: 'MAINTENANCE',
+  /** Push notifications are switched off on this server (PUSH_ENABLED). */
+  PUSH_DISABLED: 'PUSH_DISABLED',
+  /** A cookie request without the console's header or from another origin. */
+  CSRF_REJECTED: 'CSRF_REJECTED',
+  /** The console session was idle too long: sign in again. */
+  SESSION_IDLE: 'SESSION_IDLE',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

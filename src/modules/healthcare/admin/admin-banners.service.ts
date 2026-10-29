@@ -103,7 +103,8 @@ export class AdminBannersService {
       action: 'health.banner.create',
       targetType: 'health_banner',
       targetId: saved.id,
-      details: { title: dto.title, targetType: dto.targetType },
+      before: null,
+      after: healthBannerView(saved),
     });
     return healthBannerView(saved);
   }
@@ -148,6 +149,7 @@ export class AdminBannersService {
         : (b.startsAt?.toISOString() ?? null),
       dto.endsAt !== undefined ? dto.endsAt : (b.endsAt?.toISOString() ?? null),
     );
+    const before = healthBannerView(b);
     Object.assign(b, {
       imageUrl: dto.imageUrl ?? b.imageUrl,
       title: dto.title ?? b.title,
@@ -163,18 +165,23 @@ export class AdminBannersService {
       action: 'health.banner.update',
       targetType: 'health_banner',
       targetId: id,
-      details: { changed: Object.keys(dto) },
+      before,
+      after: healthBannerView(b),
     });
     return healthBannerView(b);
   }
 
   async remove(id: string) {
-    const res = await this.dataSource.manager.delete(HealthBanner, { id });
-    if (!res.affected) throw notFound();
+    const m = this.dataSource.manager;
+    const b = await m.findOne(HealthBanner, { where: { id } });
+    if (!b) throw notFound();
+    await m.delete(HealthBanner, { id });
     await this.audit.record({
       action: 'health.banner.delete',
       targetType: 'health_banner',
       targetId: id,
+      before: healthBannerView(b),
+      after: null,
     });
     return { deleted: true };
   }
@@ -187,6 +194,8 @@ export class AdminBannersService {
     const unique = [...new Set(ids)];
     if (unique.length !== ids.length)
       throw invalid('ids', 'Each banner may appear once.');
+    let previous: string[] = [];
+    let next: string[] = [];
     await this.dataSource.transaction(async (m) => {
       const all = await m.find(HealthBanner, {
         order: { sort: 'ASC', createdAt: 'DESC' },
@@ -200,12 +209,15 @@ export class AdminBannersService {
       ];
       for (const [i, id] of order.entries())
         await m.update(HealthBanner, { id }, { sort: i });
+      previous = all.map((b) => b.id);
+      next = order;
     });
     await this.audit.record({
       action: 'health.banner.reorder',
       targetType: 'health_banner',
       targetId: null,
-      details: { ids: unique },
+      before: { order: previous },
+      after: { order: next },
     });
     return this.list();
   }

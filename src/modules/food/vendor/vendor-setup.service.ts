@@ -242,7 +242,15 @@ export class VendorSetupService implements OnModuleInit {
       action: 'food.branch.food_safety',
       targetType: 'branch',
       targetId: branchId,
-      details: { outcome, note },
+      details: { outcome },
+      before: {
+        foodSafetyCheckedAt: branch.foodSafetyCheckedAt,
+        foodSafetyNote: branch.foodSafetyNote,
+      },
+      after: {
+        foodSafetyCheckedAt: outcome === 'passed' ? new Date() : null,
+        foodSafetyNote: note,
+      },
     });
     const v = await this.vendors.ensureForBusinessId(branch.businessId);
     return {

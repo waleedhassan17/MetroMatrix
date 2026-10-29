@@ -17,7 +17,30 @@ import {
 } from './dto/admin-health.dto';
 import { ErrorCode } from '../../../common/errors/codes';
 import { likeEscape, paged } from '../../../common/pagination/pagination';
-import { OperationalAuditService } from '../../../common/audit/operational-audit.service';
+import {
+  OperationalAuditService,
+  snapshot,
+} from '../../../common/audit/operational-audit.service';
+
+const SPECIALTY_FIELDS: (keyof Specialty & string)[] = [
+  'name',
+  'nameUr',
+  'slug',
+  'icon',
+  'description',
+  'keywords',
+  'sort',
+  'isActive',
+];
+const CONDITION_FIELDS: (keyof Condition & string)[] = [
+  'name',
+  'nameUr',
+  'slug',
+  'aliases',
+  'isCommon',
+  'icon',
+  'isActive',
+];
 
 const notFound = (what: string) =>
   new NotFoundException({
@@ -117,7 +140,8 @@ export class AdminReferenceService {
         action: 'health.specialty.create',
         targetType: 'specialty',
         targetId: s.id,
-        details: { slug: s.slug },
+        before: null,
+        after: snapshot(s, SPECIALTY_FIELDS),
       });
       return s;
     } catch (err) {
@@ -131,6 +155,7 @@ export class AdminReferenceService {
       return await this.dataSource.transaction(async (m) => {
         const s = await m.findOne(Specialty, { where: { id } });
         if (!s) throw notFound('Specialty');
+        const before = snapshot(s, SPECIALTY_FIELDS);
         Object.assign(s, {
           ...dto,
           keywords: dto.keywords ? words(dto.keywords) : s.keywords,
@@ -141,7 +166,9 @@ export class AdminReferenceService {
           action: 'health.specialty.update',
           targetType: 'specialty',
           targetId: id,
-          details: { changed: Object.keys(dto), doctorsRefreshed: refreshed },
+          details: { doctorsRefreshed: refreshed },
+          before,
+          after: snapshot(s, SPECIALTY_FIELDS),
         });
         return s;
       });
@@ -215,7 +242,8 @@ export class AdminReferenceService {
         action: 'health.condition.create',
         targetType: 'condition',
         targetId: c.id,
-        details: { slug: c.slug },
+        before: null,
+        after: snapshot(c, CONDITION_FIELDS),
       });
       return (await this.conditionViews([c]))[0];
     } catch (err) {
@@ -229,6 +257,7 @@ export class AdminReferenceService {
       const c = await this.dataSource.transaction(async (m) => {
         const c = await m.findOne(Condition, { where: { id } });
         if (!c) throw notFound('Condition');
+        const before = snapshot(c, CONDITION_FIELDS);
         Object.assign(c, {
           ...dto,
           aliases: dto.aliases ? words(dto.aliases) : c.aliases,
@@ -239,7 +268,9 @@ export class AdminReferenceService {
           action: 'health.condition.update',
           targetType: 'condition',
           targetId: id,
-          details: { changed: Object.keys(dto), doctorsRefreshed: refreshed },
+          details: { doctorsRefreshed: refreshed },
+          before,
+          after: snapshot(c, CONDITION_FIELDS),
         });
         return c;
       });
@@ -258,6 +289,10 @@ export class AdminReferenceService {
       const ids = [...new Set(list.map((x) => x.specialtyId))];
       const found = await m.count(Specialty, { where: { id: In(ids) } });
       if (found !== ids.length) throw notFound('Specialty');
+      const previous = await m.find(ConditionSpecialty, {
+        where: { conditionId: id },
+        order: { rank: 'ASC' },
+      });
       await m.delete(ConditionSpecialty, { conditionId: id });
       if (list.length) {
         await m.insert(
@@ -273,7 +308,17 @@ export class AdminReferenceService {
         action: 'health.condition.map',
         targetType: 'condition',
         targetId: id,
-        details: { specialties: list },
+        before: {
+          specialties: previous.map((p) => ({
+            specialtyId: p.specialtyId,
+            rank: p.rank,
+          })),
+        },
+        after: {
+          specialties: [...list]
+            .sort((a, b) => a.rank - b.rank)
+            .map((x) => ({ specialtyId: x.specialtyId, rank: x.rank })),
+        },
       });
       return c;
     });

@@ -24,6 +24,14 @@ const RECOVERY_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
 /** ±1 step (30 s) of clock drift between the server and the phone. */
 const totp = authenticator.clone({ window: 1 });
+const STEP_SECONDS = 30;
+
+/** The time-step `code` belongs to under `secret`, or null if it is wrong. */
+function matchStep(code: string, secret: string): number | null {
+  const delta = totp.checkDelta(code, secret);
+  if (delta === null) return null;
+  return Math.floor(Date.now() / 1000 / STEP_SECONDS) + delta;
+}
 
 export interface TotpEnrolment {
   otpauthUri: string;
@@ -90,7 +98,8 @@ export class TotpService {
         message: 'Start enrolment first (POST /admin/me/totp/enrol).',
       });
     }
-    if (!totp.check(code, open(fresh.totpPendingSecretEnc, this.encKey))) {
+    const step = matchStep(code, open(fresh.totpPendingSecretEnc, this.encKey));
+    if (step === null) {
       // 400, not 401: this route is called with a session the app should keep.
       throw new BadRequestException({
         code: ErrorCode.TOTP_INVALID,
@@ -103,6 +112,8 @@ export class TotpService {
       this.recoveryCode(),
     );
     await this.dataSource.transaction(async (m) => {
+      // A new secret, so its codes can't be replays of the old one's; the
+      // step is recorded (never lowered) so this very code can't sign in.
       await m.update(
         User,
         { id: user.id },
@@ -110,30 +121,56 @@ export class TotpService {
           totpSecretEnc: fresh.totpPendingSecretEnc,
           totpPendingSecretEnc: null,
           totpEnabled: true,
+          totpLastStep: () => `GREATEST(COALESCE(totp_last_step, 0), ${step})`,
         },
       );
       await m.delete(AdminRecoveryCode, { userId: user.id });
-      await m.insert(
-        AdminRecoveryCode,
-        recoveryCodes.map((c) => ({
-          userId: user.id,
-          codeHash: hashCode(
-            this.pepper,
-            RECOVERY_PURPOSE,
-            user.id,
-            normalizeRecovery(c),
-          ),
-          usedAt: null,
-        })),
-      );
+      await m.insert(AdminRecoveryCode, this.recoveryRows(user, recoveryCodes));
     });
     return { recoveryCodes };
   }
 
-  /** A current code from the enrolled authenticator? */
-  checkCode(user: User, code: string): boolean {
+  private recoveryRows(user: User, codes: string[]) {
+    return codes.map((c) => ({
+      userId: user.id,
+      codeHash: hashCode(
+        this.pepper,
+        RECOVERY_PURPOSE,
+        user.id,
+        normalizeRecovery(c),
+      ),
+      usedAt: null,
+    }));
+  }
+
+  /**
+   * A current code from the enrolled authenticator, never used before? The
+   * code's time-step is spent: the same code (or an older one) is refused
+   * from then on — at sign-in, for a rotation and for step-up alike.
+   */
+  async spendCode(user: User, code: string): Promise<boolean> {
     if (!user.totpEnabled || !user.totpSecretEnc) return false;
-    return totp.check(code, open(user.totpSecretEnc, this.encKey));
+    const step = matchStep(code, open(user.totpSecretEnc, this.encKey));
+    return step !== null && this.spendStep(user, step);
+  }
+
+  /**
+   * One conditional UPDATE: of two requests with the same code, exactly one
+   * wins. The loaded row is updated too, so a later save() of it cannot
+   * write the old step back.
+   */
+  private async spendStep(user: User, step: number): Promise<boolean> {
+    const res = await this.dataSource
+      .getRepository(User)
+      .createQueryBuilder()
+      .update()
+      .set({ totpLastStep: step })
+      .where('id = :id', { id: user.id })
+      .andWhere('(totp_last_step IS NULL OR totp_last_step < :step)', { step })
+      .execute();
+    if (!res.affected) return false;
+    user.totpLastStep = step;
+    return true;
   }
 
   /**
@@ -151,7 +188,7 @@ export class TotpService {
         details: { enrolmentRequired: true },
       });
     }
-    if (input.code && this.checkCode(user, input.code)) return 'totp';
+    if (input.code && (await this.spendCode(user, input.code))) return 'totp';
     if (
       input.recoveryCode &&
       (await this.spendRecoveryCode(user.id, input.recoveryCode))
@@ -162,6 +199,20 @@ export class TotpService {
       code: ErrorCode.TOTP_INVALID,
       message: 'That code is not right.',
     });
+  }
+
+  /** A fresh set of recovery codes (returned once); the old set stops working. */
+  async regenerateRecoveryCodes(
+    user: User,
+  ): Promise<{ recoveryCodes: string[] }> {
+    const recoveryCodes = Array.from({ length: RECOVERY_CODE_COUNT }, () =>
+      this.recoveryCode(),
+    );
+    await this.dataSource.transaction(async (m) => {
+      await m.delete(AdminRecoveryCode, { userId: user.id });
+      await m.insert(AdminRecoveryCode, this.recoveryRows(user, recoveryCodes));
+    });
+    return { recoveryCodes };
   }
 
   remainingRecoveryCodes(userId: string): Promise<number> {

@@ -114,7 +114,8 @@ export class FoodBannersService implements OnModuleInit {
       action: 'food.banner.create',
       targetType: 'food_banner',
       targetId: saved.id,
-      details: { title: saved.title, targetType: saved.targetType },
+      before: null,
+      after: foodBannerView(saved),
     });
     return foodBannerView(saved);
   }
@@ -124,6 +125,7 @@ export class FoodBannersService implements OnModuleInit {
       where: { id },
     });
     if (!b) throw notFound();
+    const before = foodBannerView(b);
     if (dto.imageUrl !== undefined && dto.imageUrl !== b.imageUrl) {
       this.media.assertOwnedAsset(
         adminId,
@@ -151,18 +153,24 @@ export class FoodBannersService implements OnModuleInit {
       action: 'food.banner.update',
       targetType: 'food_banner',
       targetId: id,
-      details: { fields: Object.keys(dto) },
+      before,
+      after: foodBannerView(saved),
     });
     return foodBannerView(saved);
   }
 
   async remove(id: string) {
-    const res = await this.dataSource.manager.delete(FoodBanner, { id });
-    if (!res.affected) throw notFound();
+    const b = await this.dataSource.manager.findOne(FoodBanner, {
+      where: { id },
+    });
+    if (!b) throw notFound();
+    await this.dataSource.manager.delete(FoodBanner, { id });
     await this.audit.record({
       action: 'food.banner.delete',
       targetType: 'food_banner',
       targetId: id,
+      before: foodBannerView(b),
+      after: null,
     });
     return { deleted: true };
   }

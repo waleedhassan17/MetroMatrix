@@ -62,6 +62,8 @@ export interface AccountSnapshot {
 )
 @Index(['code'], { unique: true })
 @Index(['doctorId', 'startsAt'])
+// Bookings made per period (admin overview, analytics).
+@Index('IDX_appointments_created_at', ['createdAt'])
 @Index('IDX_appointments_patient_starts', { synchronize: false })
 @Index(['status', 'payBy'])
 @Check('CHK_appointments_times', '"ends_at" > "starts_at" AND "fee" >= 0')

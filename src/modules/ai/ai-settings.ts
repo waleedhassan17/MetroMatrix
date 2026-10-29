@@ -43,9 +43,17 @@ export class AiSettings {
     this.ttsProvider = ai?.ttsProvider ?? 'none';
   }
 
+  /**
+   * The platform setting `ai.enabled` (console kill switch), on top of
+   * AI_ENABLED. Set by PlatformSettingsService at module init.
+   */
+  platformAllows: () => boolean = () => true;
+
   isOn(feature: AiFeature): boolean {
     return (
-      this.enabled && (this.features === 'all' || this.features.has(feature))
+      this.enabled &&
+      this.platformAllows() &&
+      (this.features === 'all' || this.features.has(feature))
     );
   }
 }

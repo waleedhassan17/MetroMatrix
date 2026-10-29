@@ -1,6 +1,7 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { SwaggerModule } from '@nestjs/swagger';
+import { buildOpenApi } from './common/swagger/openapi';
 import helmet from 'helmet';
 import compression from 'compression';
 import { validationExceptionFactory } from './common/validation/validation-exception.factory';
@@ -36,7 +37,13 @@ export function configureApp(app: INestApplication): void {
   // CORS — an allow-list. The mobile app sends no Origin and is always
   // allowed; a browser origin not on the list simply gets no CORS headers
   // (FinMatrix threw here, which surfaced as a 500).
-  const corsOrigins = config.get<string[]>('app.corsOrigins', []);
+  // The web console is normally same-origin (a Vercel rewrite); listing it
+  // here covers a deployment that calls the API cross-origin.
+  const adminOrigin = config.get<string>('adminWeb.origin', '');
+  const corsOrigins = [
+    ...config.get<string[]>('app.corsOrigins', []),
+    ...(adminOrigin ? [adminOrigin] : []),
+  ];
   app.useWebSocketAdapter(new ConfiguredIoAdapter(app, corsOrigins));
   app.enableCors({
     origin: (origin, callback) => {
@@ -50,6 +57,8 @@ export function configureApp(app: INestApplication): void {
       'Authorization',
       'X-Request-Id',
       'Idempotency-Key',
+      'X-Client',
+      'X-Requested-With',
     ],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     maxAge: 86400,
@@ -67,19 +76,13 @@ export function configureApp(app: INestApplication): void {
     }),
   );
 
-  // Swagger — only when enabled. JSON at /api/docs-json.
+  // Swagger — only when enabled. JSON at /api/docs-json. The same document
+  // as `npm run openapi:export` (common/swagger/openapi.ts).
   if (config.get<boolean>('app.swaggerEnabled')) {
-    const swaggerConfig = new DocumentBuilder()
-      .setTitle('MetroMatrix API')
-      .setDescription(
-        'Zero-commission community marketplace: Shopping, Healthcare, Food. ' +
-          'Every response is enveloped: { success, data } or { success: false, error: { code, message, details? } }.',
-      )
-      .setVersion(appVersion())
-      .addBearerAuth()
-      .addServer(config.get<string>('app.appUrl', 'http://localhost:3000'))
-      .build();
-    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    const document = buildOpenApi(app, {
+      version: appVersion(),
+      serverUrl: config.get<string>('app.appUrl', 'http://localhost:3000'),
+    });
     SwaggerModule.setup('api/docs', app, document, {
       swaggerOptions: { persistAuthorization: true },
     });

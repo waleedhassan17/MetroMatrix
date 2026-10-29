@@ -391,6 +391,34 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   plan with subscribers, a catering request, a Ramadan event, a story and search events. Part 3
   (5C) adds nutrition mappings, a fictional demo grocer with pack sizes and a demo pantry.
 
+## Super admin and the web console
+
+- Contracts: `docs/ADMIN_PERMISSIONS.md` (who may call what), `docs/ADMIN_API.md` (sessions,
+  step-up, settings, broadcasts, audit), `openapi.json` (`npm run openapi:export`, committed —
+  the web console `MetroMatrix-Admin` generates its types from it; re-export after any change
+  to an admin or auth route).
+- **Permissions.** 11 keys in `src/types/admin-permissions.ts` (the only list; the users CHECK is
+  generated from it). Every admin controller carries `@RequirePermission(key)` (or `@AdminAny()`);
+  `PermissionsGuard` fails closed, and `test/admin-permissions.e2e-spec.ts` discovers every
+  `/admin` route and fails on one without a mapping. Super admin only: `@Roles('super_admin')`.
+- **Guard order:** Throttler → JwtAuth → Platform (maintenance, kill switches) → Roles →
+  Permissions → AdminSession (temporary password / no TOTP) → StepUp (`@RequireStepUp()`:
+  `totpCode` in the body, its 30 s step spent once — at sign-in too).
+- **Admin writes are audited exactly once, with before/after.** Pass full `before`/`after`
+  snapshots to `OperationalAuditService.record` (it keeps the changed fields). Every e2e
+  suite checks this for the admin writes its ApiClients make (`test/utils/test-app.ts`, the
+  audit probe), and `AdminAuditInterceptor` writes a generic row (and warns) if a route forgets.
+  A write whose answer re-reads PHI must not add a second row (see `admin-appointments`).
+  The table is append-only (trigger, migration `AuditTrail`). Never put a secret in a row.
+- **Secrets shown once** (temporary passwords, recovery codes) are `@SkipIdempotency()`.
+- **Platform settings** live only in `src/modules/platform/settings-schema.ts`; enforcement is
+  `PlatformGuard` plus hooks set at module init (`AuthService.signupGate`,
+  `GoogleAuthService.signupGate`, `AiSettings.platformAllows`).
+- **Console sessions:** `X-Client: admin-web` → refresh token only in the `mm_admin_rt` cookie
+  (`src/modules/auth/web/`); `refresh_tokens.client` keeps app and console tokens apart.
+- Tests: `freshTotp(t, admin)` clears the spent step (a fresh code); `limitedAdmin(t, root, keys)`
+  makes an admin the way the console does; `ApiClient.headers` for Origin/X-Client.
+
 ## Keep in sync when the API changes
 
 - `docs/API_AUTH.md`, `docs/API_SHOPPING.md`, `docs/API_HEALTH.md` (+ `docs/VIDEO.md`),
@@ -406,6 +434,7 @@ write and every auth event worth investigating gets one. Actions are dotted verb
 - `docs/API_KITCHEN.md`, `docs/AI.md` (its smoke table, written by `npm run ai:smoke`),
   `docs/VOICE.md` (its accuracy table, written by `npm run voice:eval`).
 - `.env.example` and `env.validation.ts` — together, always.
+- `openapi.json` (`npm run openapi:export`) and `docs/ADMIN_PERMISSIONS.md` for any admin route.
 
 ## Commands
 

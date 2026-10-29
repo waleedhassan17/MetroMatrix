@@ -9,6 +9,7 @@ import { ConfirmTotpDto } from '../auth/dto/totp.dto';
 import { OperationalAuditService } from '../../common/audit/operational-audit.service';
 import { ClientInfo } from '../../common/decorators/client-info.decorator';
 import { ErrorCode } from '../../common/errors/codes';
+import type { SessionClient } from '../auth/web/admin-web-session';
 
 /** /admin/me/totp — enrolling (or rotating) an admin's authenticator. */
 @Injectable()
@@ -30,6 +31,7 @@ export class AdminTotpService {
     via: TotpAuth,
     dto: ConfirmTotpDto,
     client: ClientInfo,
+    kind: SessionClient = 'app',
   ): Promise<{ recoveryCodes: string[]; auth: AuthResult | null }> {
     const user = await this.users.getByIdOrFail(userId);
     const rotation = user.totpEnabled;
@@ -37,7 +39,7 @@ export class AdminTotpService {
     // session alone must not be able to move the second factor.
     if (
       rotation &&
-      !(dto.currentCode && this.totp.checkCode(user, dto.currentCode))
+      !(dto.currentCode && (await this.totp.spendCode(user, dto.currentCode)))
     ) {
       throw new BadRequestException({
         code: ErrorCode.TOTP_INVALID,
@@ -58,10 +60,16 @@ export class AdminTotpService {
       // First enrolment completes the sign-in the challenge started.
       await this.tokens.denylist(via.jti, user.id, via.exp);
       const fresh = await this.users.getByIdOrFail(user.id);
-      auth = await this.auth.completeSignin(fresh, client, {
-        portal: 'admin',
-        method: 'totp_enrol',
-      });
+      auth = await this.auth.completeSignin(
+        fresh,
+        client,
+        {
+          portal: 'admin',
+          method: 'totp_enrol',
+          ...(kind === 'admin_web' ? { client: kind } : {}),
+        },
+        kind,
+      );
     }
     return { recoveryCodes, auth };
   }

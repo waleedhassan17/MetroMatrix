@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+} from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { UserDevice } from '../users/entities/user-device.entity';
@@ -61,7 +65,19 @@ export class AccountService {
         });
       }
     }
+    const forced = user.mustChangePassword;
+    // A temporary password from a super admin must really be replaced.
+    if (forced && currentPassword === newPassword) {
+      throw new BadRequestException({
+        code: ErrorCode.VALIDATION_FAILED,
+        message: 'Choose a password different from the temporary one.',
+        details: {
+          fields: { newPassword: ['must differ from the temporary password'] },
+        },
+      });
+    }
     user.passwordHash = await this.hasher.hash(newPassword);
+    user.mustChangePassword = false;
     await this.users.save(user);
     await this.tokens.revokeAllForUser(user.id, currentSid);
     await this.audit.record({
@@ -69,7 +85,13 @@ export class AccountService {
       action: 'auth.password_changed',
       targetType: 'user',
       targetId: user.id,
-      details: { firstPassword: !hadPassword },
+      details: { firstPassword: !hadPassword, forced },
+      ...(forced
+        ? {
+            before: { mustChangePassword: true },
+            after: { mustChangePassword: false },
+          }
+        : {}),
     });
     return { changed: true };
   }

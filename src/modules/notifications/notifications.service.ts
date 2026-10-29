@@ -158,20 +158,36 @@ export class NotificationsService implements OnModuleInit {
       };
     });
 
+    await this.pushToDevices(messages);
+  }
+
+  /** PUSH_ENABLED: off in dev and tests, on in production. */
+  get pushEnabled(): boolean {
+    return this.push.enabled;
+  }
+
+  /**
+   * Push ready-made messages in Expo's batches of 100, pruning tokens Expo
+   * says are gone. Returns how many Expo accepted and refused. Shared with
+   * console broadcasts, so dead-token handling lives here only.
+   */
+  async pushToDevices(
+    messages: ExpoMessage[],
+  ): Promise<{ ok: number; failed: number }> {
+    let ok = 0;
     const dead: string[] = [];
     for (let i = 0; i < messages.length; i += EXPO_BATCH_SIZE) {
       const batch = messages.slice(i, i + EXPO_BATCH_SIZE);
       const tickets = await this.push.send(batch);
       tickets.forEach((ticket, j) => {
-        if (
-          ticket.status === 'error' &&
-          ticket.details?.error === 'DeviceNotRegistered'
-        ) {
+        if (ticket.status === 'ok') ok += 1;
+        else if (ticket.details?.error === 'DeviceNotRegistered') {
           dead.push(batch[j].to);
         }
       });
     }
     // An uninstalled app's token will never work again.
     if (dead.length) await this.devices.delete({ expoPushToken: In(dead) });
+    return { ok, failed: messages.length - ok };
   }
 }

@@ -78,7 +78,8 @@ export class AliasesService {
       action: 'kitchen.alias.create',
       targetType: 'ingredient_alias',
       targetId: a.id,
-      details: { alias, canonical: a.canonical, lang: a.lang },
+      before: null,
+      after: { alias, canonical: a.canonical, lang: a.lang },
     });
     return { id: a.id, alias: a.alias, canonical: a.canonical, lang: a.lang };
   }
@@ -96,7 +97,8 @@ export class AliasesService {
       action: 'kitchen.alias.delete',
       targetType: 'ingredient_alias',
       targetId: id,
-      details: { alias: a.alias, canonical: a.canonical },
+      before: { alias: a.alias, canonical: a.canonical, lang: a.lang },
+      after: null,
     });
     return { removed: true };
   }

@@ -22,6 +22,11 @@ export const REDACT_PATHS = [
     'idToken',
     'resetToken',
     'challengeToken',
+    'totpCode',
+    'currentCode',
+    'temporaryPassword',
+    'recoveryCodes',
+    'secret',
   ].flatMap((k) => [k, `*.${k}`, `req.body.${k}`]),
   // A TOTP code travels as `code`; only the request body form is redacted, so
   // error codes (Postgres `23505`, `ECONNREFUSED`) stay readable in logs.

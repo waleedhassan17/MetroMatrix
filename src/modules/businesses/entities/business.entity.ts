@@ -37,6 +37,8 @@ const coordinate = {
     ` OR ("sub_type" IN ('restaurant', 'home_kitchen', 'cloud_kitchen') AND "service_type" = 'food')`,
 )
 @Index(['status', 'createdAt'])
+// Businesses by service and status (admin overview, approval queue).
+@Index('IDX_businesses_service_status', ['serviceType', 'status'])
 // A PMDC registration belongs to one doctor's business (only doctors have one).
 @Index('UQ_businesses_pmdc_number', ['pmdcNumber'], {
   unique: true,

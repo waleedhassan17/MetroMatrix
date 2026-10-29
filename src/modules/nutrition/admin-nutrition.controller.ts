@@ -1,4 +1,13 @@
 import {
+  AdminNutritionActivateView,
+  AdminNutritionCreateView,
+  AdminNutritionImportView,
+  AdminNutritionListView,
+  AdminNutritionRemoveView,
+  AdminNutritionUpdateView,
+} from './admin-nutrition.response';
+import { ApiEnvelopeOk, ApiPagedOk } from '../../common/swagger/api-envelope';
+import {
   Body,
   Controller,
   Delete,
@@ -12,6 +21,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { AdminNutritionService } from './admin-nutrition.service';
 import {
   AdminFoodsQueryDto,
@@ -24,12 +34,14 @@ import {
 @ApiTags('admin · nutrition')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageKitchen')
 @Controller('admin/nutrition/foods')
 export class AdminNutritionController {
   constructor(private readonly foods: AdminNutritionService) {}
 
   @Get()
   @ApiOperation({ summary: '?q&source=usda_sr_legacy|staff&active&page' })
+  @ApiPagedOk(AdminNutritionListView)
   list(@Query() q: AdminFoodsQueryDto) {
     return this.foods.list(q);
   }
@@ -38,6 +50,7 @@ export class AdminNutritionController {
   @ApiOperation({
     summary: 'Values per 100 g; source staff. 409 CONFLICT on a used key.',
   })
+  @ApiEnvelopeOk(AdminNutritionCreateView, { status: 201 })
   create(@Body() dto: NutritionFoodDto) {
     return this.foods.create(dto);
   }
@@ -47,6 +60,7 @@ export class AdminNutritionController {
   @ApiOperation({
     summary: '{ csv } — insert or update by key; bad rows by line.',
   })
+  @ApiEnvelopeOk(AdminNutritionImportView)
   import(@Body() dto: FoodsCsvDto) {
     return this.foods.import(dto.csv);
   }
@@ -55,6 +69,7 @@ export class AdminNutritionController {
   @ApiOperation({
     summary: 'An edited USDA row becomes source staff (its USDA id kept).',
   })
+  @ApiEnvelopeOk(AdminNutritionUpdateView)
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateNutritionFoodDto,
@@ -66,12 +81,14 @@ export class AdminNutritionController {
   @ApiOperation({
     summary: 'Deactivate (mappings keep pointing at it; it stops counting).',
   })
+  @ApiEnvelopeOk(AdminNutritionRemoveView)
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.foods.setActive(id, false);
   }
 
   @Post(':id/activate')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminNutritionActivateView)
   activate(@Param('id', ParseUUIDPipe) id: string) {
     return this.foods.setActive(id, true);
   }

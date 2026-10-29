@@ -93,6 +93,9 @@ describe('Menu assistant and review insights (Chunk 5 P9)', () => {
   it('describe: English + Urdu-script draft; health claims and Roman Urdu are refused; nothing saved until the PATCH (QA #29 basis)', async () => {
     const v = await kitchen('Assistant Describe Kitchen');
     const karahi = await itemId(t, v);
+    // Every demo kitchen's karahi is the same dish, so another suite's
+    // cached description would answer instead of the model: start clean.
+    await t.ds.query(`DELETE FROM ai_cache WHERE prompt_id = 'describe'`);
     const good = {
       en: 'Chicken cooked hard and fast in a wok with tomatoes, green chillies and fresh ginger.',
       ur: 'ٹماٹر، ہری مرچ اور تازہ ادرک کے ساتھ تیز آنچ پر پکی چکن کڑاہی۔',

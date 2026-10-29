@@ -45,4 +45,15 @@ export class RefreshToken extends BaseEntity {
 
   @Column({ type: 'varchar', length: 64, nullable: true })
   ip!: string | null;
+
+  /**
+   * `app` (body tokens, /auth/refresh-token) or `admin_web` (the console's
+   * HttpOnly cookie, /auth/web/*). Each endpoint refuses the other kind.
+   */
+  @Column({ type: 'varchar', length: 16, default: 'app' })
+  client!: 'app' | 'admin_web';
+
+  /** When the family signed in — the console's absolute session limit. */
+  @Column({ type: 'timestamptz', name: 'session_started_at', nullable: true })
+  sessionStartedAt!: Date | null;
 }

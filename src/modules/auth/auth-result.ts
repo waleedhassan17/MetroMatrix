@@ -39,10 +39,22 @@ export interface BusinessSummary {
   };
 }
 
+/** Admins only: what the console needs to route and gate its screens. */
+export interface AdminSessionView {
+  isSuperAdmin: boolean;
+  /** Effective: a super admin lists every key. */
+  permissions: string[];
+  mustChangePassword: boolean;
+  totpEnabled: boolean;
+  recoveryCodesRemaining: number;
+}
+
 /** GET /auth/me — and the body of AuthResult minus tokens. */
 export interface AccountView {
   user: AuthUser;
   business: BusinessSummary | null;
+  /** Present for admin and super_admin accounts only. */
+  admin?: AdminSessionView;
 }
 
 /** signup, signin, Google, admin TOTP. */

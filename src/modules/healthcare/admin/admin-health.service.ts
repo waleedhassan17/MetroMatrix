@@ -103,23 +103,27 @@ export class AdminHealthService {
       targetType: 'doctor',
       targetId: id,
       details: { pmdcNumber: d.pmdcNumber, note },
+      before: { pmdcVerified: !!d.pmdcVerifiedAt },
+      after: { pmdcVerified: true },
     });
     return { id, pmdcNumber: d.pmdcNumber, pmdcVerified: true };
   }
 
   /** Withdraw verification — the doctor is also taken off the directory. */
   async pmdcUnverify(id: string, reason: string) {
-    const res = await this.dataSource.manager.update(
+    const before = await this.state(id);
+    await this.dataSource.manager.update(
       Doctor,
       { id },
       { pmdcVerifiedAt: null, pmdcVerifiedBy: null, isListed: false },
     );
-    if (!res.affected) throw notFound();
     await this.audit.record({
       action: 'health.doctor.pmdc_unverify',
       targetType: 'doctor',
       targetId: id,
       details: { reason },
+      before,
+      after: { ...before, pmdcVerified: false, isListed: false },
     });
     await this.events.availabilityChanged(id);
     return { id, pmdcVerified: false, isListed: false };
@@ -127,17 +131,18 @@ export class AdminHealthService {
 
   /** Take a doctor off the directory; they can't republish until support clears it. */
   async unlist(id: string, reason: string) {
-    const res = await this.dataSource.manager.update(
+    const before = await this.state(id);
+    await this.dataSource.manager.update(
       Doctor,
       { id },
       { isListed: false, unlistedReason: reason },
     );
-    if (!res.affected) throw notFound();
     await this.audit.record({
       action: 'health.doctor.unlist',
       targetType: 'doctor',
       targetId: id,
-      details: { reason },
+      before,
+      after: { ...before, isListed: false, unlistedReason: reason },
     });
     await this.events.availabilityChanged(id);
     return { id, isListed: false, unlistedReason: reason };
@@ -145,17 +150,38 @@ export class AdminHealthService {
 
   /** Clear an admin unlisting (the doctor republishes themselves). */
   async clearUnlist(id: string) {
-    const res = await this.dataSource.manager.update(
+    const before = await this.state(id);
+    await this.dataSource.manager.update(
       Doctor,
       { id },
       { unlistedReason: null },
     );
-    if (!res.affected) throw notFound();
     await this.audit.record({
       action: 'health.doctor.clear_unlist',
       targetType: 'doctor',
       targetId: id,
+      before,
+      after: { ...before, unlistedReason: null },
     });
     return { id, unlistedReason: null };
+  }
+
+  /** The fields these actions change, before one of them (404 if no doctor). */
+  private async state(id: string) {
+    const d = await this.dataSource.manager.findOne(Doctor, {
+      where: { id },
+      select: {
+        id: true,
+        pmdcVerifiedAt: true,
+        isListed: true,
+        unlistedReason: true,
+      },
+    });
+    if (!d) throw notFound();
+    return {
+      pmdcVerified: !!d.pmdcVerifiedAt,
+      isListed: d.isListed,
+      unlistedReason: d.unlistedReason,
+    };
   }
 }

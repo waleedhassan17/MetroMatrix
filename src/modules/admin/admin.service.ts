@@ -23,6 +23,7 @@ import { ErrorCode } from '../../common/errors/codes';
 import { likeEscape, paged } from '../../common/pagination/pagination';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { isAdminRole } from '../../types';
+import { assertSuperAdminRemains } from './admins/super-admin-invariant';
 import {
   AdminBusinessQueryDto,
   AdminUserQueryDto,
@@ -118,6 +119,7 @@ export class AdminService {
   /** pending_approval → approved. Documents still pending are accepted. */
   async approve(admin: AuthenticatedUser, id: string): Promise<BusinessDetail> {
     const business = await this.findBusiness(id);
+    const from = business.status;
     await this.dataSource.transaction(async (m) => {
       await this.businessesService.transition(m, business, 'approved', {
         reviewedAt: new Date(),
@@ -136,6 +138,8 @@ export class AdminService {
       action: 'business.approve',
       targetType: 'business',
       targetId: business.id,
+      before: { status: from },
+      after: { status: 'approved' },
     });
     await this.notifyOwner(business, (to, name) =>
       this.mail.sendBusinessApproved(to, name, business.name),
@@ -150,6 +154,7 @@ export class AdminService {
     dto: RejectBusinessDto,
   ): Promise<BusinessDetail> {
     const business = await this.findBusiness(id);
+    const from = business.status;
     const notes = dto.documentNotes ?? [];
     const docs = notes.length
       ? await this.documents.find({
@@ -190,6 +195,8 @@ export class AdminService {
       targetType: 'business',
       targetId: business.id,
       details: { reason: dto.reason, documentNotes: notes },
+      before: { status: from, rejectionReason: business.rejectionReason },
+      after: { status: 'rejected', rejectionReason: dto.reason },
     });
     const labelled = notes.map((n) => ({
       label:
@@ -213,6 +220,7 @@ export class AdminService {
   /** approved → suspended. Takes effect on the partner's next request. */
   async suspend(admin: AuthenticatedUser, id: string, reason: string) {
     const business = await this.findBusiness(id);
+    const from = business.status;
     await this.businessesService.transition(
       this.dataSource.manager,
       business,
@@ -228,6 +236,8 @@ export class AdminService {
       targetType: 'business',
       targetId: business.id,
       details: { reason },
+      before: { status: from, suspensionReason: null },
+      after: { status: 'suspended', suspensionReason: reason },
     });
     await this.notifyOwner(business, (to, name) =>
       this.mail.sendBusinessSuspended(to, name, business.name, reason),
@@ -242,6 +252,8 @@ export class AdminService {
   /** suspended → approved. */
   async reinstate(admin: AuthenticatedUser, id: string, reason: string) {
     const business = await this.findBusiness(id);
+    const from = business.status;
+    const wasReason = business.suspensionReason;
     await this.businessesService.transition(
       this.dataSource.manager,
       business,
@@ -257,6 +269,8 @@ export class AdminService {
       targetType: 'business',
       targetId: business.id,
       details: { reason },
+      before: { status: from, suspensionReason: wasReason },
+      after: { status: 'approved', suspensionReason: null },
     });
     await this.notifyOwner(business, (to, name) =>
       this.mail.sendBusinessApproved(to, name, business.name, {
@@ -277,6 +291,19 @@ export class AdminService {
     if (q.role) qb.andWhere('u.role = :role', { role: q.role });
     if (q.status) qb.andWhere('u.status = :status', { status: q.status });
     else qb.andWhere(`u.status <> 'deleted'`);
+    if (q.verified !== undefined) {
+      qb.andWhere('u.is_email_verified = :verified', { verified: q.verified });
+    }
+    if (q.service) {
+      qb.andWhere(
+        'EXISTS (SELECT 1 FROM businesses b WHERE b.owner_user_id = u.id AND b.service_type = :service)',
+        { service: q.service },
+      );
+    }
+    if (q.createdFrom) {
+      qb.andWhere('u.created_at >= :from', { from: q.createdFrom });
+    }
+    if (q.createdTo) qb.andWhere('u.created_at < :to', { to: q.createdTo });
     if (q.q) {
       qb.andWhere(
         '(u.email ILIKE :q OR u.display_name ILIKE :q OR u.phone ILIKE :q)',
@@ -302,6 +329,9 @@ export class AdminService {
     this.assertMayManage(actor, target);
     if (target.status === 'active') {
       await this.dataSource.transaction(async (m) => {
+        if (target.role === 'super_admin') {
+          await assertSuperAdminRemains(m, target.id);
+        }
         await m.update(
           User,
           { id: target.id },
@@ -315,9 +345,52 @@ export class AdminService {
         targetType: 'user',
         targetId: target.id,
         details: { reason: reason ?? null },
+        before: { status: 'active' },
+        after: { status: 'disabled' },
       });
     }
     return this.userView(target);
+  }
+
+  /** The person: profile, businesses, last sign-in and live sessions. */
+  async getUser(id: string) {
+    const user = await this.findUser(id);
+    const businesses = await this.businesses.find({
+      where: { ownerUserId: user.id },
+      order: { createdAt: 'DESC' },
+    });
+    const [{ count }] = (await this.dataSource.query(
+      `SELECT count(DISTINCT family_id)::int AS count FROM refresh_tokens
+        WHERE user_id = $1 AND revoked_at IS NULL AND expires_at > now()`,
+      [user.id],
+    )) as Array<{ count: number }>;
+    return {
+      ...this.userView(user),
+      businesses: businesses.map((b) => toBusinessView(b)),
+      sessionCount: count,
+    };
+  }
+
+  /** Every device signed out at once: refresh families and access tokens. */
+  async signOutEverywhere(actor: AuthenticatedUser, id: string) {
+    const target = await this.findUser(id);
+    this.assertMayManage(actor, target);
+    await this.dataSource.transaction(async (m) => {
+      await m.update(
+        User,
+        { id: target.id },
+        { tokenVersion: () => 'token_version + 1' },
+      );
+      await this.tokens.revokeAllForUser(target.id, undefined, m);
+    });
+    await this.audit.record({
+      action: 'user.sign_out_everywhere',
+      targetType: 'user',
+      targetId: target.id,
+      before: { tokenVersion: target.tokenVersion },
+      after: { tokenVersion: target.tokenVersion + 1 },
+    });
+    return { signedOut: true as const };
   }
 
   async enableUser(actor: AuthenticatedUser, id: string) {
@@ -330,6 +403,8 @@ export class AdminService {
         action: 'user.enable',
         targetType: 'user',
         targetId: target.id,
+        before: { status: 'disabled' },
+        after: { status: 'active' },
       });
     }
     return this.userView(target);
@@ -351,7 +426,7 @@ export class AdminService {
   private assertMayManage(actor: AuthenticatedUser, target: User): void {
     if (actor.id === target.id) {
       throw new ForbiddenException({
-        code: ErrorCode.FORBIDDEN,
+        code: ErrorCode.SELF_ACTION_FORBIDDEN,
         message: 'You cannot change the status of your own account.',
       });
     }

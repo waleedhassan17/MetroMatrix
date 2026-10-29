@@ -138,13 +138,15 @@ export class AdminNutritionService {
     const f = await this.repo().save(
       this.repo().create({ key, source: 'staff', ...this.values(dto) }),
     );
+    const created = foodView(await this.own(f.id));
     await this.audit.record({
       action: 'nutrition.food.create',
       targetType: 'nutrition_food',
       targetId: f.id,
-      details: { key },
+      before: null,
+      after: created,
     });
-    return foodView(await this.own(f.id));
+    return created;
   }
 
   async update(id: string, dto: UpdateNutritionFoodDto) {
@@ -152,17 +154,19 @@ export class AdminNutritionService {
     const next = { ...f, ...this.values(dto) };
     this.checkMacros(next);
     await this.repo().update({ id }, { ...this.values(dto), source: 'staff' });
+    const after = foodView(await this.own(id));
     await this.audit.record({
       action: 'nutrition.food.update',
       targetType: 'nutrition_food',
       targetId: id,
-      details: { changed: Object.keys(dto), wasSource: f.source },
+      before: foodView(f),
+      after,
     });
-    return foodView(await this.own(id));
+    return after;
   }
 
   async setActive(id: string, isActive: boolean) {
-    await this.own(id);
+    const f = await this.own(id);
     await this.repo().update({ id }, { isActive });
     await this.audit.record({
       action: isActive
@@ -170,6 +174,8 @@ export class AdminNutritionService {
         : 'nutrition.food.deactivate',
       targetType: 'nutrition_food',
       targetId: id,
+      before: { isActive: f.isActive },
+      after: { isActive },
     });
     return { id, isActive };
   }
@@ -242,7 +248,10 @@ export class AdminNutritionService {
       action: 'nutrition.food.import',
       targetType: 'nutrition_food',
       targetId: null,
-      details: { inserted, updated, rejected: errors.length },
+      details: { rejected: errors.length },
+      // A bulk change: its size, not every row.
+      before: null,
+      after: { inserted, updated },
     });
     return { inserted, updated, rejected: errors.length, errors };
   }

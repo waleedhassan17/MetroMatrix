@@ -99,6 +99,25 @@ Rules:
   # A model behind the symptom checker; leave unset for the keyword matcher.
   heroku config:set -a metromatrix-api GEMINI_API_KEY='<key>'   # optional GEMINI_MODEL
   ```
+- The **super admin web console** (`MetroMatrix-Admin`, docs/ADMIN_API.md §1.2):
+  ```bash
+  # The console's exact origin. Unset: console sign-in and its cookie refresh are refused.
+  heroku config:set -a metromatrix-api ADMIN_WEB_ORIGIN='https://admin.yourdomain.com'
+  # Optional, shown with their defaults:
+  heroku config:set -a metromatrix-api ADMIN_REFRESH_TTL=12h ADMIN_IDLE_MINUTES=30 ADMIN_ACCESS_EXPIRES_IN=10m
+  ```
+  The console must reach the API **same-site** (its refresh cookie is `SameSite=Strict`):
+  deploy it on Vercel with the rewrite `/api/:path*` → `https://<this app>.herokuapp.com/api/:path*`
+  (the console's `vercel.json`), so every API call, and the cookie, is first-party to
+  `ADMIN_WEB_ORIGIN`.
+
+  | Variable | Default | Meaning |
+  |---|---|---|
+  | `ADMIN_WEB_ORIGIN` | (unset) | The console's origin, checked exactly on every cookie request |
+  | `ADMIN_REFRESH_TTL` | `12h` | Longest a console session lives, refreshes included |
+  | `ADMIN_IDLE_MINUTES` | `30` | No refresh for this long ends a console session |
+  | `ADMIN_ACCESS_EXPIRES_IN` | `10m` | Access-token lifetime of admin accounts (app and console) |
+  | `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` | — | One command only (§5); never stored as config vars |
 
 ## 4. Deploy
 
@@ -121,7 +140,9 @@ heroku run -a metromatrix-api \
   npm run seed:superadmin:prod
 ```
 Then sign in on the admin portal. Its first answer is `enrolmentRequired: true`: scan the QR
-code and **store the 10 recovery codes**.
+code and **store the 10 recovery codes**. The seed never prints the password, and it is the
+only way a super admin is ever made: the console creates `admin` accounts only, with a
+temporary password their owner must change (docs/ADMIN_PERMISSIONS.md).
 
 Lost the authenticator?
 ```bash

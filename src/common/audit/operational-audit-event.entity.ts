@@ -7,7 +7,8 @@ import {
 } from 'typeorm';
 
 /**
- * Append-only operational audit trail: sign-ins, sign-ups, password resets,
+ * Append-only operational audit trail (a trigger refuses UPDATE, DELETE and
+ * TRUNCATE — migration AuditTrail): sign-ins, sign-ups, password resets,
  * refresh-token reuse, business submissions and every admin write. Who did
  * what to which record, from where.
  */
@@ -15,6 +16,8 @@ import {
 @Index(['targetType', 'targetId', 'createdAt'])
 @Index(['actorUserId', 'createdAt'])
 @Index(['action', 'createdAt'])
+// GET /admin/audit pages newest-first on (created_at, id).
+@Index(['createdAt', 'id'])
 export class OperationalAuditEvent {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -42,6 +45,18 @@ export class OperationalAuditEvent {
 
   @Column({ type: 'varchar', length: 255, name: 'user_agent', nullable: true })
   userAgent!: string | null;
+
+  /** The X-Request-Id of the request that wrote it: ties a row to its log lines. */
+  @Column({ type: 'varchar', length: 128, name: 'request_id', nullable: true })
+  requestId!: string | null;
+
+  /** The changed fields as they were (admin writes); null when nothing existed. */
+  @Column({ type: 'jsonb', nullable: true })
+  before!: Record<string, any> | null;
+
+  /** The same fields afterwards; null when the record was deleted. */
+  @Column({ type: 'jsonb', nullable: true })
+  after!: Record<string, any> | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;

@@ -23,6 +23,9 @@ import { ErrorCode } from '../../common/errors/codes';
  */
 @Injectable()
 export class GoogleAuthService {
+  /** Refuses a new customer while sign-ups are paused (PlatformSettingsService). */
+  signupGate: (role: 'customer') => Promise<void> = async () => {};
+
   constructor(
     private readonly verifier: GoogleTokenVerifier,
     private readonly users: UsersService,
@@ -84,6 +87,8 @@ export class GoogleAuthService {
     google: GoogleIdentity,
     client: ClientInfo,
   ): Promise<AuthResult> {
+    // Only a brand-new account is paused; linking and signing in still work.
+    await this.signupGate('customer');
     let user = this.users.createEntity({
       email: google.email,
       passwordHash: null,

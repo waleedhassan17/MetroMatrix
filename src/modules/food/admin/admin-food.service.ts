@@ -12,7 +12,18 @@ import { PlanService } from '../../plans/plans.service';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import { ErrorCode } from '../../../common/errors/codes';
 import { likeEscape, paged } from '../../../common/pagination/pagination';
-import { OperationalAuditService } from '../../../common/audit/operational-audit.service';
+import {
+  OperationalAuditService,
+  snapshot,
+} from '../../../common/audit/operational-audit.service';
+
+const CUISINE_FIELDS: (keyof Cuisine & string)[] = [
+  'slug',
+  'name',
+  'icon',
+  'sort',
+  'isActive',
+];
 import { todayIn } from '../../../common/time/time.util';
 import { Cuisine } from '../reference/entities/cuisine.entity';
 import { FoodOrder } from '../orders/entities/food-order.entity';
@@ -268,6 +279,10 @@ export class AdminFoodService implements OnModuleInit {
 
   async setFeatured(id: string, featured: boolean) {
     const v = await this.vendors.byBrandId(id);
+    const [was] = (await this.dataSource.query(
+      `SELECT is_featured AS "isFeatured" FROM food_brands WHERE id = $1`,
+      [v.brandId],
+    )) as Array<{ isFeatured: boolean }>;
     await this.dataSource.query(
       `UPDATE food_brands SET is_featured = $2, updated_at = now() WHERE id = $1`,
       [v.brandId, featured],
@@ -276,6 +291,8 @@ export class AdminFoodService implements OnModuleInit {
       action: featured ? 'food.vendor.feature' : 'food.vendor.unfeature',
       targetType: 'food_brand',
       targetId: v.brandId,
+      before: { isFeatured: was?.isFeatured ?? null },
+      after: { isFeatured: featured },
     });
     return { id: v.brandId, isFeatured: featured };
   }
@@ -392,7 +409,8 @@ export class AdminFoodService implements OnModuleInit {
       action: 'food.cuisine.create',
       targetType: 'cuisine',
       targetId: c.id,
-      details: { slug: c.slug },
+      before: null,
+      after: snapshot(c, CUISINE_FIELDS),
     });
     return c;
   }
@@ -404,6 +422,7 @@ export class AdminFoodService implements OnModuleInit {
         code: ErrorCode.NOT_FOUND,
         message: 'Cuisine not found.',
       });
+    const before = snapshot(c, CUISINE_FIELDS);
     if (dto.slug && dto.slug !== c.slug) {
       if (
         await this.dataSource.manager.exists(Cuisine, {
@@ -426,7 +445,8 @@ export class AdminFoodService implements OnModuleInit {
       action: 'food.cuisine.update',
       targetType: 'cuisine',
       targetId: id,
-      details: { fields: Object.keys(dto) },
+      before,
+      after: snapshot(saved, CUISINE_FIELDS),
     });
     return saved;
   }
@@ -443,16 +463,19 @@ export class AdminFoodService implements OnModuleInit {
         message: `${n} vendor${n === 1 ? ' uses' : 's use'} this cuisine — deactivate it instead.`,
         details: { vendors: n },
       });
-    const res = await this.dataSource.manager.delete(Cuisine, { id });
-    if (!res.affected)
+    const c = await this.dataSource.manager.findOne(Cuisine, { where: { id } });
+    if (!c)
       throw new NotFoundException({
         code: ErrorCode.NOT_FOUND,
         message: 'Cuisine not found.',
       });
+    await this.dataSource.manager.delete(Cuisine, { id });
     await this.audit.record({
       action: 'food.cuisine.delete',
       targetType: 'cuisine',
       targetId: id,
+      before: snapshot(c, CUISINE_FIELDS),
+      after: null,
     });
     return { deleted: true };
   }

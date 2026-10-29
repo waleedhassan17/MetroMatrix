@@ -7,6 +7,8 @@ import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { AuthenticatedUser } from '../../common/decorators/current-user.decorator';
 import { ErrorCode } from '../../common/errors/codes';
+import { User } from '../users/entities/user.entity';
+import { isAdminRole } from '../../types';
 import {
   ACCESS_AUDIENCE,
   AccessTokenPayload,
@@ -76,6 +78,22 @@ export class AccessTokenValidator {
       role: user.role,
       sid: payload.sid,
       emailVerified: user.isEmailVerified,
+      ...adminFields(user),
     };
   }
+}
+
+/** The admin-only fields of `req.user`, read from the row like the role. */
+export function adminFields(
+  user: User,
+): Pick<
+  AuthenticatedUser,
+  'adminPermissions' | 'mustChangePassword' | 'totpEnabled'
+> {
+  if (!isAdminRole(user.role)) return {};
+  return {
+    adminPermissions: user.adminPermissions ?? [],
+    mustChangePassword: user.mustChangePassword,
+    totpEnabled: user.totpEnabled,
+  };
 }

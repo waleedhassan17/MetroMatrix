@@ -16,13 +16,15 @@ export interface RequestContext {
    * during the handler (the audit service) sees the populated values.
    */
   req: AuditRequest;
+  /** Audit rows this request has written (AdminAuditInterceptor reads it). */
+  audits: number;
 }
 
 const storage = new AsyncLocalStorage<RequestContext>();
 
 /** Run `fn` with `req` as the ambient request context. */
 export function runWithRequestContext<T>(req: AuditRequest, fn: () => T): T {
-  return storage.run({ req }, fn);
+  return storage.run({ req, audits: 0 }, fn);
 }
 
 /**
@@ -35,14 +37,27 @@ export function currentActor(): {
   userId: string | null;
   ipAddress: string | null;
   userAgent: string | null;
+  requestId: string | null;
 } {
   const req = storage.getStore()?.req;
   if (!req) {
-    return { userId: null, ipAddress: null, userAgent: null };
+    return { userId: null, ipAddress: null, userAgent: null, requestId: null };
   }
   return {
     userId: req.user?.id ?? null,
     ipAddress: req.ip ?? null,
     userAgent: (req.headers?.['user-agent'] as string | undefined) ?? null,
+    requestId: (req.headers?.['x-request-id'] as string | undefined) ?? null,
   };
+}
+
+/** Count an audit row against the in-flight request (no-op outside one). */
+export function countAudit(): void {
+  const store = storage.getStore();
+  if (store) store.audits += 1;
+}
+
+/** How many audit rows the in-flight request has written so far. */
+export function auditsThisRequest(): number {
+  return storage.getStore()?.audits ?? 0;
 }

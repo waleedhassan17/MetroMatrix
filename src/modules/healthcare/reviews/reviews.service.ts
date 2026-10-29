@@ -407,6 +407,7 @@ export class ReviewsService implements OnModuleInit {
       where: { id },
     });
     if (!r) throw notFound();
+    const before = { hidden: !!r.hiddenAt, hiddenReason: r.hiddenReason };
     Object.assign(r, {
       hiddenAt: hidden ? now : null,
       hiddenReason: hidden ? reason : null,
@@ -419,7 +420,9 @@ export class ReviewsService implements OnModuleInit {
       action: hidden ? 'health.review.hide' : 'health.review.unhide',
       targetType: 'doctor_review',
       targetId: r.id,
-      details: { doctorId: r.doctorId, reason },
+      details: { doctorId: r.doctorId },
+      before,
+      after: { hidden, hiddenReason: r.hiddenReason },
     });
     return { ...this.doctorView(r), hiddenAt: r.hiddenAt };
   }

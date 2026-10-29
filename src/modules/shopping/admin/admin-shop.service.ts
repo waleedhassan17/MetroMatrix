@@ -118,6 +118,8 @@ export class AdminShopService {
       targetType: 'shop_category',
       targetId: saved.id,
       details: { slug },
+      before: null,
+      after: categoryView(saved),
     });
     return categoryView(saved);
   }
@@ -144,6 +146,7 @@ export class AdminShopService {
     ) {
       throw this.slugTaken();
     }
+    const before = categoryView(c);
     Object.assign(c, {
       name: dto.name ?? c.name,
       slug: dto.slug ?? c.slug,
@@ -157,7 +160,8 @@ export class AdminShopService {
       action: 'shop.category.update',
       targetType: 'shop_category',
       targetId: id,
-      details: { ...dto },
+      before,
+      after: categoryView(c),
     });
     return categoryView(c);
   }
@@ -184,6 +188,8 @@ export class AdminShopService {
       targetType: 'shop_category',
       targetId: id,
       details: { slug: c.slug },
+      before: categoryView(c),
+      after: null,
     });
     return { deleted: true };
   }
@@ -246,7 +252,8 @@ export class AdminShopService {
       action: 'shop.banner.create',
       targetType: 'shop_banner',
       targetId: saved.id,
-      details: { title: dto.title },
+      before: null,
+      after: bannerView(saved),
     });
     return bannerView(saved);
   }
@@ -275,6 +282,7 @@ export class AdminShopService {
         : (b.startsAt?.toISOString() ?? null),
       dto.endsAt !== undefined ? dto.endsAt : (b.endsAt?.toISOString() ?? null),
     );
+    const before = bannerView(b);
     Object.assign(b, {
       imageUrl: dto.imageUrl ?? b.imageUrl,
       title: dto.title ?? b.title,
@@ -290,18 +298,23 @@ export class AdminShopService {
       action: 'shop.banner.update',
       targetType: 'shop_banner',
       targetId: id,
-      details: { ...dto },
+      before,
+      after: bannerView(b),
     });
     return bannerView(b);
   }
 
   async deleteBanner(id: string) {
-    const res = await this.dataSource.manager.delete(ShopBanner, { id });
-    if (!res.affected) throw notFound('Banner');
+    const m = this.dataSource.manager;
+    const b = await m.findOne(ShopBanner, { where: { id } });
+    if (!b) throw notFound('Banner');
+    await m.delete(ShopBanner, { id });
     await this.audit.record({
       action: 'shop.banner.delete',
       targetType: 'shop_banner',
       targetId: id,
+      before: bannerView(b),
+      after: null,
     });
     return { deleted: true };
   }
@@ -333,6 +346,10 @@ export class AdminShopService {
   // ── Stores ────────────────────────────────────────────────────────────────
 
   async setFeatured(id: string, featured: boolean) {
+    const was = await this.dataSource.manager.findOne(Store, {
+      where: { id },
+      select: { id: true, isFeatured: true },
+    });
     const res = await this.dataSource.manager.update(
       Store,
       { id },
@@ -343,6 +360,8 @@ export class AdminShopService {
       action: featured ? 'shop.store.feature' : 'shop.store.unfeature',
       targetType: 'store',
       targetId: id,
+      before: { isFeatured: was?.isFeatured ?? null },
+      after: { isFeatured: featured },
     });
     return { id, isFeatured: featured };
   }
@@ -418,6 +437,8 @@ export class AdminShopService {
       targetType: 'product_report',
       targetId: id,
       details: { note },
+      before: { status: 'open' },
+      after: { status: 'dismissed', resolutionNote: note },
     });
     return { id, status: 'dismissed' };
   }
@@ -467,7 +488,9 @@ export class AdminShopService {
       action: 'shop.product.remove',
       targetType: 'product',
       targetId: id,
-      details: { reason, from: product.status },
+      details: { reason },
+      before: { status: product.status, removedReason: product.removedReason },
+      after: { status: 'removed', removedReason: reason },
     });
     try {
       await this.notifications.notify(ownerId, {
@@ -513,7 +536,8 @@ export class AdminShopService {
       action: 'shop.product.restore',
       targetType: 'product',
       targetId: id,
-      details: { status },
+      before: { status: 'removed', removedReason: product.removedReason },
+      after: { status, removedReason: null },
     });
     return { id, status };
   }
@@ -618,23 +642,37 @@ export class AdminShopService {
   // ── Reviews ───────────────────────────────────────────────────────────────
 
   async hideReview(id: string, reason: string) {
+    const was = await this.reviewHidden(id);
     const r = await this.reviews.setHidden(id, true, reason);
     await this.audit.record({
       action: 'shop.review.hide',
       targetType: 'product_review',
       targetId: id,
-      details: { reason },
+      before: was,
+      after: { isHidden: true, hiddenReason: reason },
     });
     return { id: r.id, isHidden: true, hiddenReason: reason };
   }
 
   async unhideReview(id: string) {
+    const was = await this.reviewHidden(id);
     const r = await this.reviews.setHidden(id, false, null);
     await this.audit.record({
       action: 'shop.review.unhide',
       targetType: 'product_review',
       targetId: id,
+      before: was,
+      after: { isHidden: false, hiddenReason: null },
     });
     return { id: r.id, isHidden: false };
+  }
+
+  /** A review's moderation state before a change, for the audit row. */
+  private async reviewHidden(id: string) {
+    const [row] = (await this.dataSource.query(
+      `SELECT is_hidden AS "isHidden", hidden_reason AS "hiddenReason" FROM product_reviews WHERE id = $1`,
+      [id],
+    )) as Array<{ isHidden: boolean; hiddenReason: string | null }>;
+    return row ?? { isHidden: null, hiddenReason: null };
   }
 }

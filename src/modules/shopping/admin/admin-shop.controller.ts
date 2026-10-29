@@ -1,4 +1,27 @@
 import {
+  AdminShopCategoriesView,
+  AdminShopCreateBannerView,
+  AdminShopCreateCategoryView,
+  AdminShopDeleteBannerView,
+  AdminShopDeleteCategoryView,
+  AdminShopDismissView,
+  AdminShopFeatureView,
+  AdminShopHideReviewView,
+  AdminShopOrderView,
+  AdminShopOrdersView,
+  AdminShopRemoveView,
+  AdminShopReportsView,
+  AdminShopRestoreView,
+  AdminShopUnfeatureView,
+  AdminShopUnhideReviewView,
+  AdminShopUpdateBannerView,
+  AdminShopUpdateCategoryView,
+} from './admin-shop.response';
+import {
+  ApiEnvelopeOk,
+  ApiPagedOk,
+} from '../../../common/swagger/api-envelope';
+import {
   Body,
   Controller,
   Delete,
@@ -23,6 +46,7 @@ import {
   UpdateCategoryDto,
 } from './dto/admin-shop.dto';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -34,6 +58,7 @@ const uuid = new ParseUUIDPipe();
 @ApiTags('admin · shop')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageShopping')
 @Controller('admin/shop')
 export class AdminShopController {
   constructor(private readonly admin: AdminShopService) {}
@@ -41,16 +66,19 @@ export class AdminShopController {
   // Categories
   @Get('categories')
   @ApiOperation({ summary: 'The full taxonomy, inactive included.' })
+  @ApiEnvelopeOk(AdminShopCategoriesView, { isArray: true })
   categories() {
     return this.admin.categories();
   }
 
   @Post('categories')
+  @ApiEnvelopeOk(AdminShopCreateCategoryView, { status: 201 })
   createCategory(@Body() dto: CreateCategoryDto) {
     return this.admin.createCategory(dto);
   }
 
   @Patch('categories/:id')
+  @ApiEnvelopeOk(AdminShopUpdateCategoryView)
   updateCategory(
     @Param('id', uuid) id: string,
     @Body() dto: UpdateCategoryDto,
@@ -60,17 +88,22 @@ export class AdminShopController {
 
   @Delete('categories/:id')
   @ApiOperation({ summary: 'Unused leaves only; deactivate anything in use.' })
+  @ApiEnvelopeOk(AdminShopDeleteCategoryView)
   deleteCategory(@Param('id', uuid) id: string) {
     return this.admin.deleteCategory(id);
   }
 
   // Banners
+  @RequirePermission('manageContent')
   @Get('banners')
+  @ApiEnvelopeOk(AdminShopCreateBannerView, { isArray: true })
   banners() {
     return this.admin.banners();
   }
 
+  @RequirePermission('manageContent')
   @Post('banners')
+  @ApiEnvelopeOk(AdminShopCreateBannerView, { status: 201 })
   createBanner(
     @CurrentUser() me: AuthenticatedUser,
     @Body() dto: CreateBannerDto,
@@ -78,7 +111,9 @@ export class AdminShopController {
     return this.admin.createBanner(me.id, dto);
   }
 
+  @RequirePermission('manageContent')
   @Patch('banners/:id')
+  @ApiEnvelopeOk(AdminShopUpdateBannerView)
   updateBanner(
     @CurrentUser() me: AuthenticatedUser,
     @Param('id', uuid) id: string,
@@ -87,7 +122,9 @@ export class AdminShopController {
     return this.admin.updateBanner(me.id, id, dto);
   }
 
+  @RequirePermission('manageContent')
   @Delete('banners/:id')
+  @ApiEnvelopeOk(AdminShopDeleteBannerView)
   deleteBanner(@Param('id', uuid) id: string) {
     return this.admin.deleteBanner(id);
   }
@@ -95,12 +132,14 @@ export class AdminShopController {
   // Stores
   @Post('stores/:id/feature')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminShopFeatureView)
   feature(@Param('id', uuid) id: string) {
     return this.admin.setFeatured(id, true);
   }
 
   @Post('stores/:id/unfeature')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminShopUnfeatureView)
   unfeature(@Param('id', uuid) id: string) {
     return this.admin.setFeatured(id, false);
   }
@@ -111,12 +150,14 @@ export class AdminShopController {
     summary:
       'Product reports: ?status=open|dismissed|actioned (default open), oldest first.',
   })
+  @ApiPagedOk(AdminShopReportsView)
   reports(@Query() q: AdminReportQueryDto) {
     return this.admin.reports(q);
   }
 
   @Post('reports/:id/dismiss')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminShopDismissView)
   dismiss(
     @CurrentUser() me: AuthenticatedUser,
     @Param('id', uuid) id: string,
@@ -132,6 +173,7 @@ export class AdminShopController {
     summary:
       '{ reason } — hidden everywhere; open reports actioned; store notified; orders intact.',
   })
+  @ApiEnvelopeOk(AdminShopRemoveView)
   remove(
     @CurrentUser() me: AuthenticatedUser,
     @Param('id', uuid) id: string,
@@ -146,6 +188,7 @@ export class AdminShopController {
     summary:
       'Back to active (or draft if it no longer has a photo and an active variant).',
   })
+  @ApiEnvelopeOk(AdminShopRestoreView)
   restore(@Param('id', uuid) id: string) {
     return this.admin.restoreProduct(id);
   }
@@ -155,11 +198,13 @@ export class AdminShopController {
   @ApiOperation({
     summary: 'Dispute lookup: ?code&storeId&status&page. Read-only.',
   })
+  @ApiPagedOk(AdminShopOrdersView)
   orders(@Query() q: AdminOrderQueryDto) {
     return this.admin.orders(q);
   }
 
   @Get('orders/:id')
+  @ApiEnvelopeOk(AdminShopOrderView)
   order(@Param('id', uuid) id: string) {
     return this.admin.order(id);
   }
@@ -167,12 +212,14 @@ export class AdminShopController {
   // Reviews
   @Post('reviews/:id/hide')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminShopHideReviewView)
   hideReview(@Param('id', uuid) id: string, @Body() dto: AdminReasonDto) {
     return this.admin.hideReview(id, dto.reason);
   }
 
   @Post('reviews/:id/unhide')
   @HttpCode(200)
+  @ApiEnvelopeOk(AdminShopUnhideReviewView)
   unhideReview(@Param('id', uuid) id: string) {
     return this.admin.unhideReview(id);
   }

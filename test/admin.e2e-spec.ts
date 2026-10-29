@@ -9,6 +9,7 @@ import {
 import {
   adminChallenge,
   enrolledAdmin,
+  freshTotp,
   seedAdmin,
   totpCode,
   verifyDoctorPmdc,
@@ -91,10 +92,19 @@ describe('Admin: TOTP and approvals (e2e)', () => {
       const good = await new ApiClient(t.http)
         .post('/auth/admin/totp', {
           challengeToken: step1.challengeToken,
-          code: totpCode(admin.secret),
+          code: await freshTotp(t, admin),
         })
         .expect(200);
       expect(good.body.data.tokens.accessToken).toEqual(expect.any(String));
+      // A code is spent once used: the same code on a new challenge fails.
+      const replay = await adminChallenge(t, admin.email);
+      const replayed = await new ApiClient(t.http)
+        .post('/auth/admin/totp', {
+          challengeToken: replay.challengeToken,
+          code: totpCode(admin.secret),
+        })
+        .expect(401);
+      expect(replayed.body.error.code).toBe('TOTP_INVALID');
       await new ApiClient(t.http)
         .post('/auth/admin/totp', {
           challengeToken: step1.challengeToken,
@@ -140,14 +150,14 @@ describe('Admin: TOTP and approvals (e2e)', () => {
       await new ApiClient(t.http)
         .post('/auth/admin/totp', {
           challengeToken: mid.challengeToken,
-          code: totpCode(admin.secret),
+          code: await freshTotp(t, admin),
         })
         .expect(200);
 
       const ok = await admin.api
         .post('/admin/me/totp/confirm', {
           code: totpCode(next),
-          currentCode: totpCode(admin.secret),
+          currentCode: await freshTotp(t, admin),
         })
         .expect(200);
       expect(ok.body.data.auth).toBeNull();
@@ -366,7 +376,7 @@ describe('Admin: TOTP and approvals (e2e)', () => {
       const self = await admin.api
         .post(`/admin/users/${admin.userId}/disable`)
         .expect(403);
-      expect(self.body.error.code).toBe('FORBIDDEN');
+      expect(self.body.error.code).toBe('SELF_ACTION_FORBIDDEN');
 
       const audit = await t.ds.query(
         `SELECT action FROM operational_audit_events WHERE target_id = $1 AND action LIKE 'user.%' ORDER BY created_at`,

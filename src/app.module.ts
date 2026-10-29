@@ -15,6 +15,7 @@ import authConfig from './config/auth.config';
 import integrationsConfig from './config/integrations.config';
 import notificationsConfig from './config/notifications.config';
 import jobsConfig from './config/jobs.config';
+import adminWebConfig from './config/admin-web.config';
 import { envValidationSchema } from './config/env.validation';
 
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
@@ -22,6 +23,9 @@ import { IdempotencyInterceptor } from './common/interceptors/idempotency.interc
 import { ResponseEnvelopeInterceptor } from './common/interceptors/response-envelope.interceptor';
 import { IdempotencyRecord } from './common/interceptors/idempotency-record.entity';
 import { RolesGuard } from './common/guards/roles.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
+import { AdminSessionGuard } from './common/guards/admin-session.guard';
+import { StepUpGuard } from './modules/auth/step-up/step-up.guard';
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
 import { RequestContextMiddleware } from './common/context/request-context.middleware';
@@ -46,6 +50,10 @@ import { KitchenModule } from './modules/kitchen/kitchen.module';
 import { FoodGrowthModule } from './modules/food-growth/food-growth.module';
 import { NutritionModule } from './modules/nutrition/nutrition.module';
 import { MyKitchenModule } from './modules/my-kitchen/my-kitchen.module';
+import { PlatformModule } from './modules/platform/platform.module';
+import { PlatformGuard } from './modules/platform/platform.guard';
+import { BroadcastsModule } from './modules/broadcasts/broadcasts.module';
+import { AdminAuditInterceptor } from './common/audit/admin-audit.interceptor';
 
 @Module({
   imports: [
@@ -62,6 +70,7 @@ import { MyKitchenModule } from './modules/my-kitchen/my-kitchen.module';
         integrationsConfig,
         notificationsConfig,
         jobsConfig,
+        adminWebConfig,
       ],
       envFilePath: ['.env'],
       // Tests set their own environment (test/setup-env.ts); a developer's
@@ -113,6 +122,8 @@ import { MyKitchenModule } from './modules/my-kitchen/my-kitchen.module';
     FoodGrowthModule,
     NutritionModule,
     MyKitchenModule,
+    PlatformModule,
+    BroadcastsModule,
     HealthModule,
   ],
   providers: [
@@ -121,10 +132,20 @@ import { MyKitchenModule } from './modules/my-kitchen/my-kitchen.module';
     // captures and replays the fully-enveloped response.
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
     { provide: APP_INTERCEPTOR, useClass: ResponseEnvelopeInterceptor },
+    // Innermost: sees the handler's own audit rows (safety net, see class).
+    { provide: APP_INTERCEPTOR, useClass: AdminAuditInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
+    // Maintenance mode and per-service kill switches (platform settings).
+    { provide: APP_GUARD, useClass: PlatformGuard },
     // After JwtAuthGuard so req.user is set; no-op on routes without @Roles.
     { provide: APP_GUARD, useClass: RolesGuard },
+    // Admin routes: the admin's permissions, also from the DB-backed user.
+    { provide: APP_GUARD, useClass: PermissionsGuard },
+    // An admin who must change their password / enrol TOTP: those routes only.
+    { provide: APP_GUARD, useClass: AdminSessionGuard },
+    // Last: a fresh TOTP code on sensitive admin writes (@RequireStepUp).
+    { provide: APP_GUARD, useClass: StepUpGuard },
   ],
 })
 export class AppModule implements NestModule {

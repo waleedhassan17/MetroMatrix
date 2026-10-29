@@ -16,7 +16,10 @@ import { catchError, concatMap } from 'rxjs/operators';
 import { IdempotencyRecord } from './idempotency-record.entity';
 import { ErrorCode } from '../errors/codes';
 import { AuthenticatedUser } from '../decorators/current-user.decorator';
-import { REQUIRE_IDEMPOTENCY_KEY } from '../decorators/require-idempotency-key.decorator';
+import {
+  REQUIRE_IDEMPOTENCY_KEY,
+  SKIP_IDEMPOTENCY_KEY,
+} from '../decorators/require-idempotency-key.decorator';
 
 const MAX_KEY_LENGTH = 200;
 
@@ -71,7 +74,11 @@ export class IdempotencyInterceptor implements NestInterceptor {
           'Send an Idempotency-Key header (a fresh UUID per attempt) so a retry can never place the order twice.',
       });
     }
-    if (req.method !== 'POST' || !key || !req.user?.id) {
+    const skip = this.reflector.getAllAndOverride<boolean>(
+      SKIP_IDEMPOTENCY_KEY,
+      [context.getHandler(), context.getClass()],
+    );
+    if (skip || req.method !== 'POST' || !key || !req.user?.id) {
       return next.handle();
     }
     if (key.length > MAX_KEY_LENGTH) {

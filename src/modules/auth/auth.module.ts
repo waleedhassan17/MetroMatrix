@@ -26,6 +26,9 @@ import { IdempotencyRecord } from '../../common/interceptors/idempotency-record.
 import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
+import { AdminWebController } from './web/admin-web.controller';
+import { AdminWebSession } from './web/admin-web-session';
+
 @Module({
   imports: [
     UsersModule,
@@ -47,7 +50,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       }),
     }),
   ],
-  controllers: [AuthController],
+  controllers: [AuthController, AdminWebController],
   providers: [
     AuthService,
     TokenService,
@@ -63,9 +66,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     AuthMaintenanceService,
     JwtStrategy,
     AccessTokenValidator,
+    AdminWebSession,
   ],
   exports: [
     AuthService,
+    GoogleAuthService,
     TokenService,
     AccountViewService,
     AccountService,
@@ -73,6 +78,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     TotpService,
     AdminTotpEnrolGuard,
     AccessTokenValidator,
+    AdminWebSession,
     UsersModule,
   ],
 })

@@ -1,9 +1,11 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
+  IsBoolean,
   IsIn,
+  IsISO8601,
   IsOptional,
   IsString,
   IsUUID,
@@ -48,6 +50,42 @@ export class AdminBusinessQueryDto extends PaginationQueryDto {
 }
 
 export class AdminUserQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: 'true = email confirmed, false = not yet.',
+  })
+  @IsOptional()
+  // From the raw query (`obj`): implicit conversion would turn 'false' into true.
+  @Transform(({ obj }) =>
+    obj.verified === 'true' || obj.verified === true
+      ? true
+      : obj.verified === 'false' || obj.verified === false
+        ? false
+        : obj.verified,
+  )
+  @IsBoolean()
+  verified?: boolean;
+
+  @ApiPropertyOptional({
+    enum: SERVICE_TYPES,
+    description: 'Partners whose business is in this service.',
+  })
+  @IsOptional()
+  @IsIn([...SERVICE_TYPES])
+  service?: ServiceType;
+
+  @ApiPropertyOptional({
+    format: 'date-time',
+    description: 'Created at or after.',
+  })
+  @IsOptional()
+  @IsISO8601()
+  createdFrom?: string;
+
+  @ApiPropertyOptional({ format: 'date-time', description: 'Created before.' })
+  @IsOptional()
+  @IsISO8601()
+  createdTo?: string;
+
   @ApiPropertyOptional({ enum: USER_ROLES })
   @IsOptional()
   @IsIn([...USER_ROLES])

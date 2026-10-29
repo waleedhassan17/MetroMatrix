@@ -1,8 +1,16 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { Business } from '../businesses/entities/business.entity';
-import { AccountView, BusinessSummary, toAuthUser } from './auth-result';
+import { AdminRecoveryCode } from './entities/admin-recovery-code.entity';
+import {
+  AccountView,
+  AdminSessionView,
+  BusinessSummary,
+  toAuthUser,
+} from './auth-result';
+import { isAdminRole } from '../../types';
+import { effectivePermissions } from '../../types/admin-permissions';
 
 /** Service-specific fields another module adds to the session's business (a doctor's listing). */
 export type BusinessSummaryExtras = (
@@ -25,7 +33,24 @@ export class AccountViewService {
   }
 
   async view(user: User): Promise<AccountView> {
-    return { user: toAuthUser(user), business: await this.businessOf(user) };
+    const view: AccountView = {
+      user: toAuthUser(user),
+      business: await this.businessOf(user),
+    };
+    if (isAdminRole(user.role)) view.admin = await this.adminOf(user);
+    return view;
+  }
+
+  private async adminOf(user: User): Promise<AdminSessionView> {
+    return {
+      isSuperAdmin: user.role === 'super_admin',
+      permissions: effectivePermissions(user),
+      mustChangePassword: user.mustChangePassword,
+      totpEnabled: user.totpEnabled,
+      recoveryCodesRemaining: await this.dataSource
+        .getRepository(AdminRecoveryCode)
+        .count({ where: { userId: user.id, usedAt: IsNull() } }),
+    };
   }
 
   /** A partner's business summary; null for everyone else. */

@@ -67,6 +67,8 @@ export interface PromotionSnapshot {
 )
 @Entity('food_orders')
 @Index(['code'], { unique: true })
+// Platform-wide counts by period (admin overview, analytics).
+@Index('IDX_food_orders_created_at', ['createdAt'])
 @Index('IDX_food_orders_branch_status', ['branchId', 'status', 'createdAt'])
 @Index(['riderId', 'status'])
 @Index(['userId', 'createdAt'])

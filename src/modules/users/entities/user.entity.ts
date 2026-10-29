@@ -1,4 +1,4 @@
-import { Column, Entity, Index } from 'typeorm';
+import { Check, Column, Entity, Index } from 'typeorm';
 import { BaseEntity } from '../../../common/base/base.entity';
 import {
   USER_ROLES,
@@ -6,8 +6,26 @@ import {
   UserRole,
   UserStatus,
 } from '../../../types';
+import { ADMIN_PERMISSION_KEYS } from '../../../types/admin-permissions';
+
+/** The CHECK's allow-list, generated from the one list of keys. */
+const PERMISSION_LIST = `'${JSON.stringify(ADMIN_PERMISSION_KEYS)}'::jsonb`;
 
 @Entity('users')
+// Signups over time (admin overview, analytics).
+@Index('IDX_users_created_at', ['createdAt'])
+@Check(
+  'CHK_users_admin_permissions_array',
+  `jsonb_typeof("admin_permissions") = 'array'`,
+)
+@Check(
+  'CHK_users_admin_permissions_known',
+  `"admin_permissions" <@ ${PERMISSION_LIST}`,
+)
+@Check(
+  'CHK_users_admin_permissions_admin_only',
+  `"role" = 'admin' OR "admin_permissions" = '[]'::jsonb`,
+)
 export class User extends BaseEntity {
   /** citext: unique regardless of case. Stored lower-cased all the same. */
   @Index({ unique: true })
@@ -91,6 +109,39 @@ export class User extends BaseEntity {
    */
   @Column({ type: 'int', name: 'token_version', default: 0 })
   tokenVersion!: number;
+
+  /**
+   * A regular admin's grants (types/admin-permissions.ts). Always `[]` for
+   * everyone else — a super admin holds every permission implicitly.
+   */
+  @Column({
+    type: 'jsonb',
+    name: 'admin_permissions',
+    default: () => "'[]'",
+  })
+  adminPermissions!: string[];
+
+  /**
+   * Set when a super admin creates the account or resets its password: the
+   * session may only change the password until it is cleared.
+   */
+  @Column({ type: 'boolean', name: 'must_change_password', default: false })
+  mustChangePassword!: boolean;
+
+  /**
+   * The last TOTP time-step (unix seconds / 30) this admin spent. A code is
+   * accepted only for a later step, so it can never be replayed.
+   */
+  @Column({
+    type: 'bigint',
+    name: 'totp_last_step',
+    nullable: true,
+    transformer: {
+      to: (v: number | null) => v,
+      from: (v: string | null) => (v === null ? null : Number(v)),
+    },
+  })
+  totpLastStep!: number | null;
 
   /** Soft delete: the row stays (audit, FKs) with its PII anonymised. */
   @Column({ type: 'timestamptz', name: 'deleted_at', nullable: true })

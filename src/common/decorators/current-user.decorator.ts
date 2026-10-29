@@ -21,6 +21,12 @@ export interface AuthenticatedUser {
    * verified rather than locked out.
    */
   emailVerified?: boolean;
+  /** Admins only, from the users row: a regular admin's grants. */
+  adminPermissions?: string[];
+  /** Admins only: the session may only change the password until cleared. */
+  mustChangePassword?: boolean;
+  /** Admins only: false until an authenticator is enrolled. */
+  totpEnabled?: boolean;
 }
 
 export const CurrentUser = createParamDecorator(

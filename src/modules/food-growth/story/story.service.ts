@@ -382,7 +382,12 @@ export class StoryService implements OnModuleInit {
       action: 'hygiene.verify',
       targetType: 'food_brand',
       targetId: brandId,
-      details: { method: dto.method },
+      before: { hygieneStatus: s.hygieneStatus },
+      after: {
+        hygieneStatus: 'verified',
+        verifiedMethod: dto.method,
+        verifiedNote: dto.note ?? null,
+      },
     });
     await this.tell(
       brandId,
@@ -410,7 +415,8 @@ export class StoryService implements OnModuleInit {
       action: 'hygiene.revoke',
       targetType: 'food_brand',
       targetId: brandId,
-      details: { reason },
+      before: { hygieneStatus: 'verified' },
+      after: { hygieneStatus: 'self_declared', verifiedNote: reason },
     });
     await this.tell(
       brandId,
@@ -496,7 +502,9 @@ export class StoryService implements OnModuleInit {
       action: 'signature.remove',
       targetType: 'recipe_card',
       targetId: cardId,
-      details: { brandId: row.brand_id, reason },
+      details: { brandId: row.brand_id },
+      before: { isSignature: true },
+      after: { isSignature: false, signatureRemovedReason: reason },
     });
     await this.tell(
       row.brand_id,

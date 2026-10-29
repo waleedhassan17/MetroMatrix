@@ -95,19 +95,25 @@ export class AdminAppointmentsService {
     return paged(await this.adminViews(rows), total, q);
   }
 
-  async detail(code: string) {
+  /**
+   * One appointment with its events. A read of PHI, audited as one — unless
+   * it is the answer to a write that already wrote its own row (`audited`).
+   */
+  async detail(code: string, opts: { audited?: boolean } = {}) {
     const a = await this.dataSource.manager.findOne(Appointment, {
       where: { code: code.toUpperCase() },
     });
     if (!a) throw notFound();
     const [view] = await this.adminViews([a]);
     const events = (await this.views.events([a.id])).get(a.id) ?? [];
-    await this.audit.record({
-      action: 'health.appointment.read',
-      targetType: 'appointment',
-      targetId: a.id,
-      details: { code: a.code },
-    });
+    if (!opts.audited) {
+      await this.audit.record({
+        action: 'health.appointment.read',
+        targetType: 'appointment',
+        targetId: a.id,
+        details: { code: a.code },
+      });
+    }
     return {
       ...view,
       events: events.map((e) => ({
@@ -124,8 +130,10 @@ export class AdminAppointmentsService {
 
   /** Cancel on someone's behalf (booked or checked in); payment settles as for any cancel. */
   async cancel(adminUserId: string, code: string, reason: string) {
+    let before: string | null = null;
     const a = await this.dataSource.transaction(async (m) => {
       const a = await this.transitions.lock(m, { code });
+      before = a.status;
       await this.transitions.moveStatus(
         m,
         a,
@@ -142,9 +150,16 @@ export class AdminAppointmentsService {
       targetType: 'appointment',
       targetId: a.id,
       details: { code: a.code, reason },
+      before: { status: before },
+      after: {
+        status: 'cancelled',
+        cancelledBy: 'admin',
+        cancelReason: reason,
+      },
     });
     await this.appointments.notifyAdminCancel(a, reason);
-    return this.detail(code);
+    // The cancel row covers the read of its own answer.
+    return this.detail(code, { audited: true });
   }
 
   async overview(now = new Date()) {

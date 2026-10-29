@@ -1,4 +1,11 @@
 import {
+  AdminHealthBannersCreateView,
+  AdminHealthBannersRemoveView,
+  AdminHealthBannersReorderView,
+  AdminHealthBannersUpdateView,
+} from './admin-banners.response';
+import { ApiEnvelopeOk } from '../../../common/swagger/api-envelope';
+import {
   Body,
   Controller,
   Delete,
@@ -17,6 +24,7 @@ import {
   UpdateHealthBannerDto,
 } from './dto/admin-banners.dto';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -27,6 +35,7 @@ const uuid = new ParseUUIDPipe();
 @ApiTags('admin · health')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageContent')
 @Controller('admin/health/banners')
 export class AdminHealthBannersController {
   constructor(private readonly banners: AdminBannersService) {}
@@ -35,6 +44,7 @@ export class AdminHealthBannersController {
   @ApiOperation({
     summary: 'Every Health home banner (inactive and expired too), in order.',
   })
+  @ApiEnvelopeOk(AdminHealthBannersCreateView, { isArray: true })
   list() {
     return this.banners.list();
   }
@@ -44,6 +54,7 @@ export class AdminHealthBannersController {
     summary:
       '{ imageUrl (own banner upload), title, subtitle?, targetType, targetId? | targetScreen?, city?, startsAt?, endsAt?, sort?, isActive? }. Audited.',
   })
+  @ApiEnvelopeOk(AdminHealthBannersCreateView, { status: 201 })
   create(@CurrentUser() me: AuthenticatedUser, @Body() dto: HealthBannerDto) {
     return this.banners.create(me.id, dto);
   }
@@ -53,6 +64,7 @@ export class AdminHealthBannersController {
     summary:
       '{ ids } — the banners in their new order; any left out follow. Audited.',
   })
+  @ApiEnvelopeOk(AdminHealthBannersReorderView, { isArray: true })
   reorder(@Body() dto: ReorderHealthBannersDto) {
     return this.banners.reorder(dto.ids);
   }
@@ -62,6 +74,7 @@ export class AdminHealthBannersController {
     summary:
       'Edit. A new image must be your own upload; the current one may be re-sent. Audited.',
   })
+  @ApiEnvelopeOk(AdminHealthBannersUpdateView)
   update(
     @CurrentUser() me: AuthenticatedUser,
     @Param('id', uuid) id: string,
@@ -72,6 +85,7 @@ export class AdminHealthBannersController {
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete. Audited.' })
+  @ApiEnvelopeOk(AdminHealthBannersRemoveView)
   remove(@Param('id', uuid) id: string) {
     return this.banners.remove(id);
   }

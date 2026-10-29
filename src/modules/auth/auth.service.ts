@@ -22,6 +22,7 @@ import { PasswordHasher } from './password-hasher';
 import { TotpService } from './totp.service';
 import { AdminTotpDto } from './dto/totp.dto';
 import { isAdminRole } from '../../types';
+import type { SessionClient } from './web/admin-web-session';
 import { AccountView, AuthResult, TotpChallengeResult } from './auth-result';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password.';
@@ -38,6 +39,12 @@ export function isUniqueViolation(err: unknown): boolean {
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
 
+  /**
+   * Refuses a new account of `role` while its sign-ups are paused (403
+   * SIGNUPS_PAUSED). Set by PlatformSettingsService at module init.
+   */
+  signupGate: (role: 'customer' | 'partner') => Promise<void> = async () => {};
+
   constructor(
     private readonly users: UsersService,
     private readonly tokens: TokenService,
@@ -51,6 +58,7 @@ export class AuthService {
   // ── Sign-up / sign-in ─────────────────────────────────────────────────────
 
   async signup(dto: SignupDto, client: ClientInfo): Promise<AuthResult> {
+    await this.signupGate(dto.role);
     if (await this.users.findByEmail(dto.email)) throw this.emailExists();
 
     let user = this.users.createEntity({
@@ -145,7 +153,11 @@ export class AuthService {
    * Admin sign-in step 2: the challenge from step 1 plus a TOTP code (or a
    * recovery code). The challenge is single-use.
    */
-  async adminTotp(dto: AdminTotpDto, client: ClientInfo): Promise<AuthResult> {
+  async adminTotp(
+    dto: AdminTotpDto,
+    client: ClientInfo,
+    kind: SessionClient = 'app',
+  ): Promise<AuthResult> {
     const expired = () =>
       new UnauthorizedException({
         code: ErrorCode.UNAUTHORIZED,
@@ -169,7 +181,16 @@ export class AuthService {
     }
     const method = await this.totp.verifySignin(user, dto);
     await this.tokens.denylist(challenge.jti, user.id, challenge.exp);
-    return this.completeSignin(user, client, { portal: 'admin', method });
+    return this.completeSignin(
+      user,
+      client,
+      {
+        portal: 'admin',
+        method,
+        ...(kind === 'admin_web' ? { client: kind } : {}),
+      },
+      kind,
+    );
   }
 
   /** Issue the session for an account that has passed every check. */
@@ -177,10 +198,11 @@ export class AuthService {
     user: User,
     client: ClientInfo,
     details: Record<string, unknown>,
+    kind: SessionClient = 'app',
   ): Promise<AuthResult> {
     user.lastLoginAt = new Date();
     await this.users.save(user);
-    const tokens = await this.tokens.startSession(user, client);
+    const tokens = await this.tokens.startSession(user, client, kind);
     await this.audit.record({
       actorUserId: user.id,
       action: 'auth.signin',
@@ -239,7 +261,7 @@ export class AuthService {
 
   async result(user: User, tokens: TokenPair): Promise<AuthResult> {
     const view = await this.accounts.view(user);
-    return { user: view.user, tokens, business: view.business };
+    return { ...view, tokens };
   }
 
   private emailExists() {

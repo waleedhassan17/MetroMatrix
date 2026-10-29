@@ -1,4 +1,22 @@
 import {
+  AdminGrowthCreateEventView,
+  AdminGrowthDemandCitiesView,
+  AdminGrowthDemandMapView,
+  AdminGrowthEventsView,
+  AdminGrowthHygieneView,
+  AdminGrowthLookupView,
+  AdminGrowthRemoveEventView,
+  AdminGrowthRemoveSignatureView,
+  AdminGrowthRevokeView,
+  AdminGrowthSignaturesView,
+  AdminGrowthUpdateEventView,
+  AdminGrowthVerifyView,
+} from './admin-growth.response';
+import {
+  ApiEnvelopeOk,
+  ApiPagedOk,
+} from '../../../common/swagger/api-envelope';
+import {
   Body,
   Controller,
   Delete,
@@ -12,6 +30,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import {
   CalendarEventDto,
   CalendarEventsQueryDto,
@@ -33,6 +52,7 @@ import { AdminDemandMapQueryDto } from '../demand/dto/demand.dto';
 @ApiTags('admin · food growth')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageFood')
 @Controller('admin/food')
 export class AdminGrowthController {
   constructor(
@@ -47,6 +67,7 @@ export class AdminGrowthController {
     summary:
       '?code= a CT- catering code, an FC- order code, or a tiffin subscription id → the record (audited).',
   })
+  @ApiEnvelopeOk(AdminGrowthLookupView)
   lookup(@Query('code') code = '') {
     return this.lookups.lookup(code.slice(0, 64));
   }
@@ -56,6 +77,7 @@ export class AdminGrowthController {
     summary:
       '?city&cuisineId&hour&week — the platform view of a city’s demand cells (same k = 5 threshold as vendors).',
   })
+  @ApiEnvelopeOk(AdminGrowthDemandMapView)
   demandMap(@Query() q: AdminDemandMapQueryDto) {
     const { city, ...rest } = q;
     return this.demand.map({ city, ...rest });
@@ -65,12 +87,14 @@ export class AdminGrowthController {
   @ApiOperation({
     summary: 'Cities with demand data: latest week and searches.',
   })
+  @ApiEnvelopeOk(AdminGrowthDemandCitiesView)
   demandCities() {
     return this.demand.cities();
   }
 
   @Get('calendar-events')
   @ApiOperation({ summary: '?kind&from&city&page — Ramadan, Eid, holidays.' })
+  @ApiPagedOk(AdminGrowthEventsView)
   events(@Query() q: CalendarEventsQueryDto) {
     return this.ramadan.listEvents(q);
   }
@@ -80,11 +104,13 @@ export class AdminGrowthController {
     summary:
       '{ kind (ramadan|eid|public_holiday|other), name, startsOn, endsOn, city? (null = everywhere) } — Ramadan events switch on kitchens’ sehri/iftar hours; every event feeds the forecast.',
   })
+  @ApiEnvelopeOk(AdminGrowthCreateEventView, { status: 201 })
   createEvent(@Body() dto: CalendarEventDto) {
     return this.ramadan.createEvent(dto);
   }
 
   @Patch('calendar-events/:id')
+  @ApiEnvelopeOk(AdminGrowthUpdateEventView)
   updateEvent(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCalendarEventDto,
@@ -93,6 +119,7 @@ export class AdminGrowthController {
   }
 
   @Delete('calendar-events/:id')
+  @ApiEnvelopeOk(AdminGrowthRemoveEventView)
   removeEvent(@Param('id', ParseUUIDPipe) id: string) {
     return this.ramadan.removeEvent(id);
   }
@@ -102,6 +129,7 @@ export class AdminGrowthController {
     summary:
       '?status=self_declared (the queue, oldest first) | verified — kitchens with a complete checklist.',
   })
+  @ApiPagedOk(AdminGrowthHygieneView)
   hygiene(@Query() q: HygieneQueueQueryDto) {
     return this.stories.hygieneQueue(q);
   }
@@ -112,6 +140,7 @@ export class AdminGrowthController {
     summary:
       '{ method: visit|video_call, note? } — self_declared → verified. Any later checklist change drops it back.',
   })
+  @ApiEnvelopeOk(AdminGrowthVerifyView)
   verify(
     @Param('brandId', ParseUUIDPipe) brandId: string,
     @Body() dto: HygieneVerifyDto,
@@ -122,6 +151,7 @@ export class AdminGrowthController {
   @Post('hygiene/:brandId/revoke')
   @HttpCode(200)
   @ApiOperation({ summary: '{ reason } — verified → self_declared.' })
+  @ApiEnvelopeOk(AdminGrowthRevokeView)
   revoke(
     @Param('brandId', ParseUUIDPipe) brandId: string,
     @Body() dto: ReasonDto,
@@ -134,6 +164,7 @@ export class AdminGrowthController {
     summary:
       '?status=claimed (newest first) | removed — signature recipe claims.',
   })
+  @ApiPagedOk(AdminGrowthSignaturesView)
   signatures(@Query() q: SignatureQueueQueryDto) {
     return this.stories.signatures(q);
   }
@@ -144,6 +175,7 @@ export class AdminGrowthController {
     summary:
       '{ reason } — removes a false claim; the vendor is told and may claim again (it comes back to this list).',
   })
+  @ApiEnvelopeOk(AdminGrowthRemoveSignatureView)
   removeSignature(
     @Param('recipeCardId', ParseUUIDPipe) id: string,
     @Body() dto: ReasonDto,

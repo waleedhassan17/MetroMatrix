@@ -1,3 +1,5 @@
+import { AdminFoodPlanPatchView } from './admin-food-plan.response';
+import { ApiEnvelopeOk } from '../../../common/swagger/api-envelope';
 import {
   Body,
   Controller,
@@ -11,12 +13,14 @@ import { PlanService } from '../../plans/plans.service';
 import { FoodVendorService } from '../vendor/food-vendor.service';
 import { AdminPlanDto } from './dto/admin-plan.dto';
 import { Roles } from '../../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../../common/decorators/require-permission.decorator';
 import { OperationalAuditService } from '../../../common/audit/operational-audit.service';
 import type { PlanOverrides } from '../../plans/plan-config';
 
 @ApiTags('admin · food')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageFood')
 @Controller('admin/food/vendors')
 export class AdminFoodPlanController {
   constructor(
@@ -26,6 +30,8 @@ export class AdminFoodPlanController {
   ) {}
 
   @Get(':id/plan')
+  @ApiOperation({ summary: 'The vendor’s plan: limits, entitlements, usage.' })
+  @ApiEnvelopeOk(AdminFoodPlanPatchView)
   async get(@Param('id', ParseUUIDPipe) id: string) {
     const v = await this.vendors.byBrandId(id);
     return this.plans.view(v.businessId);
@@ -36,11 +42,13 @@ export class AdminFoodPlanController {
     summary:
       '{ planKey?, overrides?: { limits?, entitlements? } | null } — takes effect at once; riders beyond a lowered limit become plan_locked (a rider mid-delivery keeps the seat). Audited.',
   })
+  @ApiEnvelopeOk(AdminFoodPlanPatchView)
   async patch(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AdminPlanDto,
   ) {
     const v = await this.vendors.byBrandId(id);
+    const was = await this.plans.view(v.businessId);
     const view = await this.plans.change(v.businessId, {
       planKey: dto.planKey,
       overrides: dto.overrides as PlanOverrides | null | undefined,
@@ -49,7 +57,8 @@ export class AdminFoodPlanController {
       action: 'food.vendor.plan',
       targetType: 'food_brand',
       targetId: id,
-      details: { planKey: view.planKey, overrides: view.overrides },
+      before: { planKey: was.planKey, overrides: was.overrides },
+      after: { planKey: view.planKey, overrides: view.overrides },
     });
     return view;
   }

@@ -24,7 +24,15 @@ import { ErrorCode } from '../../common/errors/codes';
 import { randomToken, sha256Hex } from '../../common/crypto/hash';
 import { durationMs } from '../../common/crypto/duration';
 import { OperationalAuditService } from '../../common/audit/operational-audit.service';
-import { UserRole } from '../../types';
+import { isAdminRole, UserRole } from '../../types';
+import type { SessionClient } from './web/admin-web-session';
+
+export interface RotateOptions {
+  /** Which kind of session the caller accepts (default `app`). */
+  client?: SessionClient;
+  /** `admin_web`: refuse a token older than this (no refresh for so long). */
+  idleMs?: number;
+}
 
 export const ACCESS_AUDIENCE = 'access';
 export const TOTP_AUDIENCE = 'totp';
@@ -57,7 +65,8 @@ export interface ChallengePayload {
 
 type RotateOutcome =
   | { kind: 'rotated'; pair: TokenPair; user: User }
-  | { kind: 'reused'; familyId: string; userId: string };
+  | { kind: 'reused'; familyId: string; userId: string }
+  | { kind: 'idle' };
 
 const refreshInvalid = () =>
   new UnauthorizedException({
@@ -75,7 +84,9 @@ const refreshInvalid = () =>
 @Injectable()
 export class TokenService {
   private readonly accessTtlSeconds: number;
+  private readonly adminAccessTtlSeconds: number;
   private readonly refreshTtlMs: number;
+  private readonly adminWebTtlMs: number;
   private readonly graceMs: number;
 
   constructor(
@@ -90,20 +101,34 @@ export class TokenService {
   ) {
     this.accessTtlSeconds =
       durationMs(config.get<string>('jwt.accessExpiresIn', '15m')) / 1000;
+    this.adminAccessTtlSeconds =
+      durationMs(config.get<string>('adminWeb.accessExpiresIn', '10m')) / 1000;
     this.refreshTtlMs = durationMs(
       config.get<string>('jwt.refreshExpiresIn', '30d'),
+    );
+    this.adminWebTtlMs = durationMs(
+      config.get<string>('adminWeb.refreshTtl', '12h'),
     );
     this.graceMs =
       config.get<number>('jwt.refreshReuseGraceSeconds', 10) * 1000;
   }
 
-  /** Sign-in: a new device, so a new refresh family. */
-  async startSession(user: User, client: ClientInfo): Promise<TokenPair> {
+  /**
+   * Sign-in: a new device, so a new refresh family. `admin_web` is the
+   * console: its refresh token goes in a cookie and lives ADMIN_REFRESH_TTL
+   * from sign-in, however often it is refreshed.
+   */
+  async startSession(
+    user: User,
+    client: ClientInfo,
+    kind: SessionClient = 'app',
+  ): Promise<TokenPair> {
     const { pair } = await this.issue(
       this.refreshRepo.manager,
       user,
       randomUUID(),
       client,
+      { client: kind, sessionStartedAt: new Date() },
     );
     return pair;
   }
@@ -120,18 +145,32 @@ export class TokenService {
    * The row is locked for the duration so two concurrent refreshes of one
    * token are serialised rather than both rotating it.
    */
-  async rotate(refreshToken: string, client: ClientInfo): Promise<TokenPair> {
+  async rotate(
+    refreshToken: string,
+    client: ClientInfo,
+    opts: RotateOptions = {},
+  ): Promise<TokenPair> {
     const tokenHash = sha256Hex(refreshToken);
+    const expect: SessionClient = opts.client ?? 'app';
     const outcome = await this.dataSource.transaction(
       async (m): Promise<RotateOutcome> => {
         const row = await m.findOne(RefreshToken, {
           where: { tokenHash },
           lock: { mode: 'pessimistic_write' },
         });
-        if (!row) throw refreshInvalid();
+        // A console token on the app endpoint (or the reverse) is treated as
+        // unknown: each kind of session has exactly one way in.
+        if (!row || row.client !== expect) throw refreshInvalid();
+        const carry = {
+          client: row.client,
+          sessionStartedAt: row.sessionStartedAt,
+        };
 
         const user = await m.findOne(User, { where: { id: row.userId } });
         if (!user || user.status === 'deleted') throw refreshInvalid();
+        if (expect === 'admin_web' && !isAdminRole(user.role)) {
+          throw refreshInvalid();
+        }
         if (user.status === 'disabled') {
           throw new ForbiddenException({
             code: ErrorCode.ACCOUNT_DISABLED,
@@ -153,7 +192,13 @@ export class TokenService {
               },
             }));
           if (withinGrace && familyAlive) {
-            const { pair } = await this.issue(m, user, row.familyId, client);
+            const { pair } = await this.issue(
+              m,
+              user,
+              row.familyId,
+              client,
+              carry,
+            );
             return { kind: 'rotated', pair, user };
           }
           await this.revokeFamilyWith(m, row.familyId);
@@ -161,8 +206,24 @@ export class TokenService {
         }
 
         if (row.expiresAt.getTime() <= Date.now()) throw refreshInvalid();
+        if (expect === 'admin_web') {
+          const started = row.sessionStartedAt ?? row.createdAt;
+          if (started.getTime() + this.adminWebTtlMs <= Date.now()) {
+            await this.revokeFamilyWith(m, row.familyId);
+            throw refreshInvalid();
+          }
+          // Each rotation writes a new row, so the presented token's age is
+          // the time since the last refresh.
+          if (
+            opts.idleMs &&
+            row.createdAt.getTime() + opts.idleMs <= Date.now()
+          ) {
+            await this.revokeFamilyWith(m, row.familyId);
+            return { kind: 'idle' };
+          }
+        }
 
-        const next = await this.issue(m, user, row.familyId, client);
+        const next = await this.issue(m, user, row.familyId, client, carry);
         await m.update(
           RefreshToken,
           { id: row.id },
@@ -172,6 +233,14 @@ export class TokenService {
       },
     );
 
+    if (outcome.kind === 'idle') {
+      // Thrown after the commit, so the family revocation is kept.
+      throw new UnauthorizedException({
+        code: ErrorCode.SESSION_IDLE,
+        message:
+          'You were signed out after a period of inactivity. Please sign in again.',
+      });
+    }
     if (outcome.kind === 'reused') {
       // Recorded after the commit so the family revocation is never rolled
       // back by the error below.
@@ -194,6 +263,17 @@ export class TokenService {
   /** Sign out one device. */
   async revokeFamily(familyId: string): Promise<void> {
     await this.revokeFamilyWith(this.refreshRepo.manager, familyId);
+  }
+
+  /** Sign out the device a refresh token belongs to (console logout). */
+  async revokeByRefreshToken(
+    refreshToken: string,
+    kind: SessionClient,
+  ): Promise<void> {
+    const row = await this.refreshRepo.findOne({
+      where: { tokenHash: sha256Hex(refreshToken), client: kind },
+    });
+    if (row) await this.revokeFamily(row.familyId);
   }
 
   /** Sign out every device, or every device but the caller's. */
@@ -285,20 +365,32 @@ export class TokenService {
     user: User,
     familyId: string,
     client: ClientInfo,
+    session: { client: SessionClient; sessionStartedAt: Date | null } = {
+      client: 'app',
+      sessionStartedAt: null,
+    },
   ): Promise<{ pair: TokenPair; rowId: string }> {
     const refreshToken = randomToken(32);
+    const ttlMs =
+      session.client === 'admin_web' ? this.adminWebTtlMs : this.refreshTtlMs;
     const row = await manager.save(
       manager.create(RefreshToken, {
         userId: user.id,
         familyId,
         tokenHash: sha256Hex(refreshToken),
-        expiresAt: new Date(Date.now() + this.refreshTtlMs),
+        expiresAt: new Date(Date.now() + ttlMs),
         revokedAt: null,
         replacedById: null,
         userAgent: client.userAgent?.slice(0, 255) ?? null,
         ip: client.ip?.slice(0, 64) ?? null,
+        client: session.client,
+        sessionStartedAt: session.sessionStartedAt,
       }),
     );
+    // Admin access tokens are short-lived everywhere (ADMIN_ACCESS_EXPIRES_IN).
+    const accessTtl = isAdminRole(user.role)
+      ? this.adminAccessTtlSeconds
+      : this.accessTtlSeconds;
     const payload: AccessTokenPayload = {
       sub: user.id,
       role: user.role,
@@ -308,10 +400,10 @@ export class TokenService {
     };
     const accessToken = await this.jwt.signAsync(payload, {
       audience: ACCESS_AUDIENCE,
-      expiresIn: this.accessTtlSeconds,
+      expiresIn: accessTtl,
     });
     return {
-      pair: { accessToken, refreshToken, expiresIn: this.accessTtlSeconds },
+      pair: { accessToken, refreshToken, expiresIn: accessTtl },
       rowId: row.id,
     };
   }

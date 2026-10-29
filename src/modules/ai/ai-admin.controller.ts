@@ -1,3 +1,9 @@
+import {
+  AiAdminListPromptsView,
+  AiAdminSettingsViewView,
+  AiAdminUsageView,
+} from './ai-admin.response';
+import { ApiEnvelopeOk } from '../../common/swagger/api-envelope';
 import { Controller, Get, Query } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -10,6 +16,7 @@ import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { DataSource } from 'typeorm';
 import { Roles } from '../../common/decorators/roles.decorator';
+import { RequirePermission } from '../../common/decorators/require-permission.decorator';
 import { AiSettings } from './ai-settings';
 import { AiProvider } from './providers/ai-provider';
 import { PromptRegistry } from './prompt-registry';
@@ -33,6 +40,7 @@ export class AiUsageQueryDto {
 @ApiTags('admin · ai')
 @ApiBearerAuth()
 @Roles('admin', 'super_admin')
+@RequirePermission('manageKitchen')
 @Controller('admin/ai')
 export class AiAdminController {
   constructor(
@@ -48,6 +56,7 @@ export class AiAdminController {
     summary:
       '?days (30) → totals, byFeature (statuses, p50/p95 latency), top businesses, recent failures.',
   })
+  @ApiEnvelopeOk(AiAdminUsageView)
   async usage(@Query() q: AiUsageQueryDto) {
     const since = new Date(Date.now() - q.days * 86_400_000);
     const [[totals], byFeature, byBusiness, failures] = await Promise.all([
@@ -98,6 +107,7 @@ export class AiAdminController {
     summary:
       'Every prompt (id, version, feature, title, length) with its calls in the last 30 days.',
   })
+  @ApiEnvelopeOk(AiAdminListPromptsView)
   async listPrompts() {
     const calls: Array<{
       prompt_id: string;
@@ -126,6 +136,7 @@ export class AiAdminController {
 
   @Get('settings')
   @ApiOperation({ summary: 'The switches as the server runs them (no keys).' })
+  @ApiEnvelopeOk(AiAdminSettingsViewView)
   settingsView() {
     return {
       enabled: this.settings.enabled,

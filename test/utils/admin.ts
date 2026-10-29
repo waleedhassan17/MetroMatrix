@@ -5,6 +5,22 @@ import { PASSWORD, uniqueEmail } from './factories';
 
 export const totpCode = (secret: string) => authenticator.generate(secret);
 
+/**
+ * A code the server will accept again. A TOTP code's 30 s step is spent once
+ * used (sign-in, rotation, step-up); clearing the admin's last spent step
+ * stands in for waiting for the next step, as the suites back-date rows
+ * rather than sleep.
+ */
+export async function freshTotp(
+  t: TestApp,
+  admin: { userId: string; secret: string },
+): Promise<string> {
+  await t.ds.query(`UPDATE users SET totp_last_step = NULL WHERE id = $1`, [
+    admin.userId,
+  ]);
+  return authenticator.generate(admin.secret);
+}
+
 /** A brand-new super admin, as `npm run seed:superadmin` would create. */
 export async function seedAdmin(t: TestApp) {
   const email = uniqueEmail('admin');
@@ -80,4 +96,101 @@ export async function verifyDoctorPmdc(
       `pmdc-verify failed: ${res.status} ${JSON.stringify(res.body)}`,
     );
   return id;
+}
+
+export interface SignedInAdmin {
+  api: ApiClient;
+  email: string;
+  userId: string;
+  secret: string;
+  password: string;
+}
+
+/**
+ * A regular admin with exactly `permissions`, made the way the console makes
+ * one: a super admin creates it (temporary password, step-up), the new admin
+ * signs in with it, enrols an authenticator through the challenge, then
+ * replaces the temporary password. Fully set up and signed in.
+ */
+export async function limitedAdmin(
+  t: TestApp,
+  superAdmin: { api: ApiClient; userId: string; secret: string },
+  permissions: string[],
+): Promise<SignedInAdmin> {
+  const email = uniqueEmail('staff');
+  // A fresh client per call: the step-up routes are throttled per address.
+  const creator = new ApiClient(t.http);
+  creator.token = superAdmin.api.token;
+  const created = await creator.post('/admin/admins', {
+    email,
+    displayName: 'Staff Member',
+    permissions,
+    totpCode: await freshTotp(t, superAdmin),
+  });
+  if (created.status !== 201) {
+    throw new Error(
+      `create admin failed: ${created.status} ${JSON.stringify(created.body)}`,
+    );
+  }
+  const userId = created.body.data.admin.id as string;
+  const temporary = created.body.data.temporaryPassword as string;
+
+  const step1 = await new ApiClient(t.http).post('/auth/signin', {
+    email,
+    password: temporary,
+    portal: 'admin',
+  });
+  const viaChallenge = new ApiClient(t.http);
+  viaChallenge.token = step1.body.data.challengeToken;
+  const enrol = await viaChallenge.post('/admin/me/totp/enrol');
+  const secret = enrol.body.data.secret as string;
+  const confirm = await viaChallenge.post('/admin/me/totp/confirm', {
+    code: totpCode(secret),
+  });
+  if (confirm.status !== 200) {
+    throw new Error(
+      `confirm failed: ${confirm.status} ${JSON.stringify(confirm.body)}`,
+    );
+  }
+  const api = new ApiClient(t.http);
+  api.token = confirm.body.data.auth.tokens.accessToken;
+  const changed = await api.post('/auth/change-password', {
+    currentPassword: temporary,
+    newPassword: PASSWORD,
+  });
+  if (changed.status !== 200) {
+    throw new Error(
+      `change-password failed: ${changed.status} ${JSON.stringify(changed.body)}`,
+    );
+  }
+  return { api, email, userId, secret, password: PASSWORD };
+}
+
+/**
+ * A signed-in rider. Made directly in the database — the vendor flow that
+ * normally creates riders is irrelevant to the admin suites.
+ */
+export async function plainRider(t: TestApp): Promise<{ api: ApiClient }> {
+  const bcrypt = await import('bcryptjs');
+  const username = `rider${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
+  await t.ds.query(
+    `INSERT INTO users (email, username, password_hash, display_name, role, is_email_verified, status)
+     VALUES ($1, $2, $3, 'Rider', 'rider', true, 'active')`,
+    [
+      `${username}@riders.metromatrix.invalid`,
+      username,
+      await bcrypt.hash(PASSWORD, 4),
+    ],
+  );
+  const api = new ApiClient(t.http);
+  const res = await api.post('/auth/signin', {
+    identifier: username,
+    password: PASSWORD,
+    portal: 'partner',
+  });
+  if (res.status !== 200) {
+    throw new Error(`rider signin: ${res.status} ${JSON.stringify(res.body)}`);
+  }
+  api.token = res.body.data.tokens.accessToken;
+  return { api };
 }

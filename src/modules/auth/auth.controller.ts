@@ -6,8 +6,16 @@ import {
   Headers,
   HttpCode,
   Post,
+  Req,
+  Res,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Request, Response } from 'express';
+import {
+  ApiBearerAuth,
+  ApiHeader,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -27,7 +35,16 @@ import { AccountService } from './account.service';
 import { GoogleAuthService } from './google-auth.service';
 import { GoogleSigninDto } from './dto/google.dto';
 import { AdminTotpDto } from './dto/totp.dto';
+import { AdminWebSession } from './web/admin-web-session';
+import { ApiEnvelopeOk, FlagView } from '../../common/swagger/api-envelope';
+import {
+  AccountViewDto,
+  AuthResultView,
+  SigninResultView,
+  TokenPairView,
+} from './dto/auth.response';
 import { PublicRoute } from '../../common/decorators/public.decorator';
+import { AllowRestrictedAdmin } from '../../common/decorators/admin-session.decorator';
 import {
   AuthenticatedUser,
   CurrentUser,
@@ -48,6 +65,7 @@ export class AuthController {
     private readonly passwordReset: PasswordResetService,
     private readonly account: AccountService,
     private readonly google: GoogleAuthService,
+    private readonly web: AdminWebSession,
   ) {}
 
   @Post('signup')
@@ -57,6 +75,7 @@ export class AuthController {
     summary:
       'Register a customer or partner. Returns AuthResult and emails a verification code.',
   })
+  @ApiEnvelopeOk(AuthResultView, { status: 201 })
   signup(@Body() dto: SignupDto, @Client() client: ClientInfo) {
     return this.auth.signup(dto, client);
   }
@@ -69,6 +88,7 @@ export class AuthController {
     summary:
       'Email + password on a portal. AuthResult, or { totpRequired, challengeToken } on the admin portal.',
   })
+  @ApiEnvelopeOk(SigninResultView)
   signin(@Body() dto: SigninDto, @Client() client: ClientInfo) {
     return this.auth.signin(dto, client);
   }
@@ -81,8 +101,23 @@ export class AuthController {
     summary:
       'Admin sign-in step 2: { challengeToken, code } or { challengeToken, recoveryCode } → AuthResult.',
   })
-  adminTotp(@Body() dto: AdminTotpDto, @Client() client: ClientInfo) {
-    return this.auth.adminTotp(dto, client);
+  @ApiHeader({
+    name: 'X-Client',
+    required: false,
+    description:
+      'admin-web: the web console. The refresh token is then set as the HttpOnly mm_admin_rt cookie and left out of the body (needs X-Requested-With and the console Origin).',
+  })
+  @ApiEnvelopeOk(AuthResultView)
+  async adminTotp(
+    @Body() dto: AdminTotpDto,
+    @Client() client: ClientInfo,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!this.web.wantsCookie(req)) return this.auth.adminTotp(dto, client);
+    this.web.assertFromConsole(req);
+    const result = await this.auth.adminTotp(dto, client, 'admin_web');
+    return this.web.handOver(res, result);
   }
 
   @Post('google')
@@ -105,6 +140,7 @@ export class AuthController {
     summary:
       'Rotate a refresh token: a new { accessToken, refreshToken, expiresIn } in the same session.',
   })
+  @ApiEnvelopeOk(TokenPairView)
   refresh(@Body() dto: RefreshTokenDto, @Client() client: ClientInfo) {
     return this.auth.refresh(dto.refreshToken, client);
   }
@@ -121,6 +157,7 @@ export class AuthController {
     summary:
       'Sign this device out: revoke its session and the access token. Idempotent.',
   })
+  @ApiEnvelopeOk(FlagView)
   signout(@Headers('authorization') authorization?: string) {
     return this.auth.signoutByToken(authorization);
   }
@@ -194,6 +231,7 @@ export class AuthController {
   // ── The signed-in account ─────────────────────────────────────────────────
 
   @Post('change-password')
+  @AllowRestrictedAdmin()
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 15 * MINUTE } })
   @ApiBearerAuth()
@@ -201,6 +239,7 @@ export class AuthController {
     summary:
       'Change the password (Google-only accounts may set a first one without currentPassword). Signs out other devices.',
   })
+  @ApiEnvelopeOk(FlagView)
   changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
@@ -229,8 +268,10 @@ export class AuthController {
   }
 
   @Get('me')
+  @AllowRestrictedAdmin()
   @ApiBearerAuth()
   @ApiOperation({ summary: 'The signed-in account: { user, business }.' })
+  @ApiEnvelopeOk(AccountViewDto)
   me(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.me(user.id);
   }

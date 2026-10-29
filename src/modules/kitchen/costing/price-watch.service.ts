@@ -221,7 +221,10 @@ export class PriceWatchService {
     await this.audit.record({
       action: 'kitchen.reference_prices.import',
       targetType: 'reference_prices',
-      details: { ...result, rejected: errors.length },
+      details: { rejected: errors.length },
+      // A bulk change: its size, not every row.
+      before: null,
+      after: result,
     });
     return { ...result, rejected: errors.length, errors: errors.slice(0, 50) };
   }

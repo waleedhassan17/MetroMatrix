@@ -11,6 +11,7 @@ import { UsersService } from '../../users/users.service';
 import { AuthenticatedUser } from '../../../common/decorators/current-user.decorator';
 import { ErrorCode } from '../../../common/errors/codes';
 import { isAdminRole } from '../../../types';
+import { adminFields } from '../access-token-validator';
 
 /** How the caller of /admin/me/totp/* proved who they are. */
 export type TotpAuth =
@@ -76,6 +77,7 @@ export class AdminTotpEnrolGuard implements CanActivate {
         role: user.role,
         sid: access.sid,
         emailVerified: user.isEmailVerified,
+        ...adminFields(user),
       };
       req.totpAuth = { kind: 'access' };
       return true;
@@ -104,6 +106,7 @@ export class AdminTotpEnrolGuard implements CanActivate {
       role: user.role,
       sid: '',
       emailVerified: user.isEmailVerified,
+      ...adminFields(user),
     };
     req.totpAuth = {
       kind: 'challenge',
