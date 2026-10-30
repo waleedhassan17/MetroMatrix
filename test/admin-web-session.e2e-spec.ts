@@ -7,7 +7,7 @@ import {
   totpCode,
 } from './utils/admin';
 import { seedAdmin } from './utils/admin';
-import { signup } from './utils/factories';
+import { PASSWORD, signup } from './utils/factories';
 
 const ORIGIN = process.env.ADMIN_WEB_ORIGIN!;
 const CONSOLE = {
@@ -260,5 +260,44 @@ describe('Admin web console sessions (e2e)', () => {
     api.token = access;
     await api.get('/auth/me').expect(401);
     await web('/auth/web/logout').expect(200);
+  });
+
+  it('a password change from the console keeps a console session: a new cookie, the same absolute limit', async () => {
+    const staff = await enrolledAdmin(t);
+    const ch = await adminChallenge(t, staff.email);
+    const signin = await web('/auth/admin/totp')
+      .send({
+        challengeToken: ch.challengeToken,
+        code: await freshTotp(t, staff),
+      })
+      .expect(200);
+    const before = cookieOf(signin)!;
+    const startedOf = async (token: string) => {
+      const [row] = await t.ds.query(
+        `SELECT client, session_started_at FROM refresh_tokens WHERE token_hash = encode(sha256($1::bytea), 'hex')`,
+        [token],
+      );
+      return row as { client: string; session_started_at: Date };
+    };
+    const started = await startedOf(before.value);
+
+    const res = await request(t.http)
+      .post('/api/v1/auth/change-password')
+      .set('Authorization', `Bearer ${signin.body.data.tokens.accessToken}`)
+      .send({ currentPassword: PASSWORD, newPassword: 'Another1Password' })
+      .expect(200);
+    expect(res.body.data.changed).toBe(true);
+    expect(res.body.data.tokens.accessToken).toEqual(expect.any(String));
+    expect(res.body.data.tokens.refreshToken).toBeUndefined();
+    expect(res.body.data.sessionClient).toBeUndefined();
+
+    const after = cookieOf(res)!;
+    expect(after.value).not.toBe(before.value);
+    const row = await startedOf(after.value);
+    expect(row.client).toBe('admin_web');
+    expect(new Date(row.session_started_at).getTime()).toBe(
+      new Date(started.session_started_at).getTime(),
+    );
+    await refresh(after.value).expect(200);
   });
 });

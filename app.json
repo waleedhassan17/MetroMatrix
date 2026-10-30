@@ -9,7 +9,7 @@
     "NODE_ENV": { "value": "production" },
     "API_PREFIX": { "value": "api/v1" },
     "APP_URL": { "description": "Public HTTPS URL of the app, e.g. https://metromatrix-api.herokuapp.com" },
-    "CORS_ORIGINS": { "description": "Comma-separated browser origins (admin web). The mobile app needs none." },
+    "CORS_ORIGINS": { "description": "Comma-separated browser origins (admin web). The mobile app needs none. Production refuses \"*\"." },
 
     "DB_SSL": { "value": "true" },
     "DB_SSL_REJECT_UNAUTHORIZED": { "value": "false" },
@@ -29,6 +29,7 @@
     "MAIL_USER": { "description": "Brevo SMTP login" },
     "MAIL_PASS": { "description": "Brevo SMTP key" },
     "MAIL_FROM": { "value": "MetroMatrix <no-reply@metromatrix.pk>" },
+    "SUPPORT_EMAIL": { "description": "Optional. Support address named in the business-suspended email.", "required": false },
 
     "GOOGLE_CLIENT_IDS": { "description": "Web, Android and iOS OAuth client ids, comma-separated." },
     "CLOUDINARY_CLOUD_NAME": { "description": "Cloudinary cloud name" },

@@ -3,6 +3,10 @@ import { BaseEntity } from '../../../common/base/base.entity';
 import { User } from '../../users/entities/user.entity';
 
 /**
+ * RETIRED: email verification is by link now (EmailVerificationToken). The
+ * entity stays registered so its table (and rows) stay in the schema the
+ * migrations describe; nothing reads or writes it.
+ *
  * A 6-digit email verification code. Only its peppered hash is stored
  * (common/crypto/otp.ts). 10-minute life, 5 attempts, and issuing a new code
  * retires the previous one. `created_at` drives the 60 s resend cooldown.

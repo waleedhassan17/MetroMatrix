@@ -47,6 +47,14 @@ describe('Auth core (e2e)', () => {
           avatarUrl: null,
           isEmailVerified: false,
           hasPassword: true,
+          // Complete Profile (A3): a new customer starts incomplete, not skippable.
+          dateOfBirth: null,
+          gender: null,
+          streetAddress: null,
+          city: null,
+          postalCode: null,
+          profileComplete: false,
+          profileSkippable: false,
         },
         tokens: {
           accessToken: expect.any(String),

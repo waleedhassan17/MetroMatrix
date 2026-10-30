@@ -74,9 +74,9 @@ export const sha256 = (s: string) =>
 /** A partner whose email is verified — ready to onboard. */
 export async function verifiedPartner(t: TestApp): Promise<SignedUp> {
   const p = await signup(t, { role: 'partner' });
-  const { lastOtpFor } = await import('./outbox');
+  const { lastVerifyTokenFor } = await import('./outbox');
   const res = await p.api.post('/auth/verify-email', {
-    otp: lastOtpFor(p.email),
+    token: lastVerifyTokenFor(p.email),
   });
   if (res.status !== 200) {
     throw new Error(`verify failed: ${res.status} ${JSON.stringify(res.body)}`);

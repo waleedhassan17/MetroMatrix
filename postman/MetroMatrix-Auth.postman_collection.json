@@ -1,7 +1,7 @@
 {
  "info": {
   "name": "MetroMatrix — Chunk 1 (Auth + Partner Onboarding)",
-  "description": "Runnable end to end, in order. Locally (docker-compose Mailpit) every code is read from Mailpit; against a server using real email, set customerOtp/partnerOtp/resetOtp by hand. Needs environment values baseUrl, mailpitUrl, adminEmail, adminPassword (pass it with --env-var, never commit it) and adminTotpSecret (filled on first enrolment; keep the exported environment).",
+  "description": "Runnable end to end, in order. Locally (docker-compose Mailpit) every code is read from Mailpit; against a server using real email, set customerVerifyToken/partnerVerifyToken/resetOtp by hand. Needs environment values baseUrl, mailpitUrl, adminEmail, adminPassword (pass it with --env-var, never commit it) and adminTotpSecret (filled on first enrolment; keep the exported environment).",
   "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
  },
  "auth": {
@@ -79,11 +79,11 @@
    "value": ""
   },
   {
-   "key": "customerOtp",
+   "key": "customerVerifyToken",
    "value": ""
   },
   {
-   "key": "partnerOtp",
+   "key": "partnerVerifyToken",
    "value": ""
   },
   {
@@ -261,7 +261,7 @@
      ]
     },
     {
-     "name": "Mailpit: customer verification code",
+     "name": "Mailpit: customer verification link",
      "request": {
       "method": "GET",
       "header": [],
@@ -286,13 +286,13 @@
        "script": {
         "type": "text/javascript",
         "exec": [
-         "pm.test('Mailpit: customer verification code → 200', () => pm.response.to.have.status(200));",
+         "pm.test('Mailpit: customer verification link → 200', () => pm.response.to.have.status(200));",
          "",
          "const msg = pm.response.json().messages[0];",
          "pm.test('an email arrived', () => pm.expect(msg, 'no email yet').to.be.ok);",
-         "const code = (msg.Snippet.match(/\\b(\\d{6})\\b/) || [])[1];",
+         "const code = (msg.Snippet.match(/token=([A-Za-z0-9_-]{43})/) || [])[1];",
          "pm.test('it carries a 6-digit code', () => pm.expect(code).to.match(/^\\d{6}$/));",
-         "pm.collectionVariables.set('customerOtp', code);"
+         "pm.collectionVariables.set('customerVerifyToken', code);"
         ]
        }
       }
@@ -315,7 +315,7 @@
       },
       "body": {
        "mode": "raw",
-       "raw": "{\n  \"otp\": \"{{customerOtp}}\"\n}",
+       "raw": "{\n  \"token\": \"{{customerVerifyToken}}\"\n}",
        "options": {
         "raw": {
          "language": "json"
@@ -721,7 +721,7 @@
      ]
     },
     {
-     "name": "Mailpit: partner verification code",
+     "name": "Mailpit: partner verification link",
      "request": {
       "method": "GET",
       "header": [],
@@ -746,13 +746,13 @@
        "script": {
         "type": "text/javascript",
         "exec": [
-         "pm.test('Mailpit: partner verification code → 200', () => pm.response.to.have.status(200));",
+         "pm.test('Mailpit: partner verification link → 200', () => pm.response.to.have.status(200));",
          "",
          "const msg = pm.response.json().messages[0];",
          "pm.test('an email arrived', () => pm.expect(msg, 'no email yet').to.be.ok);",
-         "const code = (msg.Snippet.match(/\\b(\\d{6})\\b/) || [])[1];",
+         "const code = (msg.Snippet.match(/token=([A-Za-z0-9_-]{43})/) || [])[1];",
          "pm.test('it carries a 6-digit code', () => pm.expect(code).to.match(/^\\d{6}$/));",
-         "pm.collectionVariables.set('partnerOtp', code);"
+         "pm.collectionVariables.set('partnerVerifyToken', code);"
         ]
        }
       }
@@ -775,7 +775,7 @@
       },
       "body": {
        "mode": "raw",
-       "raw": "{\n  \"otp\": \"{{partnerOtp}}\"\n}",
+       "raw": "{\n  \"token\": \"{{partnerVerifyToken}}\"\n}",
        "options": {
         "raw": {
          "language": "json"

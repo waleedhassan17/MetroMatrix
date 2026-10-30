@@ -43,6 +43,17 @@ export async function adminChallenge(t: TestApp, email: string) {
   return { api, res, challengeToken: res.body.data?.challengeToken as string };
 }
 
+/**
+ * A TOTP code is accepted once (users.totp_last_step). Tests can't wait for
+ * the next 30 s step, so they move the accepted step back instead: the
+ * current code then counts as a later one.
+ */
+export const nextTotpWindow = (t: TestApp, userId: string) =>
+  t.ds.query(
+    'UPDATE users SET totp_last_step = totp_last_step - 10 WHERE id = $1',
+    [userId],
+  );
+
 /** Seed an admin and enrol TOTP through the challenge — a signed-in admin. */
 export async function enrolledAdmin(t: TestApp) {
   const { email, userId } = await seedAdmin(t);
@@ -59,6 +70,9 @@ export async function enrolledAdmin(t: TestApp) {
       `confirm failed: ${confirm.status} ${JSON.stringify(confirm.body)}`,
     );
   }
+  // The confirming code is now spent (users.totp_last_step); tests sign in
+  // right away, as if the next 30 s window had come.
+  await nextTotpWindow(t, userId);
   const api = new ApiClient(t.http);
   api.token = confirm.body.data.auth.tokens.accessToken;
   return {
@@ -163,6 +177,8 @@ export async function limitedAdmin(
       `change-password failed: ${changed.status} ${JSON.stringify(changed.body)}`,
     );
   }
+  // A password change ends every session; this one carries on with the new pair.
+  api.token = changed.body.data.tokens.accessToken;
   return { api, email, userId, secret, password: PASSWORD };
 }
 

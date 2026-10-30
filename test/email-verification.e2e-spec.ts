@@ -1,8 +1,9 @@
+import request from 'supertest';
 import { createTestApp, TestApp } from './utils/test-app';
-import { signup } from './utils/factories';
-import { emailsTo, lastEmailTo, lastOtpFor } from './utils/outbox';
+import { sha256, signup } from './utils/factories';
+import { emailsTo, lastEmailTo, lastVerifyTokenFor } from './utils/outbox';
 
-describe('Email verification (e2e)', () => {
+describe('Email verification by link (e2e)', () => {
   let t: TestApp;
 
   beforeAll(async () => {
@@ -10,79 +11,132 @@ describe('Email verification (e2e)', () => {
   });
   afterAll(() => t.close());
 
-  const wrongCode = (right: string) =>
-    String((Number(right) + 1) % 1_000_000).padStart(6, '0');
+  /** The API's own page, as a mail client's browser opens it (no bearer). */
+  const openPage = (token?: string) =>
+    request(t.http)
+      .get('/api/v1/auth/verify')
+      .query(token === undefined ? {} : { token });
 
-  /** Pretend the latest code was sent `seconds` ago. */
-  const ageLatestCode = (userId: string, seconds: number) =>
+  /** Pretend the latest link was sent `seconds` ago. */
+  const ageLatestLink = (userId: string, seconds: number) =>
     t.ds.query(
-      `UPDATE email_verification_otps
+      `UPDATE email_verification_tokens
           SET created_at = created_at - make_interval(secs => $2),
               expires_at = expires_at - make_interval(secs => $2)
-        WHERE id = (SELECT id FROM email_verification_otps WHERE user_id = $1
+        WHERE id = (SELECT id FROM email_verification_tokens WHERE user_id = $1
                      ORDER BY created_at DESC LIMIT 1)`,
       [userId, seconds],
     );
 
-  it('signup emails a 6-digit code (HTML + text), stored only as a hash', async () => {
+  const isVerified = async (userId: string) =>
+    (
+      await t.ds.query('SELECT is_email_verified FROM users WHERE id = $1', [
+        userId,
+      ])
+    )[0].is_email_verified as boolean;
+
+  it('signup emails a link (web page + app link, HTML and text); only the hash is stored', async () => {
     const u = await signup(t);
     const email = lastEmailTo(u.email)!;
     expect(email.subject).toBe('Verify your MetroMatrix email');
-    const otp = lastOtpFor(u.email);
-    expect(email.html).toContain(otp);
-    expect(email.html).toContain('MetroMatrix');
+    const token = lastVerifyTokenFor(u.email);
+    expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(email.text).toContain(
+      `http://localhost:3000/api/v1/auth/verify?token=${token}`,
+    );
+    expect(email.text).toContain(`metromatrix://verify-email?token=${token}`);
+    expect(email.html).toContain('Verify email');
+    expect(email.html).toContain('Open in the app');
+    expect(email.html).toContain('24 hours');
+
     const rows = await t.ds.query(
-      `SELECT otp_hash FROM email_verification_otps WHERE user_id = $1`,
+      `SELECT token_hash, used_at FROM email_verification_tokens WHERE user_id = $1`,
       [u.userId],
     );
-    expect(rows).toHaveLength(1);
-    expect(rows[0].otp_hash).not.toContain(otp);
-    expect(rows[0].otp_hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(rows).toEqual([{ token_hash: sha256(token), used_at: null }]);
+    // Nothing goes to the retired OTP table any more.
+    const otps = await t.ds.query(
+      'SELECT 1 FROM email_verification_otps WHERE user_id = $1',
+      [u.userId],
+    );
+    expect(otps).toHaveLength(0);
   });
 
-  it('wrong code ×5: attemptsLeft counts down, the 5th answers OTP_LOCKED; a resend issues a fresh code', async () => {
+  it('GET /auth/verify verifies and answers a locked-down HTML page whose app button carries no token', async () => {
     const u = await signup(t);
-    const right = lastOtpFor(u.email);
+    const token = lastVerifyTokenFor(u.email);
+    const res = await openPage(token).expect(200);
+    expect(res.headers['content-type']).toMatch(/text\/html/);
+    expect(res.headers['content-security-policy']).toBe(
+      "default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    );
+    expect(res.headers['cache-control']).toBe('no-store');
+    expect(res.headers['referrer-policy']).toBe('no-referrer');
+    expect(res.text).toContain('Email verified');
+    expect(res.text).toContain('metromatrix://verify-email?verified=1');
+    expect(res.text).not.toContain(token);
+    expect(res.text).not.toMatch(/<script/i);
+    expect(await isVerified(u.userId)).toBe(true);
 
-    for (let i = 1; i <= 4; i++) {
-      const res = await u.api
-        .post('/auth/verify-email', { otp: wrongCode(right) })
-        .expect(400);
-      expect(res.body.error).toEqual({
-        code: 'OTP_INVALID',
-        message: expect.any(String),
-        details: { attemptsLeft: 5 - i },
-      });
-    }
-    const fifth = await u.api
-      .post('/auth/verify-email', { otp: wrongCode(right) })
-      .expect(400);
-    expect(fifth.body.error.code).toBe('OTP_LOCKED');
-
-    // Locked means locked: even the right code is refused now.
-    const after = await u.api
-      .post('/auth/verify-email', { otp: right })
-      .expect(400);
-    expect(after.body.error.code).toBe('OTP_LOCKED');
-
-    await ageLatestCode(u.userId, 61);
-    await u.api.post('/auth/resend-verification').expect(200);
-    const fresh = lastOtpFor(u.email);
-    const ok = await u.api
-      .post('/auth/verify-email', { otp: fresh })
-      .expect(200);
-    expect(ok.body.data.user.isEmailVerified).toBe(true);
+    const me = await u.api.get('/auth/me').expect(200);
+    expect(me.body.data.user.isEmailVerified).toBe(true);
   });
 
-  it('an expired code answers OTP_EXPIRED', async () => {
+  it("POST /auth/verify-email spends the app link's token without a session and returns the owner's account", async () => {
     const u = await signup(t);
-    const otp = lastOtpFor(u.email);
-    await ageLatestCode(u.userId, 11 * 60);
-    const res = await u.api.post('/auth/verify-email', { otp }).expect(400);
-    expect(res.body.error.code).toBe('OTP_EXPIRED');
+    const token = lastVerifyTokenFor(u.email);
+    u.api.token = undefined;
+    const res = await u.api.post('/auth/verify-email', { token }).expect(200);
+    expect(res.body.data.user).toMatchObject({
+      id: u.userId,
+      isEmailVerified: true,
+    });
+    expect(res.body.data).toHaveProperty('business');
+    expect(res.body.data).not.toHaveProperty('tokens');
   });
 
-  it('resend inside 60 s → 429 RESEND_COOLDOWN with retryAfter', async () => {
+  it('a spent link for a verified owner is a success (mail scanners, double taps), on both doors', async () => {
+    const u = await signup(t);
+    const token = lastVerifyTokenFor(u.email);
+    await openPage(token).expect(200);
+
+    const again = await openPage(token).expect(200);
+    expect(again.text).toContain('already verified');
+    await u.api.post('/auth/verify-email', { token }).expect(200);
+  });
+
+  it('an unknown, missing or over-long token is VERIFY_LINK_INVALID (400 page, 400 JSON)', async () => {
+    const page = await openPage('not-a-real-token').expect(400);
+    expect(page.text).toContain('expired or been replaced');
+    expect(page.headers['content-security-policy']).toContain(
+      "default-src 'none'",
+    );
+    await openPage().expect(400);
+    await openPage('x'.repeat(500)).expect(400);
+
+    const api = (await signup(t)).api;
+    const res = await api
+      .post('/auth/verify-email', { token: 'not-a-real-token' })
+      .expect(400);
+    expect(res.body.error).toEqual({
+      code: 'VERIFY_LINK_INVALID',
+      message: expect.any(String),
+    });
+    const empty = await api.post('/auth/verify-email', {}).expect(400);
+    expect(empty.body.error.code).toBe('VALIDATION_FAILED');
+  });
+
+  it('an expired link fails while the address is unverified', async () => {
+    const u = await signup(t);
+    const token = lastVerifyTokenFor(u.email);
+    await ageLatestLink(u.userId, 25 * 3600);
+    const res = await u.api.post('/auth/verify-email', { token }).expect(400);
+    expect(res.body.error.code).toBe('VERIFY_LINK_INVALID');
+    await openPage(token).expect(400);
+    expect(await isVerified(u.userId)).toBe(false);
+  });
+
+  it('resend inside 60 s → 429 RESEND_COOLDOWN with retryAfter, nothing sent', async () => {
     const u = await signup(t);
     const res = await u.api.post('/auth/resend-verification').expect(429);
     expect(res.body.error.code).toBe('RESEND_COOLDOWN');
@@ -91,38 +145,53 @@ describe('Email verification (e2e)', () => {
     expect(emailsTo(u.email)).toHaveLength(1);
   });
 
-  it('the correct code verifies: /auth/me shows isEmailVerified true', async () => {
+  it('a resend retires the old link; the new one verifies; then resend says alreadyVerified', async () => {
     const u = await signup(t);
-    const res = await u.api
-      .post('/auth/verify-email', { otp: lastOtpFor(u.email) })
-      .expect(200);
-    expect(res.body.data.user.isEmailVerified).toBe(true);
+    const first = lastVerifyTokenFor(u.email);
+    await ageLatestLink(u.userId, 61);
+    const resent = await u.api.post('/auth/resend-verification').expect(200);
+    expect(resent.body.data).toEqual({
+      sent: true,
+      alreadyVerified: false,
+      retryAfter: 60,
+    });
+    const second = lastVerifyTokenFor(u.email);
+    expect(second).not.toBe(first);
 
-    const me = await u.api.get('/auth/me').expect(200);
-    expect(me.body.data.user.isEmailVerified).toBe(true);
+    const old = await u.api
+      .post('/auth/verify-email', { token: first })
+      .expect(400);
+    expect(old.body.error.code).toBe('VERIFY_LINK_INVALID');
+    await u.api.post('/auth/verify-email', { token: second }).expect(200);
 
-    // Verifying again is a harmless no-op; resending says so.
-    await u.api.post('/auth/verify-email', { otp: '000000' }).expect(200);
-    const resend = await u.api.post('/auth/resend-verification').expect(200);
-    expect(resend.body.data).toEqual({
+    // The retired link now belongs to a verified owner: a success.
+    await u.api.post('/auth/verify-email', { token: first }).expect(200);
+    const after = await u.api.post('/auth/resend-verification').expect(200);
+    expect(after.body.data).toEqual({
       sent: false,
       alreadyVerified: true,
       retryAfter: 0,
     });
   });
 
-  it('a malformed code is a validation error, not an attempt', async () => {
+  it('two opens of the same link at once verify once and both succeed', async () => {
     const u = await signup(t);
-    const res = await u.api
-      .post('/auth/verify-email', { otp: '12ab' })
-      .expect(400);
-    expect(res.body.error.code).toBe('VALIDATION_FAILED');
-    expect(res.body.error.details.fields.otp).toBeDefined();
+    const token = lastVerifyTokenFor(u.email);
+    const [a, b] = await Promise.all([
+      u.api.post('/auth/verify-email', { token }),
+      openPage(token),
+    ]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    const audits = await t.ds.query(
+      `SELECT 1 FROM operational_audit_events WHERE action = 'auth.email_verified' AND target_id = $1`,
+      [u.userId],
+    );
+    expect(audits).toHaveLength(1);
   });
 
-  it('verification needs a session', async () => {
+  it('resend still needs a session', async () => {
     const u = await signup(t);
     u.api.token = undefined;
-    await u.api.post('/auth/verify-email', { otp: '123456' }).expect(401);
+    await u.api.post('/auth/resend-verification').expect(401);
   });
 });

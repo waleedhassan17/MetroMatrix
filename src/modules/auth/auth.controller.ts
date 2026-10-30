@@ -6,16 +6,19 @@ import {
   Headers,
   HttpCode,
   Post,
+  Query,
   Req,
   Res,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
 import {
   ApiBearerAuth,
+  ApiExcludeEndpoint,
   ApiHeader,
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { renderVerifyPage, VERIFY_PAGE_HEADERS } from './verify-page';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { SignupDto } from './dto/signup.dto';
@@ -73,7 +76,7 @@ export class AuthController {
   @Throttle({ default: { limit: 20, ttl: HOUR } })
   @ApiOperation({
     summary:
-      'Register a customer or partner. Returns AuthResult and emails a verification code.',
+      'Register a customer or partner. Returns AuthResult and emails a verification link.',
   })
   @ApiEnvelopeOk(AuthResultView, { status: 201 })
   signup(@Body() dto: SignupDto, @Client() client: ClientInfo) {
@@ -162,21 +165,39 @@ export class AuthController {
     return this.auth.signoutByToken(authorization);
   }
 
-  // ── Email verification (bearer: signup already returned a session) ───────
+  // ── Email verification (by link) ─────────────────────────────────────────
+
+  /**
+   * The email's "Verify email" button: spends the token and answers an HTML
+   * page (auth/verify-page.ts) under a CSP that allows nothing to load. Its
+   * "Open the MetroMatrix app" button carries no token (it is spent), only
+   * ?verified=1. The token never reaches the logs (pino-options redacts it).
+   */
+  @Get('verify')
+  @PublicRoute()
+  @Throttle({ default: { limit: 20, ttl: 15 * MINUTE } })
+  @ApiExcludeEndpoint()
+  async verifyEmailPage(@Query('token') token: unknown, @Res() res: Response) {
+    const outcome = await this.auth.verifyEmailPage(
+      typeof token === 'string' && token.length <= 200 ? token : undefined,
+    );
+    res
+      .status(outcome === 'invalid' ? 400 : 200)
+      .set(VERIFY_PAGE_HEADERS)
+      .type('html')
+      .send(renderVerifyPage(outcome, this.auth.verificationOnwardLinks().app));
+  }
 
   @Post('verify-email')
+  @PublicRoute()
   @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 15 * MINUTE } })
-  @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Confirm the email address with the 6-digit code. Returns { user, business }.',
+      "The app's deep link: spend the emailed link's token. Public (the link may open the app signed out). Returns the owner's { user, business }; 400 VERIFY_LINK_INVALID.",
   })
-  verifyEmail(
-    @CurrentUser() user: AuthenticatedUser,
-    @Body() dto: VerifyEmailDto,
-  ) {
-    return this.auth.verifyEmail(user.id, dto.otp);
+  verifyEmail(@Body() dto: VerifyEmailDto) {
+    return this.auth.verifyEmail(dto.token);
   }
 
   @Post('resend-verification')
@@ -185,7 +206,7 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Email a fresh verification code. 60 s cooldown (429 RESEND_COOLDOWN).',
+      'Email a fresh verification link (the old one stops working). 60 s cooldown (429 RESEND_COOLDOWN).',
   })
   resendVerification(@CurrentUser() user: AuthenticatedUser) {
     return this.auth.resendVerification(user.id);
@@ -237,19 +258,29 @@ export class AuthController {
   @ApiBearerAuth()
   @ApiOperation({
     summary:
-      'Change the password (Google-only accounts may set a first one without currentPassword). Signs out other devices.',
+      'Change the password with currentPassword (a Google-only account sets its first one with a fresh idToken). Ends every session at once; returns { changed, tokens } for this device.',
   })
   @ApiEnvelopeOk(FlagView)
-  changePassword(
+  async changePassword(
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: ChangePasswordDto,
+    @Client() client: ClientInfo,
+    @Res({ passthrough: true }) res: Response,
   ) {
-    return this.account.changePassword(
+    const { sessionClient, ...result } = await this.account.changePassword(
       user.id,
       user.sid,
-      dto.currentPassword,
-      dto.newPassword,
+      {
+        currentPassword: dto.currentPassword,
+        newPassword: dto.newPassword,
+        idToken: dto.idToken,
+      },
+      client,
     );
+    // The console's new refresh token goes back into its cookie.
+    return sessionClient === 'admin_web'
+      ? this.web.handOver(res, result)
+      : result;
   }
 
   @Delete('account')

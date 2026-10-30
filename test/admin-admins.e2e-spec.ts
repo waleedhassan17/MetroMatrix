@@ -150,12 +150,16 @@ describe('Admin management (e2e)', () => {
         .expect(400);
       expect(same.body.error.code).toBe('VALIDATION_FAILED');
 
-      await api
+      const changed = await api
         .post('/auth/change-password', {
           currentPassword: created.temporaryPassword,
           newPassword: PASSWORD,
         })
         .expect(200);
+      // Every session ended, this one too: the old access token is refused,
+      // and the device carries on with the pair it was given.
+      await api.get('/auth/me').expect(401);
+      api.token = changed.body.data.tokens.accessToken;
 
       const after = await api.get('/auth/me').expect(200);
       expect(after.body.data.admin.mustChangePassword).toBe(false);

@@ -14,7 +14,7 @@ export interface AuthenticatedUser {
    */
   sid: string;
   /**
-   * False until the address is confirmed with the emailed OTP. Signup hands
+   * False until the address is confirmed by the emailed link. Signup hands
    * out a session straight away so the client can sit on its verify screen;
    * EmailVerifiedGuard keeps that session out of everything that needs a
    * proven address. Optional so a user built elsewhere (tests) is treated as

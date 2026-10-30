@@ -18,7 +18,12 @@ import {
   uploadedDocument,
   verifiedPartner,
 } from './utils/factories';
-import { emailsTo, lastEmailTo, lastOtpFor } from './utils/outbox';
+import {
+  emailsTo,
+  lastEmailTo,
+  lastOtpFor,
+  lastVerifyTokenFor,
+} from './utils/outbox';
 import { FakeGoogleVerifier, googleToken } from './utils/fake-google';
 import {
   adminChallenge,
@@ -50,9 +55,6 @@ describe('QA matrix (Chunk 1)', () => {
   });
   afterAll(() => t.close());
 
-  const wrong = (code: string) =>
-    String((Number(code) + 1) % 1e6).padStart(6, '0');
-
   it('QA #1 signup customer, valid → 201 AuthResult, isEmailVerified false, OTP email sent', async () => {
     const email = uniqueEmail('qa1');
     const res = await new ApiClient(t.http)
@@ -71,7 +73,7 @@ describe('QA matrix (Chunk 1)', () => {
     });
     expect(res.body.data.tokens.accessToken).toEqual(expect.any(String));
     expect(lastEmailTo(email)?.subject).toBe('Verify your MetroMatrix email');
-    expect(lastOtpFor(email)).toMatch(/^\d{6}$/);
+    expect(lastVerifyTokenFor(email)).toMatch(/^[A-Za-z0-9_-]{43}$/);
   });
 
   it('QA #2 signup same email again (any case) → 409 EMAIL_EXISTS', async () => {
@@ -147,29 +149,25 @@ describe('QA matrix (Chunk 1)', () => {
     expect(statuses).toEqual([401, 401, 401, 401, 401, 429]);
   });
 
-  it('QA #8 verify OTP wrong ×5 → 5th OTP_LOCKED; resend issues a fresh OTP', async () => {
+  it('QA #8 verify link: a made-up token → VERIFY_LINK_INVALID; resend retires the old link, the new one verifies', async () => {
     const u = await signup(t);
-    const right = lastOtpFor(u.email);
-    const codes: string[] = [];
-    for (let i = 0; i < 5; i++) {
-      const res = await u.api.post('/auth/verify-email', { otp: wrong(right) });
-      codes.push(res.body.error.code);
-    }
-    expect(codes).toEqual([
-      'OTP_INVALID',
-      'OTP_INVALID',
-      'OTP_INVALID',
-      'OTP_INVALID',
-      'OTP_LOCKED',
-    ]);
+    const first = lastVerifyTokenFor(u.email);
+    const bad = await u.api
+      .post('/auth/verify-email', { token: `${first}x` })
+      .expect(400);
+    expect(bad.body.error.code).toBe('VERIFY_LINK_INVALID');
     await t.ds.query(
-      `UPDATE email_verification_otps SET created_at = created_at - interval '61 seconds' WHERE user_id = $1`,
+      `UPDATE email_verification_tokens SET created_at = created_at - interval '61 seconds' WHERE user_id = $1`,
       [u.userId],
     );
     await u.api.post('/auth/resend-verification').expect(200);
-    const fresh = lastOtpFor(u.email);
+    const fresh = lastVerifyTokenFor(u.email);
     expect(emailsTo(u.email)).toHaveLength(2);
-    await u.api.post('/auth/verify-email', { otp: fresh }).expect(200);
+    const old = await u.api
+      .post('/auth/verify-email', { token: first })
+      .expect(400);
+    expect(old.body.error.code).toBe('VERIFY_LINK_INVALID');
+    await u.api.post('/auth/verify-email', { token: fresh }).expect(200);
   });
 
   it('QA #9 access token after 15 min → 401; refresh succeeds', async () => {

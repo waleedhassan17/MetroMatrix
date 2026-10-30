@@ -4,6 +4,7 @@ import { Not, Repository } from 'typeorm';
 import { User } from './entities/user.entity';
 import { DevicePlatform, UserDevice } from './entities/user-device.entity';
 import { ErrorCode } from '../../common/errors/codes';
+import { UserGender } from '../../types';
 
 @Injectable()
 export class UsersService {
@@ -71,6 +72,28 @@ export class UsersService {
     if (patch.displayName !== undefined) user.displayName = patch.displayName;
     if (patch.phone !== undefined) user.phone = patch.phone;
     if (patch.avatarUrl !== undefined) user.avatarUrl = patch.avatarUrl;
+    return this.repo.save(user);
+  }
+
+  /** The customer's Complete Profile, in one save. Postal code may be cleared. */
+  async completeProfile(
+    id: string,
+    profile: {
+      dateOfBirth: string;
+      gender: UserGender;
+      streetAddress: string;
+      city: string;
+      postalCode?: string;
+      avatarUrl?: string | null;
+    },
+  ): Promise<User> {
+    const user = await this.getByIdOrFail(id);
+    user.dateOfBirth = profile.dateOfBirth;
+    user.gender = profile.gender;
+    user.streetAddress = profile.streetAddress;
+    user.city = profile.city;
+    user.postalCode = profile.postalCode ?? null;
+    if (profile.avatarUrl !== undefined) user.avatarUrl = profile.avatarUrl;
     return this.repo.save(user);
   }
 

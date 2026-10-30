@@ -82,6 +82,12 @@ Rules:
 - Never rotate `TOTP_ENC_KEY` casually: admin TOTP secrets are encrypted with it. If you must
   rotate it, run `seed:superadmin:prod -- --reset-totp` afterwards, so the admin re-enrols.
 - `OTP_PEPPER` invalidates outstanding codes when changed. That is harmless; they last 10 minutes.
+- `APP_URL` must be https in production (boot refuses http): email verification links point at
+  `${APP_URL}/${API_PREFIX}/auth/verify`. Optional: `APP_SCHEME` (the app's deep-link scheme,
+  default `metromatrix`; also the "Open MetroMatrix" button on business emails) and
+  `EMAIL_VERIFY_TTL_HOURS` (1–168, default 24).
+- `SUPPORT_EMAIL` (optional): named in the business-suspended email; without it the email just says
+  "contact MetroMatrix support".
 - `JWT_SECRET` signs everyone out when changed.
 - Leave `DB_SYNCHRONIZE` unset. It is refused in production.
 - `JOBS_ENABLED` defaults to true (Shopping's order deadlines, reminders, completion and

@@ -70,6 +70,10 @@ if (process.env.SENTRY_DSN) {
       if (event.request) {
         delete event.request.data;
         delete event.request.cookies;
+        // An email verification link carries its token in the query.
+        delete event.request.query_string;
+        if (event.request.url)
+          event.request.url = event.request.url.split('?')[0];
         if (event.request.headers) {
           for (const h of Object.keys(event.request.headers)) {
             if (SENSITIVE_KEY_PATTERN.test(h)) delete event.request.headers[h];

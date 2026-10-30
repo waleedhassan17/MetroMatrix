@@ -117,20 +117,40 @@ export class TokenService {
    * Sign-in: a new device, so a new refresh family. `admin_web` is the
    * console: its refresh token goes in a cookie and lives ADMIN_REFRESH_TTL
    * from sign-in, however often it is refreshed.
+   * `manager` puts it in the caller's transaction (a password change revokes
+   * and re-issues together).
    */
   async startSession(
     user: User,
     client: ClientInfo,
     kind: SessionClient = 'app',
+    manager: EntityManager = this.refreshRepo.manager,
+    sessionStartedAt: Date | null = null,
   ): Promise<TokenPair> {
-    const { pair } = await this.issue(
-      this.refreshRepo.manager,
-      user,
-      randomUUID(),
-      client,
-      { client: kind, sessionStartedAt: new Date() },
-    );
+    const { pair } = await this.issue(manager, user, randomUUID(), client, {
+      client: kind,
+      sessionStartedAt: sessionStartedAt ?? new Date(),
+    });
     return pair;
+  }
+
+  /**
+   * What kind of session a family is, and when it signed in, so a password
+   * change can re-issue this device's session as the same kind without
+   * moving the console's absolute limit.
+   */
+  async sessionOf(
+    familyId: string,
+    manager: EntityManager = this.refreshRepo.manager,
+  ): Promise<{ client: SessionClient; sessionStartedAt: Date | null }> {
+    const row = await manager.findOne(RefreshToken, {
+      where: { familyId },
+      order: { createdAt: 'DESC' },
+    });
+    return {
+      client: row?.client ?? 'app',
+      sessionStartedAt: row?.sessionStartedAt ?? null,
+    };
   }
 
   /**

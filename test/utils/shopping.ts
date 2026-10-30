@@ -10,7 +10,7 @@ import {
   verifiedPartner,
 } from './factories';
 import { enrolledAdmin, verifyDoctorPmdc } from './admin';
-import { lastOtpFor } from './outbox';
+import { lastVerifyTokenFor } from './outbox';
 
 export type PartnerKind =
   'store' | 'doctor' | 'restaurant' | 'cloud_kitchen' | 'home_kitchen';
@@ -95,7 +95,7 @@ export async function approvedPartner(
 export async function shopper(t: TestApp): Promise<SignedUp> {
   const c = await signup(t);
   const res = await c.api.post('/auth/verify-email', {
-    otp: lastOtpFor(c.email),
+    token: lastVerifyTokenFor(c.email),
   });
   if (res.status !== 200) throw new Error(`verify failed: ${res.status}`);
   return c;

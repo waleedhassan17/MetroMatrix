@@ -31,7 +31,19 @@ export const REDACT_PATHS = [
   // A TOTP code travels as `code`; only the request body form is redacted, so
   // error codes (Postgres `23505`, `ECONNREFUSED`) stay readable in logs.
   'req.body.code',
+  // The email link's token arrives in the query (GET /auth/verify?token=…).
+  'req.query.token',
 ];
+
+/** Query parameters whose values never reach a log line, in the request URL. */
+const SECRET_QUERY_PARAMS = /([?&](?:token|resetToken|refreshToken)=)[^&#]*/gi;
+
+/** `/api/v1/auth/verify?token=abc` → `/api/v1/auth/verify?token=[Redacted]`. */
+export function redactUrl(url: unknown): unknown {
+  return typeof url === 'string'
+    ? url.replace(SECRET_QUERY_PARAMS, '$1[Redacted]')
+    : url;
+}
 
 const SAFE_REQUEST_ID = /^[A-Za-z0-9._:-]{1,128}$/;
 
@@ -53,6 +65,14 @@ export function buildLoggerParams(opts: {
           }
         : undefined,
       redact: { paths: REDACT_PATHS, censor: '[Redacted]' },
+      // pino-http hands this the standard serialized request ({ url, query, … });
+      // the path-based redaction above can't reach inside the URL string.
+      serializers: {
+        req: (req: { url?: unknown }) => {
+          req.url = redactUrl(req.url);
+          return req;
+        },
+      },
       // One id per request, shared with the X-Request-Id response header
       // (RequestIdMiddleware reuses what is set here).
       genReqId: (req: IncomingMessage) => {

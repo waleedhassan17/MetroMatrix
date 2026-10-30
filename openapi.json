@@ -8671,7 +8671,11 @@
       "ChangePasswordDto": {
         "properties": {
           "currentPassword": {
-            "description": "Required when the account has a password. A Google-only account sets its first password without it.",
+            "description": "Required when the account has a password.",
+            "type": "string"
+          },
+          "idToken": {
+            "description": "A fresh Google ID token — required for a Google-only account (no password) setting its first one.",
             "type": "string"
           },
           "newPassword": {
@@ -8766,6 +8770,53 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "CompleteProfileDto": {
+        "properties": {
+          "avatarUrl": {
+            "description": "A URL from an upload signed for purpose \"avatar\", as for PATCH /users/me.",
+            "maxLength": 500,
+            "nullable": true,
+            "type": "string"
+          },
+          "city": {
+            "example": "Lahore",
+            "maxLength": 60,
+            "type": "string"
+          },
+          "dateOfBirth": {
+            "description": "YYYY-MM-DD; at least 13 years ago.",
+            "example": "1998-02-14",
+            "type": "string"
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female",
+              "other"
+            ],
+            "example": "female",
+            "type": "string"
+          },
+          "postalCode": {
+            "description": "5 digits.",
+            "example": "54000",
+            "type": "string"
+          },
+          "streetAddress": {
+            "example": "7 Canal View, Johar Town",
+            "maxLength": 255,
+            "minLength": 5,
+            "type": "string"
+          }
+        },
+        "required": [
+          "dateOfBirth",
+          "gender",
+          "streetAddress",
+          "city"
+        ],
         "type": "object"
       },
       "ConditionDto": {
@@ -13393,8 +13444,9 @@
         "properties": {
           "avatarUrl": {
             "description": "A URL from an upload signed for purpose \"avatar\" (your avatar folder on our Cloudinary), or null to remove.",
+            "maxLength": 500,
             "nullable": true,
-            "type": "object"
+            "type": "string"
           },
           "displayName": {
             "example": "Ayesha Khan",
@@ -13903,14 +13955,15 @@
       },
       "VerifyEmailDto": {
         "properties": {
-          "otp": {
-            "description": "The 6-digit code from the email.",
-            "example": "123456",
+          "token": {
+            "description": "The token from the emailed link (metromatrix://verify-email?token=…).",
+            "example": "pX2mV9…",
+            "maxLength": 200,
             "type": "string"
           }
         },
         "required": [
-          "otp"
+          "token"
         ],
         "type": "object"
       },
@@ -22485,7 +22538,7 @@
             "bearer": []
           }
         ],
-        "summary": "Change the password (Google-only accounts may set a first one without currentPassword). Signs out other devices.",
+        "summary": "Change the password with currentPassword (a Google-only account sets its first one with a fresh idToken). Ends every session at once; returns { changed, tokens } for this device.",
         "tags": [
           "auth"
         ]
@@ -22704,7 +22757,7 @@
             "bearer": []
           }
         ],
-        "summary": "Email a fresh verification code. 60 s cooldown (429 RESEND_COOLDOWN).",
+        "summary": "Email a fresh verification link (the old one stops working). 60 s cooldown (429 RESEND_COOLDOWN).",
         "tags": [
           "auth"
         ]
@@ -22883,7 +22936,7 @@
             "description": "Success"
           }
         },
-        "summary": "Register a customer or partner. Returns AuthResult and emails a verification code.",
+        "summary": "Register a customer or partner. Returns AuthResult and emails a verification link.",
         "tags": [
           "auth"
         ]
@@ -22908,12 +22961,7 @@
             "description": ""
           }
         },
-        "security": [
-          {
-            "bearer": []
-          }
-        ],
-        "summary": "Confirm the email address with the 6-digit code. Returns { user, business }.",
+        "summary": "The app's deep link: spend the emailed link's token. Public (the link may open the app signed out). Returns the owner's { user, business }; 400 VERIFY_LINK_INVALID.",
         "tags": [
           "auth"
         ]
@@ -37023,6 +37071,36 @@
           }
         ],
         "summary": "Forget a push token (call on sign-out). Idempotent.",
+        "tags": [
+          "users"
+        ]
+      }
+    },
+    "/api/v1/users/me/profile": {
+      "patch": {
+        "operationId": "Users_completeProfile",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteProfileDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The customer's Complete Profile: date of birth, gender, street address, city (+ postal code, photo). Returns { user } with profileComplete.",
         "tags": [
           "users"
         ]

@@ -30,6 +30,14 @@ export function emailsTo(to: string): SentEmail[] {
   return outbox.filter((e) => e.to.toLowerCase() === to.toLowerCase());
 }
 
+/** The token in the most recent verification link emailed to `to` (its text part). */
+export function lastVerifyTokenFor(to: string): string {
+  const email = lastEmailTo(to);
+  const raw = email?.text.match(/[?&]token=([^&\s]+)/)?.[1];
+  if (!raw) throw new Error(`No verification link found for ${to}`);
+  return decodeURIComponent(raw);
+}
+
 /** The 6-digit code in the most recent email to `to`. */
 export function lastOtpFor(to: string): string {
   const email = lastEmailTo(to);

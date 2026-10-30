@@ -1,8 +1,10 @@
 import { Check, Column, Entity, Index } from 'typeorm';
 import { BaseEntity } from '../../../common/base/base.entity';
 import {
+  USER_GENDERS,
   USER_ROLES,
   USER_STATUSES,
+  UserGender,
   UserRole,
   UserStatus,
 } from '../../../types';
@@ -142,6 +144,62 @@ export class User extends BaseEntity {
     },
   })
   totpLastStep!: number | null;
+
+  // ── Customer profile (PATCH /users/me/profile) ─────────────────────────────
+
+  @Column({ type: 'date', name: 'date_of_birth', nullable: true })
+  dateOfBirth!: string | null;
+
+  @Column({
+    type: 'enum',
+    enum: USER_GENDERS,
+    // Shared with doctors and family members (healthcare GENDERS).
+    enumName: 'person_gender',
+    nullable: true,
+  })
+  gender!: UserGender | null;
+
+  @Column({
+    type: 'varchar',
+    length: 255,
+    name: 'street_address',
+    nullable: true,
+  })
+  streetAddress!: string | null;
+
+  @Column({ type: 'varchar', length: 60, nullable: true })
+  city!: string | null;
+
+  @Column({ type: 'varchar', length: 12, name: 'postal_code', nullable: true })
+  postalCode!: string | null;
+
+  /**
+   * Customers who signed up before the profile existed: the app asks once and
+   * lets them skip. New customers must complete it (false).
+   */
+  @Column({ type: 'boolean', name: 'profile_skippable', default: false })
+  profileSkippable!: boolean;
+
+  // ── Abuse protection (modules/auth/abuse-counters.ts) ──────────────────────
+  // Failures inside a 15-minute window that starts at the first one.
+
+  /** Wrong passwords; 10 lock the password sign-in until the window ends. */
+  @Column({ type: 'int', name: 'signin_failures', default: 0 })
+  signinFailures!: number;
+
+  @Column({
+    type: 'timestamptz',
+    name: 'signin_failures_since',
+    nullable: true,
+  })
+  signinFailuresSince!: Date | null;
+
+  /** Wrong admin TOTP / recovery codes; 5 answer 429 until the window ends. */
+  @Column({ type: 'int', name: 'totp_failures', default: 0 })
+  totpFailures!: number;
+
+  @Column({ type: 'timestamptz', name: 'totp_failures_since', nullable: true })
+  totpFailuresSince!: Date | null;
 
   /** Soft delete: the row stays (audit, FKs) with its PII anonymised. */
   @Column({ type: 'timestamptz', name: 'deleted_at', nullable: true })
