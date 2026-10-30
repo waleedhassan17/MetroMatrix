@@ -17,7 +17,11 @@ export class AdminPermissions1793260319959 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "users" ADD "must_change_password" boolean NOT NULL DEFAULT false`,
     );
-    await queryRunner.query(`ALTER TABLE "users" ADD "totp_last_step" bigint`);
+    // IF NOT EXISTS: a database that ran the `ammar` branch already has it
+    // (its AuthAbuseProtection added it; the merged one no longer does).
+    await queryRunner.query(
+      `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "totp_last_step" bigint`,
+    );
     await queryRunner.query(
       `ALTER TABLE "users" ADD CONSTRAINT "CHK_users_admin_permissions_admin_only" CHECK ("role" = 'admin' OR "admin_permissions" = '[]'::jsonb)`,
     );
@@ -39,7 +43,9 @@ export class AdminPermissions1793260319959 implements MigrationInterface {
     await queryRunner.query(
       `ALTER TABLE "users" DROP CONSTRAINT "CHK_users_admin_permissions_admin_only"`,
     );
-    await queryRunner.query(`ALTER TABLE "users" DROP COLUMN "totp_last_step"`);
+    await queryRunner.query(
+      `ALTER TABLE "users" DROP COLUMN IF EXISTS "totp_last_step"`,
+    );
     await queryRunner.query(
       `ALTER TABLE "users" DROP COLUMN "must_change_password"`,
     );
