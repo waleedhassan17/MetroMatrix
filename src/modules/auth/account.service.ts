@@ -3,7 +3,8 @@ import { DataSource, EntityManager } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { UserDevice } from '../users/entities/user-device.entity';
 import { UsersService } from '../users/users.service';
-import { TokenService } from './token.service';
+import { TokenPair, TokenService } from './token.service';
+import { ClientInfo } from '../../common/decorators/client-info.decorator';
 import { PasswordHasher } from './password-hasher';
 import { GoogleTokenVerifier } from './google-token-verifier';
 import { OperationalAuditService } from '../../common/audit/operational-audit.service';
@@ -38,32 +39,40 @@ export class AccountService {
   }
 
   /**
-   * Change (or, for a Google-only account, set) the password. Every other
-   * device is signed out; this one keeps its session.
+   * Change (or, for a Google-only account, set) the password, proven with the
+   * current password or, without one, a fresh Google ID token.
+   *
+   * Every session ends at once, this one included, in one transaction: the
+   * hash changes, token_version moves on (so every access token is refused
+   * on its next request, not up to 15 minutes later) and every refresh
+   * family is revoked. This device carries on with the new pair returned
+   * here, in a new family.
    */
   async changePassword(
     userId: string,
-    currentSid: string,
-    currentPassword: string | undefined,
-    newPassword: string,
-  ): Promise<{ changed: true }> {
+    input: { currentPassword?: string; newPassword: string; idToken?: string },
+    client: ClientInfo,
+  ): Promise<{ changed: true; tokens: TokenPair }> {
     const user = await this.users.getByIdOrFail(userId);
     const hadPassword = !!user.passwordHash;
-    if (hadPassword) {
-      const ok =
-        !!currentPassword &&
-        (await this.hasher.verify(currentPassword, user.passwordHash));
-      // 403, not 401: a 401 would send the app off to refresh its token.
-      if (!ok) {
-        throw new ForbiddenException({
-          code: ErrorCode.INVALID_CREDENTIALS,
-          message: 'Your current password is incorrect.',
-        });
-      }
-    }
-    user.passwordHash = await this.hasher.hash(newPassword);
-    await this.users.save(user);
-    await this.tokens.revokeAllForUser(user.id, currentSid);
+    await this.reauthenticate(user, {
+      password: input.currentPassword,
+      idToken: input.idToken,
+    });
+    const passwordHash = await this.hasher.hash(input.newPassword);
+
+    const tokens = await this.dataSource.transaction(async (m) => {
+      await m.update(
+        User,
+        { id: user.id },
+        { passwordHash, tokenVersion: () => 'token_version + 1' },
+      );
+      await this.tokens.revokeAllForUser(user.id, undefined, m);
+      // Signed with the new token_version.
+      const fresh = await m.findOneOrFail(User, { where: { id: user.id } });
+      return this.tokens.startSession(fresh, client, m);
+    });
+
     await this.audit.record({
       actorUserId: user.id,
       action: 'auth.password_changed',
@@ -71,7 +80,7 @@ export class AccountService {
       targetId: user.id,
       details: { firstPassword: !hadPassword },
     });
-    return { changed: true };
+    return { changed: true, tokens };
   }
 
   /**
@@ -122,8 +131,16 @@ export class AccountService {
     return { deleted: true };
   }
 
-  /** Deleting an account needs proof beyond a (possibly stolen) session. */
-  private async reauthenticate(user: User, dto: DeleteAccountDto) {
+  /**
+   * Changing the password and deleting the account need proof beyond a
+   * (possibly stolen) session: the password, or for a Google-only account a
+   * fresh ID token for the linked Google account. 403, not 401: a 401 would
+   * send the app off to refresh its token.
+   */
+  private async reauthenticate(
+    user: User,
+    dto: { password?: string; idToken?: string },
+  ) {
     const refuse = (message: string) =>
       new ForbiddenException({ code: ErrorCode.INVALID_CREDENTIALS, message });
 

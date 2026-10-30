@@ -6,67 +6,72 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
-import { EmailVerificationOtp } from './entities/email-verification-otp.entity';
+import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { MailService } from '../mail/mail.service';
 import { OperationalAuditService } from '../../common/audit/operational-audit.service';
 import { ErrorCode } from '../../common/errors/codes';
-import { generateOtp, hashCode, verifyCode } from '../../common/crypto/otp';
+import { randomToken, sha256Hex } from '../../common/crypto/hash';
 
-const PURPOSE = 'email-verify';
+export interface VerifyOutcome {
+  user: User;
+  /** The link had already been spent (or the address was verified another way). */
+  alreadyVerified: boolean;
+}
 
 /**
- * Email ownership by 6-digit code: issued on signup and on resend, 10 minutes,
- * 5 attempts, 60 s between sends. The code never touches the database in the
- * clear.
+ * Email ownership by link (FinMatrix's flow). Signup and resend email a link
+ * carrying a 32-byte random token; only its SHA-256 is stored. The link works
+ * for EMAIL_VERIFY_TTL_HOURS, a new one retires the old, and resends are 60 s
+ * apart.
+ *
+ * A spent or expired link whose owner IS verified succeeds: mail scanners open
+ * links before people do, people tap twice, and a resend retires the link in
+ * the older email. Only a link that still has work to do can fail.
  */
 @Injectable()
 export class EmailVerificationService {
-  private readonly pepper: string;
   private readonly ttlMs: number;
-  private readonly maxAttempts: number;
   private readonly cooldownMs: number;
 
   constructor(
-    @InjectRepository(EmailVerificationOtp)
-    private readonly repo: Repository<EmailVerificationOtp>,
+    @InjectRepository(EmailVerificationToken)
+    private readonly repo: Repository<EmailVerificationToken>,
     private readonly users: UsersService,
     private readonly mail: MailService,
     private readonly audit: OperationalAuditService,
+    private readonly dataSource: DataSource,
     config: ConfigService,
   ) {
-    this.pepper = config.getOrThrow<string>('auth.otpPepper');
-    this.ttlMs = config.get<number>('mail.otpTtlMinutes', 10) * 60_000;
-    this.maxAttempts = config.get<number>('mail.otpMaxAttempts', 5);
+    this.ttlMs = config.get<number>('mail.verifyTtlHours', 24) * 3_600_000;
     this.cooldownMs =
       config.get<number>('mail.resendCooldownSeconds', 60) * 1000;
   }
 
-  /** Retire any outstanding code, store a new one, email it. */
+  /** Retire any outstanding link, store a new one, email it. */
   async issue(user: User): Promise<void> {
     await this.repo.update(
       { userId: user.id, usedAt: IsNull() },
       { usedAt: new Date() },
     );
-    const otp = generateOtp();
+    const token = randomToken(32);
     await this.repo.insert(
       this.repo.create({
         userId: user.id,
-        otpHash: hashCode(this.pepper, PURPOSE, user.id, otp),
-        attempts: 0,
+        tokenHash: sha256Hex(token),
         expiresAt: new Date(Date.now() + this.ttlMs),
         usedAt: null,
       }),
     );
-    await this.mail.sendVerificationOtp(user.email, user.displayName, otp);
+    // MailService never throws: a mail failure leaves the link resendable.
+    await this.mail.sendVerificationLink(user.email, user.displayName, token);
   }
 
   async resend(
     user: User,
   ): Promise<{ sent: boolean; alreadyVerified: boolean; retryAfter: number }> {
-    const cooldown = Math.ceil(this.cooldownMs / 1000);
     if (user.isEmailVerified) {
       return { sent: false, alreadyVerified: true, retryAfter: 0 };
     }
@@ -80,90 +85,75 @@ export class EmailVerificationService {
       throw new HttpException(
         {
           code: ErrorCode.RESEND_COOLDOWN,
-          message: `Please wait ${retryAfter} seconds before requesting another code.`,
+          message: `Please wait ${retryAfter} seconds before requesting another email.`,
           details: { retryAfter },
         },
         HttpStatus.TOO_MANY_REQUESTS,
       );
     }
     await this.issue(user);
-    return { sent: true, alreadyVerified: false, retryAfter: cooldown };
+    return {
+      sent: true,
+      alreadyVerified: false,
+      retryAfter: Math.ceil(this.cooldownMs / 1000),
+    };
   }
 
-  /**
-   * Check a code against the most recent one sent.
-   *
-   * - expired → OTP_EXPIRED
-   * - wrong → OTP_INVALID with `attemptsLeft`; the 5th wrong try locks the
-   *   code (OTP_LOCKED) and only a resend issues a new one
-   * - right → the address is verified
-   */
-  async verify(user: User, otp: string): Promise<User> {
-    if (user.isEmailVerified) return user;
+  /** Spend a link's token. */
+  async verify(token: string): Promise<VerifyOutcome> {
+    const record = token
+      ? await this.repo.findOne({ where: { tokenHash: sha256Hex(token) } })
+      : null;
+    if (!record) throw this.invalid();
+    const owner = await this.users.findById(record.userId);
+    if (!owner) throw this.invalid();
 
-    const latest = await this.repo.findOne({
-      where: { userId: user.id },
-      order: { createdAt: 'DESC' },
-    });
-    if (!latest) {
-      throw new BadRequestException({
-        code: ErrorCode.OTP_INVALID,
-        message: 'No code has been sent. Request a new one.',
-      });
-    }
-    if (latest.attempts >= this.maxAttempts) throw this.locked();
-    if (latest.usedAt) {
-      throw new BadRequestException({
-        code: ErrorCode.OTP_INVALID,
-        message: 'This code is no longer valid. Request a new one.',
-      });
-    }
-    if (latest.expiresAt.getTime() <= Date.now()) {
-      throw new BadRequestException({
-        code: ErrorCode.OTP_EXPIRED,
-        message: 'This code has expired. Request a new one.',
-      });
+    const spent =
+      record.usedAt !== null || record.expiresAt.getTime() <= Date.now();
+    if (spent || owner.isEmailVerified) {
+      if (owner.isEmailVerified) return { user: owner, alreadyVerified: true };
+      throw this.invalid();
     }
 
-    if (!verifyCode(this.pepper, PURPOSE, user.id, otp, latest.otpHash)) {
-      // Atomic increment: two wrong guesses at once still count twice.
-      const res = await this.repo
+    // Spend the token and verify the address together. The conditional
+    // update settles a race between two opens of the same link: only one
+    // of them spends it, the other finds the owner verified.
+    const won = await this.dataSource.transaction(async (m) => {
+      const res = await m
         .createQueryBuilder()
-        .update()
-        .set({ attempts: () => 'attempts + 1' })
-        .where('id = :id', { id: latest.id })
-        .returning('attempts')
+        .update(EmailVerificationToken)
+        .set({ usedAt: () => 'now()' })
+        .where('id = :id AND used_at IS NULL', { id: record.id })
         .execute();
-      const attempts = Number(
-        (res.raw as { attempts: number }[])[0]?.attempts ?? this.maxAttempts,
-      );
-      if (attempts >= this.maxAttempts) {
-        await this.repo.update({ id: latest.id }, { usedAt: new Date() });
-        throw this.locked();
-      }
-      throw new BadRequestException({
-        code: ErrorCode.OTP_INVALID,
-        message: 'That code is not right. Check the email and try again.',
-        details: { attemptsLeft: this.maxAttempts - attempts },
-      });
+      if (!res.affected) return false;
+      await m.update(User, { id: owner.id }, { isEmailVerified: true });
+      return true;
+    });
+    const user = (await this.users.findById(owner.id)) ?? owner;
+    if (!won) {
+      if (user.isEmailVerified) return { user, alreadyVerified: true };
+      throw this.invalid();
     }
-
-    await this.repo.update({ id: latest.id }, { usedAt: new Date() });
-    user.isEmailVerified = true;
-    const saved = await this.users.save(user);
     await this.audit.record({
       actorUserId: user.id,
       action: 'auth.email_verified',
       targetType: 'user',
       targetId: user.id,
+      details: { method: 'link' },
     });
-    return saved;
+    return { user, alreadyVerified: false };
   }
 
-  private locked() {
+  /** Where the API's own page sends people onward. Never the token: it is spent. */
+  onwardLinks(): { app: string } {
+    return { app: `${this.mail.appScheme()}://verify-email?verified=1` };
+  }
+
+  private invalid() {
     return new BadRequestException({
-      code: ErrorCode.OTP_LOCKED,
-      message: 'Too many incorrect attempts. Request a new code.',
+      code: ErrorCode.VERIFY_LINK_INVALID,
+      message:
+        'This link has expired or been replaced. Open the app and tap Resend.',
     });
   }
 }

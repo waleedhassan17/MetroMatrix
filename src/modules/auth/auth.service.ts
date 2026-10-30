@@ -2,11 +2,19 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   UnauthorizedException,
 } from '@nestjs/common';
-import { QueryFailedError } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
+import {
+  lockedForSeconds,
+  recordFailure,
+  resetFailures,
+  WINDOW_MINUTES,
+} from './abuse-counters';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { OperationalAuditService } from '../../common/audit/operational-audit.service';
@@ -25,6 +33,9 @@ import { isAdminRole } from '../../types';
 import { AccountView, AuthResult, TotpChallengeResult } from './auth-result';
 
 const INVALID_CREDENTIALS_MESSAGE = 'Incorrect email or password.';
+
+/** Wrong passwords per account within the window before the door shuts. */
+export const SIGNIN_MAX_FAILURES = 10;
 
 export function isUniqueViolation(err: unknown): boolean {
   return (
@@ -46,6 +57,7 @@ export class AuthService {
     private readonly audit: OperationalAuditService,
     private readonly hasher: PasswordHasher,
     private readonly totp: TotpService,
+    private readonly dataSource: DataSource,
   ) {}
 
   // ── Sign-up / sign-in ─────────────────────────────────────────────────────
@@ -91,11 +103,46 @@ export class AuthService {
       dto.password,
       user?.passwordHash,
     );
-    if (!user || !passwordOk) {
-      throw new UnauthorizedException({
+    const invalid = () =>
+      new UnauthorizedException({
         code: ErrorCode.INVALID_CREDENTIALS,
         message: INVALID_CREDENTIALS_MESSAGE,
       });
+    if (!user) throw invalid();
+
+    // Lockout: 10 wrong passwords in 15 minutes and the password door shuts
+    // until the window ends — with the SAME answer as a wrong password, so a
+    // guesser learns neither that the account is locked nor when a guess was
+    // right. (The Throttler is per IP and per instance; this is per account.)
+    const locked =
+      lockedForSeconds(
+        user.signinFailures,
+        user.signinFailuresSince,
+        SIGNIN_MAX_FAILURES,
+      ) > 0;
+    if (!passwordOk) {
+      if (!locked) {
+        const { count } = await recordFailure(
+          this.dataSource,
+          user.id,
+          'signin',
+        );
+        if (count === SIGNIN_MAX_FAILURES) {
+          this.logger.warn(`Password sign-in locked for user ${user.id}`);
+          await this.audit.record({
+            actorUserId: null,
+            action: 'auth.signin_locked',
+            targetType: 'user',
+            targetId: user.id,
+            details: { failures: count, windowMinutes: WINDOW_MINUTES },
+          });
+        }
+      }
+      throw invalid();
+    }
+    if (locked) throw invalid();
+    if (user.signinFailures > 0) {
+      await resetFailures(this.dataSource, user.id, 'signin');
     }
 
     // Only once the password matched: from here on the caller has proven they
@@ -161,7 +208,20 @@ export class AuthService {
           'Enter the code from your authenticator app, or a recovery code.',
       });
     }
-    const method = await this.totp.verifySignin(user, dto);
+    let method: 'totp' | 'recovery_code';
+    try {
+      method = await this.totp.verifySignin(user, dto);
+    } catch (err) {
+      // Too many wrong codes: this challenge is finished too, so the next
+      // guess needs the password again (and meets the same cap).
+      if (
+        err instanceof HttpException &&
+        err.getStatus() === HttpStatus.TOO_MANY_REQUESTS
+      ) {
+        await this.tokens.denylist(challenge.jti, user.id, challenge.exp);
+      }
+      throw err;
+    }
     await this.tokens.denylist(challenge.jti, user.id, challenge.exp);
     return this.completeSignin(user, client, { portal: 'admin', method });
   }
@@ -172,8 +232,13 @@ export class AuthService {
     client: ClientInfo,
     details: Record<string, unknown>,
   ): Promise<AuthResult> {
+    // One column, not save(user): the row was read before the checks, and
+    // saving it whole would write back stale abuse counters and the TOTP
+    // step the checks have just updated atomically.
     user.lastLoginAt = new Date();
-    await this.users.save(user);
+    await this.dataSource
+      .getRepository(User)
+      .update({ id: user.id }, { lastLoginAt: user.lastLoginAt });
     const tokens = await this.tokens.startSession(user, client);
     await this.audit.record({
       actorUserId: user.id,
@@ -219,9 +284,32 @@ export class AuthService {
 
   // ── Email verification ────────────────────────────────────────────────────
 
-  async verifyEmail(userId: string, otp: string): Promise<AccountView> {
-    const user = await this.users.getByIdOrFail(userId);
-    return this.accounts.view(await this.emailVerification.verify(user, otp));
+  /** POST /auth/verify-email: the account the link's token belongs to. */
+  async verifyEmail(token: string): Promise<AccountView> {
+    const { user } = await this.emailVerification.verify(token);
+    return this.accounts.view(user);
+  }
+
+  /**
+   * GET /auth/verify: which page to show. A link that can't verify is a page,
+   * not an error; anything unexpected (the database down) still is one.
+   */
+  async verifyEmailPage(
+    token: string | undefined,
+  ): Promise<'verified' | 'already' | 'invalid'> {
+    try {
+      const { alreadyVerified } = await this.emailVerification.verify(
+        token ?? '',
+      );
+      return alreadyVerified ? 'already' : 'verified';
+    } catch (err) {
+      if (err instanceof BadRequestException) return 'invalid';
+      throw err;
+    }
+  }
+
+  verificationOnwardLinks() {
+    return this.emailVerification.onwardLinks();
   }
 
   async resendVerification(userId: string) {

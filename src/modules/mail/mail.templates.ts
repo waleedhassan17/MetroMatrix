@@ -7,11 +7,12 @@
  */
 import type { RenderedEmail } from './mail.service';
 
-const INK = '#16151A';
-const PAPER = '#F7F5F1';
-const MUTED = '#6B6964';
-const RULE = '#E4E0D8';
-const FONT =
+// Exported for the API's own verification page (auth/verify-page.ts).
+export const INK = '#16151A';
+export const PAPER = '#F7F5F1';
+export const MUTED = '#6B6964';
+export const RULE = '#E4E0D8';
+export const FONT =
   "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
 
 /** HTML-escape anything a person typed (names, reasons, business names). */
@@ -56,32 +57,61 @@ function codeBlock(code: string): string {
 const hello = (name: string | null) => `Hi ${name ? esc(name) : 'there'},`;
 const helloText = (name: string | null) => `Hi ${name ?? 'there'},`;
 
-/** Opens the app on a phone that has it installed. */
+/**
+ * Opens the app on a phone that has it installed. MailService passes
+ * `${APP_SCHEME}://`; this default only serves direct template calls.
+ */
 const APP_LINK = 'metromatrix://';
 
+/** "contact MetroMatrix support" — with the address as a mailto link when one is configured. */
+const supportHtml = (email: string | null) =>
+  email
+    ? `contact MetroMatrix support at <a href="mailto:${esc(email)}" style="color:${INK};font-weight:600;">${esc(email)}</a>`
+    : 'contact MetroMatrix support';
+const supportText = (email: string | null) =>
+  email
+    ? `contact MetroMatrix support at ${email}`
+    : 'contact MetroMatrix support';
+
+/** "24 hours", "1 hour". */
+const hours = (n: number) => `${n} hour${n === 1 ? '' : 's'}`;
+
 export const emailTemplates = {
+  /**
+   * The verification link (FinMatrix's flow). The button opens the API's own
+   * page in any browser; the secondary link opens the app on the phone it is
+   * installed on; the raw link is there for clients that strip buttons.
+   */
   verifyEmail(
     name: string | null,
-    otp: string,
-    ttlMinutes: number,
+    webLink: string,
+    appLink: string,
+    ttlHours: number,
   ): RenderedEmail {
     return {
       subject: 'Verify your MetroMatrix email',
       html: layout(
-        'Your verification code',
+        'Confirm your email address',
         p(hello(name)) +
           p(
-            'Enter this code in the MetroMatrix app to confirm your email address:',
+            'Tap the button below to confirm this is your email address and finish setting up your MetroMatrix account.',
           ) +
-          codeBlock(otp) +
+          `<p style="margin:22px 0;">${button(webLink, 'Verify email')}</p>` +
           p(
-            `The code expires in ${ttlMinutes} minutes. If you didn't create a MetroMatrix account, you can ignore this email.`,
+            `On the phone with MetroMatrix installed? <a href="${esc(appLink)}" style="color:${INK};font-weight:600;">Open in the app</a>.`,
+          ) +
+          p(
+            `<span style="color:${MUTED};font-size:13px;">If the button doesn't work, copy this link into your browser:<br><span style="word-break:break-all;">${esc(webLink)}</span></span>`,
+          ) +
+          p(
+            `The link works for ${hours(ttlHours)}. If you didn't create a MetroMatrix account, you can ignore this email.`,
           ),
       ),
       text:
         `${helloText(name)}\n\n` +
-        `Your MetroMatrix verification code is: ${otp}\n\n` +
-        `It expires in ${ttlMinutes} minutes. If you didn't create a MetroMatrix account, ignore this email.\n`,
+        `Confirm your MetroMatrix email address by opening this link:\n${webLink}\n\n` +
+        `On the phone with MetroMatrix installed, this opens the app:\n${appLink}\n\n` +
+        `The link works for ${hours(ttlHours)}. If you didn't create a MetroMatrix account, ignore this email.\n`,
     };
   },
 
@@ -112,6 +142,7 @@ export const emailTemplates = {
     name: string | null,
     businessName: string,
     reinstated = false,
+    appLink = APP_LINK,
   ): RenderedEmail {
     const title = reinstated
       ? `${businessName} has been reinstated`
@@ -127,9 +158,9 @@ export const emailTemplates = {
         esc(title),
         p(hello(name)) +
           p(esc(line)) +
-          `<p style="margin:22px 0;">${button(APP_LINK, 'Open MetroMatrix')}</p>`,
+          `<p style="margin:22px 0;">${button(appLink, 'Open MetroMatrix')}</p>`,
       ),
-      text: `${helloText(name)}\n\n${line}\n`,
+      text: `${helloText(name)}\n\n${line}\n\nOpen MetroMatrix: ${appLink}\n`,
     };
   },
 
@@ -138,6 +169,7 @@ export const emailTemplates = {
     businessName: string,
     reason: string,
     documentNotes: { label: string; note: string }[] = [],
+    appLink = APP_LINK,
   ): RenderedEmail {
     const notesHtml = documentNotes.length
       ? `<ul style="margin:0 0 14px;padding-left:20px;font-size:15px;line-height:1.6;color:${INK};">${documentNotes
@@ -161,12 +193,14 @@ export const emailTemplates = {
           notesHtml +
           p(
             'Update your details or documents in the app and submit again — we review resubmissions quickly.',
-          ),
+          ) +
+          `<p style="margin:22px 0;">${button(appLink, 'Open MetroMatrix')}</p>`,
       ),
       text:
         `${helloText(name)}\n\n` +
         `We couldn't approve ${businessName} yet. Reason:\n\n${reason}\n${notesText}\n` +
-        `Update your details or documents in the app and submit again.\n`,
+        `Update your details or documents in the app and submit again.\n\n` +
+        `Open MetroMatrix: ${appLink}\n`,
     };
   },
 
@@ -174,6 +208,7 @@ export const emailTemplates = {
     name: string | null,
     businessName: string,
     reason: string,
+    supportEmail: string | null = null,
   ): RenderedEmail {
     return {
       subject: `${businessName} has been suspended on MetroMatrix`,
@@ -184,12 +219,12 @@ export const emailTemplates = {
             `<strong>${esc(businessName)}</strong> is temporarily unavailable to customers. Reason:`,
           ) +
           `<blockquote style="margin:0 0 14px;padding:12px 16px;border-left:3px solid ${INK};background:#FFFFFF;font-size:15px;line-height:1.6;">${esc(reason)}</blockquote>` +
-          p('If you think this is a mistake, contact MetroMatrix support.'),
+          p(`If you think this is a mistake, ${supportHtml(supportEmail)}.`),
       ),
       text:
         `${helloText(name)}\n\n` +
         `${businessName} is temporarily unavailable to customers. Reason:\n\n${reason}\n\n` +
-        `If you think this is a mistake, contact MetroMatrix support.\n`,
+        `If you think this is a mistake, ${supportText(supportEmail)}.\n`,
     };
   },
 };

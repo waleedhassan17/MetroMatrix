@@ -1,4 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { GoogleAuthService } from './google-auth.service';
 import { GoogleIdentity, GoogleTokenVerifier } from './google-token-verifier';
 import { User } from '../users/entities/user.entity';
@@ -41,10 +42,12 @@ describe('GoogleAuthService', () => {
     findByEmail: jest.Mock;
     save: jest.Mock;
     createEntity: jest.Mock;
+    getByIdOrFail: jest.Mock;
   };
   let auth: { completeSignin: jest.Mock; result: jest.Mock };
-  let tokens: { startSession: jest.Mock };
+  let tokens: { startSession: jest.Mock; revokeAllForUser: jest.Mock };
   let audit: { record: jest.Mock };
+  let manager: { update: jest.Mock };
   let svc: GoogleAuthService;
 
   beforeEach(() => {
@@ -58,19 +61,32 @@ describe('GoogleAuthService', () => {
       createEntity: jest.fn((data: Partial<User>) =>
         Object.assign(new User(), data),
       ),
+      getByIdOrFail: jest.fn(async (id: string) =>
+        userRow({ id, passwordHash: null, isEmailVerified: true }),
+      ),
     };
     auth = {
       completeSignin: jest.fn(async (u: User) => ({ user: u, kind: 'signin' })),
       result: jest.fn(async (u: User) => ({ user: u, kind: 'signup' })),
     };
-    tokens = { startSession: jest.fn(async () => ({ accessToken: 'a' })) };
+    tokens = {
+      startSession: jest.fn(async () => ({ accessToken: 'a' })),
+      revokeAllForUser: jest.fn(async () => undefined),
+    };
     audit = { record: jest.fn(async () => undefined) };
+    manager = { update: jest.fn(async () => undefined) };
+    const dataSource = {
+      transaction: jest.fn(async (fn: (m: unknown) => Promise<unknown>) =>
+        fn(manager),
+      ),
+    };
     svc = new GoogleAuthService(
       verifier as unknown as GoogleTokenVerifier,
       users as unknown as UsersService,
       auth as unknown as AuthService,
       tokens as unknown as TokenService,
       audit as unknown as OperationalAuditService,
+      dataSource as unknown as DataSource,
     );
   });
 
@@ -116,23 +132,56 @@ describe('GoogleAuthService', () => {
     expect(users.createEntity).not.toHaveBeenCalled();
   });
 
-  it('links an existing customer by verified email and marks the address verified', async () => {
-    const existing = userRow();
+  it('links a verified customer by email and keeps their password and sessions', async () => {
+    const existing = userRow({ isEmailVerified: true });
     users.findByEmail.mockResolvedValue(existing);
     await svc.signIn('id-token', client);
     expect(existing.googleSub).toBe('google-sub-1');
-    expect(existing.isEmailVerified).toBe(true);
+    expect(existing.passwordHash).toBe('hash');
     expect(existing.avatarUrl).toBe(
       'https://lh3.googleusercontent.com/a/photo',
     );
     expect(users.save).toHaveBeenCalledWith(existing);
+    expect(tokens.revokeAllForUser).not.toHaveBeenCalled();
     expect(auth.completeSignin).toHaveBeenCalledWith(
       existing,
       client,
       expect.any(Object),
     );
     expect(audit.record).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'auth.google_linked' }),
+      expect.objectContaining({
+        action: 'auth.google_linked',
+        details: { tookOverUnverified: false },
+      }),
+    );
+  });
+
+  it('takes over an UNVERIFIED customer (pre-account hijack) in one transaction', async () => {
+    users.findByEmail.mockResolvedValue(userRow({ phone: '+923001112233' }));
+    await svc.signIn('id-token', client);
+    expect(manager.update).toHaveBeenCalledWith(
+      User,
+      { id: 'u1' },
+      expect.objectContaining({
+        passwordHash: null,
+        tokenVersion: expect.any(Function),
+        googleSub: 'google-sub-1',
+        isEmailVerified: true,
+        displayName: 'Ayesha Khan',
+        phone: null,
+      }),
+    );
+    expect(tokens.revokeAllForUser).toHaveBeenCalledWith(
+      'u1',
+      undefined,
+      manager,
+    );
+    expect(users.save).not.toHaveBeenCalled();
+    // The session starts from the row as it is now.
+    const signedIn = auth.completeSignin.mock.calls[0][0] as User;
+    expect(signedIn.passwordHash).toBeNull();
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({ details: { tookOverUnverified: true } }),
     );
   });
 

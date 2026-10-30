@@ -18,3 +18,10 @@ export const isAdminRole = (role: UserRole): boolean =>
 
 export const USER_STATUSES = ['active', 'disabled', 'deleted'] as const;
 export type UserStatus = (typeof USER_STATUSES)[number];
+
+/**
+ * A customer's gender on their profile, as the app offers it. The same values
+ * as healthcare's GENDERS, stored in the same Postgres enum (`person_gender`).
+ */
+export const USER_GENDERS = ['male', 'female', 'other'] as const;
+export type UserGender = (typeof USER_GENDERS)[number];

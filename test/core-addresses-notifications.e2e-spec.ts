@@ -3,7 +3,7 @@ import { ExpoPushClient } from '../src/modules/notifications/expo-push.client';
 import { NotificationsService } from '../src/modules/notifications/notifications.service';
 import { createTestApp, TestApp } from './utils/test-app';
 import { signup, verifiedPartner } from './utils/factories';
-import { lastOtpFor } from './utils/outbox';
+import { lastVerifyTokenFor } from './utils/outbox';
 
 /** Stand-in for Expo: records batches; tokens containing "dead" are unregistered. */
 const fakeExpo = {
@@ -44,7 +44,7 @@ describe('Core: addresses + notifications (e2e)', () => {
   async function verifiedCustomer() {
     const c = await signup(t);
     await c.api
-      .post('/auth/verify-email', { otp: lastOtpFor(c.email) })
+      .post('/auth/verify-email', { token: lastVerifyTokenFor(c.email) })
       .expect(200);
     return c;
   }

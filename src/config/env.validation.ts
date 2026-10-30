@@ -38,8 +38,41 @@ export const envValidationSchema = Joi.object({
     .default('development'),
   PORT: Joi.number().default(3000),
   API_PREFIX: Joi.string().default('api/v1'),
-  APP_URL: Joi.string().uri().required(),
-  CORS_ORIGINS: Joi.string().required(),
+  // Verification links point here, so production must be https.
+  APP_URL: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().uri({ scheme: ['https'] }),
+      otherwise: Joi.string().uri(),
+    }),
+  // Comma-separated. A `*` entry lets any site call the API from a browser,
+  // so production must name its origins.
+  CORS_ORIGINS: Joi.string()
+    .required()
+    .when('NODE_ENV', {
+      is: 'production',
+      then: Joi.string().custom((value: string, helpers) =>
+        value.split(',').some((o) => o.trim() === '*')
+          ? helpers.error('any.invalid')
+          : value,
+      ),
+    })
+    .messages({
+      'any.invalid':
+        '"CORS_ORIGINS" must list the allowed origins in production, not "*"',
+    }),
+  // The app's deep-link scheme (MetroMatrix_App app.json `scheme`).
+  APP_SCHEME: Joi.string()
+    .pattern(/^[a-z][a-z0-9+.-]*$/)
+    .empty('')
+    .default('metromatrix'),
+  EMAIL_VERIFY_TTL_HOURS: Joi.number()
+    .integer()
+    .min(1)
+    .max(168)
+    .empty('')
+    .default(24),
 
   // Either a single DATABASE_URL (Heroku/Neon/...) OR the discrete DB_* fields.
   DATABASE_URL: Joi.string()
@@ -105,6 +138,11 @@ export const envValidationSchema = Joi.object({
   MAIL_USER: requiredInProd(Joi.string()),
   MAIL_PASS: requiredInProd(Joi.string()),
   MAIL_FROM: requiredInProd(Joi.string()),
+  // Optional: the address the business-suspended email tells partners to write to.
+  SUPPORT_EMAIL: Joi.string()
+    .email({ tlds: { allow: false } })
+    .optional()
+    .allow(''),
 
   GOOGLE_CLIENT_IDS: requiredInProd(Joi.string()),
   CLOUDINARY_CLOUD_NAME: requiredInProd(Joi.string()),

@@ -1,5 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsString, Matches } from 'class-validator';
+import {
+  IsEmail,
+  IsString,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 import { NormalizeEmail, Trim } from '../../../common/validation/transforms';
 
 export const OTP_PATTERN = /^\d{6}$/;
@@ -7,13 +13,16 @@ const OTP_MESSAGE = 'The code must be 6 digits';
 
 export class VerifyEmailDto {
   @ApiProperty({
-    example: '123456',
-    description: 'The 6-digit code from the email.',
+    example: 'pX2mV9…',
+    description:
+      'The token from the emailed link (metromatrix://verify-email?token=…).',
+    maxLength: 200,
   })
   @Trim()
   @IsString()
-  @Matches(OTP_PATTERN, { message: OTP_MESSAGE })
-  otp!: string;
+  @MinLength(1)
+  @MaxLength(200)
+  token!: string;
 }
 
 export class ForgotPasswordDto {

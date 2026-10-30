@@ -41,11 +41,20 @@ Every response, success or failure, is enveloped.
 {
   "id": "6f1c…", "email": "ayesha@example.com", "displayName": "Ayesha Khan",
   "role": "customer", "phone": "+923124890176", "avatarUrl": null,
-  "isEmailVerified": false, "hasPassword": true
+  "isEmailVerified": false, "hasPassword": true,
+  "dateOfBirth": null, "gender": null, "streetAddress": null, "city": null, "postalCode": null,
+  "profileComplete": false, "profileSkippable": false
 }
 ```
 `role` is one of `customer | partner | rider | admin | super_admin`. `rider` is reserved for
 the Food chunk. `hasPassword` is false for Google-only accounts; offer "Set a password".
+
+**Complete Profile (customers).** `profileComplete` is always true for non-customers; a
+customer's is true once `dateOfBirth`, `gender`, `streetAddress` and `city` are all set
+(`PATCH /users/me/profile`). New customers must complete it before using the app.
+`profileSkippable` is true only for customers who signed up **before** the profile existed (the
+`CustomerProfile` migration backfills them): the app asks them once and may let them skip
+(remembered on the device), so nobody already using the app is locked out.
 
 ### `TokenPair`
 ```json
@@ -113,6 +122,11 @@ net, not a strategy.
 Throttles are per client IP. When one is exceeded the answer is `429 RATE_LIMITED`, with a
 `Retry-After` header.
 
+The route Throttler keeps its counts **in memory, per instance**: with several dynos each one
+counts separately, and a restart forgets. So the limits that matter for an account are kept
+in the database as well, per account, whatever the IP or instance (§4.1: password lockout,
+TOTP failures, reset codes per hour).
+
 ### 4.1 Auth
 
 #### `POST /auth/signup` (public, 20 per hour)
@@ -126,9 +140,23 @@ Throttles are per client IP. When one is exceeded the answer is `429 RATE_LIMITE
   spaces and dashes allowed). It is stored and returned as `+923XXXXXXXXX`.
 - `role`: `customer` or `partner`.
 
-**201** `AuthResult` with `user.isEmailVerified: false`; a 6-digit code is emailed.
+**201** `AuthResult` with `user.isEmailVerified: false`; a verification link is emailed (§4.1
+"Email verification").
 The session works immediately: send the user to the verify screen.
 **Errors:** `409 EMAIL_EXISTS` (any letter case), `400 VALIDATION_FAILED`.
+
+**Why signup says the email is taken.** Unlike forgot-password (§4.1), which never reveals whether an
+account exists, signup answers `409 EMAIL_EXISTS`. That is a deliberate trade-off:
+- **The cost:** anyone can learn whether an address has a MetroMatrix account.
+- **Why it is accepted:** the person signing up needs to be told to sign in or reset their password
+  instead. The alternative ("check your inbox" for everyone, plus an "you already have an account" email)
+  needs a second email flow and confuses people who mistyped. Sign-in already answers the same question
+  for an attacker with a password guess, so hiding it here alone would buy little.
+- **What limits it:** the route allows **20 requests per hour per client IP** (Express `trust proxy` = 1,
+  so the IP is the caller's behind Heroku's router), which makes checking addresses in bulk slow. That
+  limit is in memory, per dyno, so it scales with the number of dynos (see the throttling note at the
+  start of §4).
+- **Revisit if** enumeration becomes a real problem: switch to the "always 201 + email the owner" flow.
 
 ```bash
 curl -X POST $API/auth/signup -H 'Content-Type: application/json' \
@@ -148,6 +176,12 @@ curl -X POST $API/auth/signup -H 'Content-Type: application/json' \
   - `401 INVALID_CREDENTIALS`: the same answer for an unknown email and a wrong password.
   - `403 WRONG_PORTAL`: `details: { accountType, portal }`; the message names the right door.
   - `403 ACCOUNT_DISABLED`.
+- **Lockout:** 10 wrong passwords for one account within 15 minutes (from the first) lock the
+  password sign-in until the window ends. While locked, **even the right password** gets the same
+  `401 INVALID_CREDENTIALS`: the answer never says the account is locked, nor that a guess was
+  right. A successful sign-in resets the count; a password reset lifts the lock. Trade-off:
+  anyone who knows an address can lock its password sign-in for 15 minutes; Google sign-in and
+  the reset flow still work.
 
 ```bash
 curl -X POST $API/auth/signin -H 'Content-Type: application/json' \
@@ -163,10 +197,17 @@ or
 { "challengeToken": "eyJ…", "recoveryCode": "abcd-2345" }
 ```
 **200** `AuthResult`. The challenge is single-use and lasts 5 minutes. A recovery code works once.
+A TOTP code works once too: a code for the same (or an earlier) 30-second step than the last one
+accepted is refused, so an observed code can't be replayed inside its window. The code that
+confirms enrolment (`POST /admin/me/totp/confirm`, first time or rotation) counts as accepted, so
+it can't then be used here either: sign in with the next code.
 **Errors:**
 - `401 UNAUTHORIZED`: the challenge has expired or was already used; sign in again.
-- `401 TOTP_INVALID`.
+- `401 TOTP_INVALID`: wrong, or already used.
 - `403 TOTP_REQUIRED`: not enrolled yet; `details.enrolmentRequired: true`.
+- `429 RATE_LIMITED` with `details.retryAfter` (seconds): 5 wrong codes (TOTP and recovery
+  codes together) for the account within 15 minutes. The challenge is retired, and step 2 answers
+  429 even for a right code until the window ends.
 
 #### `POST /auth/google` (public, 10 per minute, customer portal only)
 ```json
@@ -176,6 +217,11 @@ The token's audience must be one of the server's `GOOGLE_CLIENT_IDS` (web, Andro
 - An account already linked to this Google account signs in.
 - Otherwise Google must say the email is verified. An existing **customer** with that email
   is linked (and marked verified); otherwise a new verified customer is created.
+- **Pre-account hijack guard.** If that existing customer never verified the address, anyone
+  could have registered it. Google has now proven who owns it, so in one transaction the
+  password is removed, `token_version` moves on, every refresh token is revoked, and the name
+  and phone are replaced with Google's. The squatter's password, access token and refresh token
+  all stop working at once. A **verified** customer keeps their password and sessions.
 - **200** `AuthResult`.
 - **Errors:**
   - `401 INVALID_CREDENTIALS`: bad or expired token.
@@ -203,20 +249,53 @@ Also call `DELETE /users/me/devices/:token` *before* logging out.
 - a partner with no business → onboarding;
 - `business.status` → the matching screen.
 
-#### `POST /auth/verify-email` (bearer, 10 per 15 minutes)
+#### Email verification (by link)
+Signup and resend email a link. The token is 32 random bytes (base64url); only its SHA-256 is
+stored. A link works for `EMAIL_VERIFY_TTL_HOURS` (default 24), and a new link retires the old
+one. The email carries two links to the same token:
+
+| Link | Opens | Spends the token |
+|---|---|---|
+| `${APP_URL}/${API_PREFIX}/auth/verify?token=…` (the button) | the API's page below, in any browser | the page itself |
+| `${APP_SCHEME}://verify-email?token=…` ("Open in the app") | the app, on the phone it's installed on | the app, with `POST /auth/verify-email` |
+
+**A spent or expired link succeeds when its owner is already verified.** Mail scanners open links
+before people do, people tap twice, and a resend retires the link in the older email. Only a link
+that still has work to do fails, with `VERIFY_LINK_INVALID`.
+
+The app waiting on the verify screen doesn't need the token at all: it re-reads `GET /auth/me`
+every few seconds (and on returning to the foreground) until `user.isEmailVerified` is true.
+
+#### `GET /auth/verify?token=…` (public, 20 per 15 minutes)
+Not JSON: an HTML page for the browser the mail client opens, with
+`Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+`Cache-Control: no-store` and `Referrer-Policy: no-referrer`.
+- **200** "Email verified" (or "already verified"), with an "Open the MetroMatrix app" button to
+  `${APP_SCHEME}://verify-email?verified=1`. That link never carries the token: it is spent.
+- **400** "This link has expired or been replaced. Open the app and tap Resend."
+
+The token in the query string is redacted from request logs (`req.url`, `req.query.token`) and
+from Sentry events.
+
+#### `POST /auth/verify-email` (public, 10 per 15 minutes)
 ```json
-{ "otp": "123456" }
+{ "token": "pX2mV9…" }
 ```
-**200** `AccountView` with `isEmailVerified: true`. If the account is already verified, this is a no-op that returns 200.
-**Errors** (all 400):
-- `OTP_INVALID`: `details.attemptsLeft` gives the count remaining.
-- `OTP_EXPIRED`: codes last 10 minutes.
-- `OTP_LOCKED`: the 5th wrong attempt locks the code; only a resend issues a new one.
+The app's deep link (`metromatrix://verify-email?token=…`). Public, because the link may open the
+app signed out. `token` is 1–200 characters.
+**200** the owner's `AccountView` (`user.isEmailVerified: true`). No tokens are issued: a
+signed-in app re-reads `/auth/me`; a signed-out one asks the user to sign in.
+**Errors:** `400 VERIFY_LINK_INVALID` (unknown, or spent/expired while unverified),
+`400 VALIDATION_FAILED`.
+
+> Changed from Chunk 1: this endpoint took `{ "otp": "123456" }` with a bearer. The 6-digit
+> verification code is gone (the `email_verification_otps` table stays, unused). Password reset
+> still uses a 6-digit code.
 
 #### `POST /auth/resend-verification` (bearer, 5 per hour)
-There is no body.
+There is no body. Emails a new link; the previous one stops working.
 **200** `{ "sent": true, "alreadyVerified": false, "retryAfter": 60 }`; for an already-verified account,
-`{ "sent": false, "alreadyVerified": true, "retryAfter": 0 }`.
+`{ "sent": false, "alreadyVerified": true, "retryAfter": 0 }` (move on: re-read `/auth/me`).
 **Errors:** `429 RESEND_COOLDOWN` with `details.retryAfter` (seconds). Show a countdown.
 
 #### `POST /auth/forgot-password` (public, 3 per 15 minutes)
@@ -224,7 +303,9 @@ There is no body.
 { "email": "ayesha@example.com" }
 ```
 **200** `{ "delivered": true }`, always, whether or not the account exists. If it does, a 6-digit code is
-emailed (10 minutes, 5 attempts).
+emailed (10 minutes, 5 attempts), at most **3 codes per account per hour**: beyond that the answer
+is the same and nothing is sent. The email goes out after the response, and an unknown address
+does comparable work, so neither the answer nor its timing says whether an account exists.
 
 #### `POST /auth/verify-otp` (public, 10 per 15 minutes)
 ```json
@@ -245,10 +326,23 @@ emailed (10 minutes, 5 attempts).
 ```json
 { "currentPassword": "Secret123", "newPassword": "NewSecret123" }
 ```
-Google-only accounts (`hasPassword: false`) omit `currentPassword` to set their first password.
-**200** `{ "changed": true }`. Other devices are signed out; this one is not.
-**Errors:** `403 INVALID_CREDENTIALS` (wrong current password; it is 403, not 401, so your
-refresh logic is not triggered), `400 VALIDATION_FAILED`.
+or, for a Google-only account (`hasPassword: false`) setting its first password:
+```json
+{ "newPassword": "NewSecret123", "idToken": "<fresh Google ID token>" }
+```
+The `idToken` must belong to the Google account linked to this user (`sub`); a session alone
+is not enough.
+
+**200** `{ "changed": true, "tokens": TokenPair }`. **Every session ends at once, this one
+included**: `token_version` moves on (every access token answers `401 TOKEN_REVOKED` on its next
+request) and every refresh token is revoked, in one transaction with the new hash. Store the
+returned pair and carry on with it (it starts a new refresh family).
+**Errors:** `403 INVALID_CREDENTIALS` (wrong current password, missing or mismatched Google
+token; it is 403, not 401, so your refresh logic is not triggered), `400 VALIDATION_FAILED`.
+
+> Changed from Chunk 1: the response was `{ "changed": true }` and this device's tokens stayed
+> valid; other devices' access tokens lived up to 15 more minutes; a Google-only account needed
+> no proof beyond the session.
 
 #### `DELETE /auth/account` (bearer, 5 per 15 minutes)
 ```json
@@ -271,6 +365,21 @@ rejected. **Errors:** `403 INVALID_CREDENTIALS`.
 All fields are optional. `avatarUrl` must come from an upload signed with purpose `avatar`;
 send `null` to remove it. The phone can be changed but not removed.
 **200** `AuthUser`. **Errors:** `400 VALIDATION_FAILED` (including a foreign avatar URL).
+
+#### `PATCH /users/me/profile` (bearer, customers only)
+```json
+{ "dateOfBirth": "1998-02-14", "gender": "female", "streetAddress": "7 Canal View, Johar Town",
+  "city": "Lahore", "postalCode": "54000", "avatarUrl": "https://res.cloudinary.com/…" }
+```
+The app's Complete Profile, saved in one go.
+- `dateOfBirth`: `YYYY-MM-DD`, a real date, not in the future; age 13–120 (the app's rule).
+- `gender`: `male | female | other`.
+- `streetAddress`: 5–255 characters. `city`: 2–60.
+- `postalCode` (optional): 5 digits; leaving it out clears it.
+- `avatarUrl` (optional): as for `PATCH /users/me`.
+
+**200** `{ "user": AuthUser }` with `profileComplete: true`. **Errors:** `400 VALIDATION_FAILED`
+(`details.fields`), `403 FORBIDDEN` (not a customer).
 
 #### `PUT /users/me/devices` (bearer)
 ```json
@@ -478,9 +587,10 @@ If the database is unreachable, the answer is `503 SERVICE_UNAVAILABLE` with
 | `WRONG_PORTAL` | 403 | The account belongs to another sign-in door |
 | `ACCOUNT_DISABLED` | 403 | Disabled by an admin |
 | `EMAIL_NOT_VERIFIED` | 403 | Route needs a verified email; Google email unverified |
-| `OTP_INVALID` | 400 | Wrong code (`attemptsLeft`), or a used/invalid reset token |
-| `OTP_EXPIRED` | 400 | Code older than 10 minutes |
-| `OTP_LOCKED` | 400 | 5 wrong attempts; request a new code |
+| `VERIFY_LINK_INVALID` | 400 | Email verification link unknown, or spent/expired while the address is unverified |
+| `OTP_INVALID` | 400 | Wrong password-reset code (`attemptsLeft`), or a used/invalid reset token |
+| `OTP_EXPIRED` | 400 | Reset code older than 10 minutes |
+| `OTP_LOCKED` | 400 | 5 wrong reset-code attempts; request a new code |
 | `RESEND_COOLDOWN` | 429 | Resend within 60 s; `retryAfter` |
 | `REFRESH_INVALID` | 401 | Unknown or expired refresh token |
 | `REFRESH_REUSED` | 401 | Replayed refresh token; the session is revoked |

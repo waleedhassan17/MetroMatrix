@@ -28,7 +28,9 @@ Local `.env` values that work with `docker-compose.yml`:
 `DB_HOST=localhost DB_PORT=5433 DB_USERNAME=metromatrix DB_PASSWORD=metromatrix_local_pw
 DB_NAME=metromatrix MAIL_HOST=localhost MAIL_PORT=1025`. Generate `JWT_SECRET`,
 `OTP_PEPPER` and `TOTP_ENC_KEY` with the commands in `.env.example`. With `MAIL_HOST`
-pointed at Mailpit, every email (OTPs included) shows up at http://localhost:8025.
+pointed at Mailpit, every email (verification links and reset codes included) shows up at
+http://localhost:8025. The verification link opens `APP_URL` (default http://localhost:3000),
+so it works straight from Mailpit on the same machine.
 
 ## Checks
 

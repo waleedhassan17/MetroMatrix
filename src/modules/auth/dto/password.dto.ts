@@ -18,8 +18,7 @@ export class ResetPasswordDto {
 
 export class ChangePasswordDto {
   @ApiPropertyOptional({
-    description:
-      'Required when the account has a password. A Google-only account sets its first password without it.',
+    description: 'Required when the account has a password.',
   })
   @IsOptional()
   @IsString()
@@ -29,6 +28,15 @@ export class ChangePasswordDto {
   @ApiProperty({ example: 'NewSecret123', minLength: 8 })
   @IsStrongPassword()
   newPassword!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'A fresh Google ID token — required for a Google-only account (no password) setting its first one.',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  idToken?: string;
 }
 
 export class DeleteAccountDto {

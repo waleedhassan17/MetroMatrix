@@ -765,7 +765,7 @@
           ]
         },
         {
-          "name": "Mailpit: verification code",
+          "name": "Mailpit: verification link",
           "request": {
             "method": "GET",
             "header": [],
@@ -790,11 +790,11 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Mailpit: verification code → 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Mailpit: verification link → 200', () => pm.response.to.have.status(200));",
                   "const msg = pm.response.json().messages[0];",
                   "pm.test('an email arrived', () => pm.expect(msg, 'no email yet').to.be.ok);",
-                  "const code = (msg.Snippet.match(/\\b(\\d{6})\\b/) || [])[1];",
-                  "pm.collectionVariables.set('customerOtp', code);"
+                  "const code = (msg.Snippet.match(/token=([A-Za-z0-9_-]{43})/) || [])[1];",
+                  "pm.collectionVariables.set('customerVerifyToken', code);"
                 ]
               }
             }
@@ -818,7 +818,7 @@
             },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"otp\": \"{{customerOtp}}\"\n}",
+              "raw": "{\n  \"token\": \"{{customerVerifyToken}}\"\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -3392,7 +3392,7 @@
       "value": ""
     },
     {
-      "key": "customerOtp",
+      "key": "customerVerifyToken",
       "value": ""
     },
     {

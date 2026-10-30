@@ -138,7 +138,9 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   (`common/logging/pino-options.ts`). Don't log request bodies.
 - **No debug routes, in any environment.** Test-only controllers are registered in the
   e2e TestingModule only (`test/utils/test-app.ts`).
-- OTPs: `crypto.randomInt`, peppered SHA-256 at rest, constant-time compare.
+- OTPs (password reset): `crypto.randomInt`, peppered SHA-256 at rest, constant-time compare.
+- Email verification is by link: a 32-byte `randomToken`, plain SHA-256 at rest
+  (`email_verification_tokens`), redacted from request URLs in logs and Sentry.
 
 ## Testing conventions
 
@@ -149,7 +151,8 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   gets its own IP (X-Forwarded-For) so route throttles don't bleed between tests.
 - Time-based rules (OTP expiry, refresh grace) are tested by back-dating rows with SQL, not
   by sleeping.
-- Emails land in the in-memory outbox (`test/utils/outbox.ts`: `lastOtpFor(email)`); Google
+- Emails land in the in-memory outbox (`test/utils/outbox.ts`: `lastVerifyTokenFor(email)`
+  for verification links, `lastOtpFor(email)` for reset codes); Google
   is faked (`test/utils/fake-google.ts`); admins come from `test/utils/admin.ts`
   (`enrolledAdmin(t)` computes real TOTP codes with otplib).
 - `test/qa-matrix.e2e-spec.ts` is the release gate: one test per QA row. Add rows, never

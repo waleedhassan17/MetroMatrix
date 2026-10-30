@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { createTransport, Transporter } from 'nodemailer';
+import { maskEmail } from '../../common/logging/mask-email';
 import { emailTemplates } from './mail.templates';
 
 export interface RenderedEmail {
@@ -48,16 +49,60 @@ export class MailService implements OnModuleInit {
     );
   }
 
+  // ── Links ───────────────────────────────────────────────────────────────
+
+  /** The app's deep-link scheme, e.g. `metromatrix`. */
+  appScheme(): string {
+    return this.config.get<string>('mail.appScheme', 'metromatrix');
+  }
+
+  /**
+   * The two links a verification token travels in.
+   *
+   * - `webLink` (the button): the API's own page, GET /auth/verify, over
+   *   APP_URL. It opens in any mail client on any device, spends the token
+   *   and then offers the app without the token.
+   * - `appLink`: opens the app directly on the phone it's installed on, which
+   *   spends the token itself (POST /auth/verify-email).
+   */
+  buildVerificationLinks(token: string): { webLink: string; appLink: string } {
+    const base = this.config
+      .get<string>('app.appUrl', 'http://localhost:3000')
+      .replace(/\/+$/, '');
+    const prefix = this.config
+      .get<string>('app.apiPrefix', 'api/v1')
+      .replace(/^\/+|\/+$/g, '');
+    const t = encodeURIComponent(token);
+    return {
+      webLink: `${base}/${prefix}/auth/verify?token=${t}`,
+      appLink: `${this.appScheme()}://verify-email?token=${t}`,
+    };
+  }
+
   // ── High-level senders ──────────────────────────────────────────────────
 
-  sendVerificationOtp(to: string, name: string | null, otp: string) {
-    const ttl = this.config.get<number>('mail.otpTtlMinutes', 10);
-    return this.send(to, emailTemplates.verifyEmail(name, otp, ttl));
+  sendVerificationLink(to: string, name: string | null, token: string) {
+    const { webLink, appLink } = this.buildVerificationLinks(token);
+    const ttlHours = this.config.get<number>('mail.verifyTtlHours', 24);
+    return this.send(
+      to,
+      emailTemplates.verifyEmail(name, webLink, appLink, ttlHours),
+    );
   }
 
   sendPasswordResetOtp(to: string, name: string | null, otp: string) {
     const ttl = this.config.get<number>('mail.otpTtlMinutes', 10);
     return this.send(to, emailTemplates.resetPassword(name, otp, ttl));
+  }
+
+  /** `${APP_SCHEME}://`: the "Open MetroMatrix" button on business emails. */
+  appHomeLink(): string {
+    return `${this.appScheme()}://`;
+  }
+
+  /** SUPPORT_EMAIL, or null when it isn't configured. */
+  supportEmail(): string | null {
+    return this.config.get<string>('mail.supportEmail') || null;
   }
 
   sendBusinessApproved(
@@ -68,7 +113,12 @@ export class MailService implements OnModuleInit {
   ) {
     return this.send(
       to,
-      emailTemplates.businessApproved(name, businessName, opts.reinstated),
+      emailTemplates.businessApproved(
+        name,
+        businessName,
+        opts.reinstated,
+        this.appHomeLink(),
+      ),
     );
   }
 
@@ -86,6 +136,7 @@ export class MailService implements OnModuleInit {
         businessName,
         reason,
         documentNotes,
+        this.appHomeLink(),
       ),
     );
   }
@@ -98,7 +149,12 @@ export class MailService implements OnModuleInit {
   ) {
     return this.send(
       to,
-      emailTemplates.businessSuspended(name, businessName, reason),
+      emailTemplates.businessSuspended(
+        name,
+        businessName,
+        reason,
+        this.supportEmail(),
+      ),
     );
   }
 
@@ -107,9 +163,12 @@ export class MailService implements OnModuleInit {
   /** Never throws: a mail failure must not break the flow that sent it. */
   async send(to: string, email: RenderedEmail): Promise<void> {
     const from = this.config.get<string>('mail.from');
+    const production = this.config.get<string>('app.nodeEnv') === 'production';
+    // Production logs never keep a recipient's address.
+    const who = production ? maskEmail(to) : to;
     if (!this.transport) {
-      if (this.config.get<string>('app.nodeEnv') === 'production') {
-        this.logger.error(`No SMTP transport — email to ${to} dropped.`);
+      if (production) {
+        this.logger.error(`No SMTP transport — email to ${who} dropped.`);
         return;
       }
       // Dev/console transport — surface everything needed to test the flow.
@@ -126,11 +185,11 @@ export class MailService implements OnModuleInit {
         text: email.text,
         html: email.html,
       });
-      this.logger.log(`Email sent to ${to}: "${email.subject}"`);
+      this.logger.log(`Email sent to ${who}: "${email.subject}"`);
     } catch (err) {
-      this.logger.error(
-        `Failed to send email to ${to}: ${(err as Error).message}`,
-      );
+      // SMTP errors often quote the address ("<a@b> rejected").
+      const reason = (err as Error).message.split(to).join(who);
+      this.logger.error(`Failed to send email to ${who}: ${reason}`);
     }
   }
 }

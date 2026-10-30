@@ -1,4 +1,5 @@
 import { ForbiddenException, Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { GoogleIdentity, GoogleTokenVerifier } from './google-token-verifier';
@@ -16,7 +17,9 @@ import { ErrorCode } from '../../common/errors/codes';
  *  1. An account already linked to this Google `sub` signs in.
  *  2. Otherwise Google must vouch for the email (`email_verified`), or we
  *     refuse: an unverified address proves nothing about who owns it.
- *  3. An existing customer with that email is linked and marked verified.
+ *  3. An existing customer with that email is linked and marked verified. If
+ *     that customer never verified the address, it may be a squatter's
+ *     pre-registration: it is taken over (takeOverUnverified).
  *     A partner or admin with that email is refused (WRONG_PORTAL) — Google
  *     must never become a side door into those accounts.
  *  4. Otherwise a new, verified customer is created.
@@ -29,6 +32,7 @@ export class GoogleAuthService {
     private readonly auth: AuthService,
     private readonly tokens: TokenService,
     private readonly audit: OperationalAuditService,
+    private readonly dataSource: DataSource,
   ) {}
 
   async signIn(idToken: string, client: ClientInfo): Promise<AuthResult> {
@@ -60,24 +64,67 @@ export class GoogleAuthService {
           message: 'This account is linked to a different Google account.',
         });
       }
-      byEmail.googleSub = google.sub;
-      // Google has just proven the address belongs to this person.
-      byEmail.isEmailVerified = true;
-      byEmail.avatarUrl ??= google.picture;
-      await this.users.save(byEmail);
+      const linkedUser = byEmail.isEmailVerified
+        ? await this.linkVerified(byEmail, google)
+        : await this.takeOverUnverified(byEmail, google);
       await this.audit.record({
-        actorUserId: byEmail.id,
+        actorUserId: linkedUser.id,
         action: 'auth.google_linked',
         targetType: 'user',
-        targetId: byEmail.id,
+        targetId: linkedUser.id,
+        details: { tookOverUnverified: !byEmail.isEmailVerified },
       });
-      return this.auth.completeSignin(byEmail, client, {
+      return this.auth.completeSignin(linkedUser, client, {
         portal: 'customer',
         method: 'google',
       });
     }
 
     return this.createCustomer(google, client);
+  }
+
+  /** The owner proved the address by email earlier: their password stays. */
+  private async linkVerified(
+    user: User,
+    google: GoogleIdentity,
+  ): Promise<User> {
+    user.googleSub = google.sub;
+    user.avatarUrl ??= google.picture;
+    return this.users.save(user);
+  }
+
+  /**
+   * Pre-account hijack: anyone can sign up with someone else's address and
+   * wait. The address was never proven, so nothing the unverified account
+   * holds can be trusted: Google has just proven who owns the address, and
+   * it becomes theirs alone. In one transaction:
+   *  1. the password is removed (the squatter's password signs in no more),
+   *  2. token_version moves on (every access token dies at once),
+   *  3. every refresh family is revoked,
+   *  4. the Google account is linked and the address marked verified.
+   * The name and phone the squatter typed are replaced too.
+   */
+  private async takeOverUnverified(
+    user: User,
+    google: GoogleIdentity,
+  ): Promise<User> {
+    await this.dataSource.transaction(async (m) => {
+      await m.update(
+        User,
+        { id: user.id },
+        {
+          passwordHash: null,
+          tokenVersion: () => 'token_version + 1',
+          googleSub: google.sub,
+          isEmailVerified: true,
+          displayName: (google.name ?? google.email.split('@')[0]).slice(0, 80),
+          phone: null,
+          avatarUrl: google.picture,
+        },
+      );
+      await this.tokens.revokeAllForUser(user.id, undefined, m);
+    });
+    return this.users.getByIdOrFail(user.id);
   }
 
   private async createCustomer(

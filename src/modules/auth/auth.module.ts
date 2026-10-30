@@ -11,6 +11,7 @@ import { AuthMaintenanceService } from './auth-maintenance.service';
 import { RefreshToken } from './entities/refresh-token.entity';
 import { RevokedAccessToken } from './entities/revoked-access-token.entity';
 import { EmailVerificationOtp } from './entities/email-verification-otp.entity';
+import { EmailVerificationToken } from './entities/email-verification-token.entity';
 import { EmailVerificationService } from './email-verification.service';
 import { PasswordResetOtp } from './entities/password-reset-otp.entity';
 import { PasswordResetService } from './password-reset.service';
@@ -33,6 +34,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
       RefreshToken,
       RevokedAccessToken,
       EmailVerificationOtp,
+      EmailVerificationToken,
       PasswordResetOtp,
       AdminRecoveryCode,
       IdempotencyRecord,

@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, IsNull, Repository } from 'typeorm';
+import { DataSource, IsNull, MoreThan, Repository } from 'typeorm';
 import { User } from '../users/entities/user.entity';
 import { UsersService } from '../users/users.service';
 import { PasswordResetOtp } from './entities/password-reset-otp.entity';
@@ -14,6 +14,9 @@ import { generateOtp, hashCode, verifyCode } from '../../common/crypto/otp';
 import { randomToken, sha256Hex } from '../../common/crypto/hash';
 
 const PURPOSE = 'password-reset';
+
+/** Reset codes emailed per account per hour, at most. */
+export const MAX_CODES_PER_HOUR = 3;
 
 const invalidCode = () =>
   new BadRequestException({
@@ -53,29 +56,50 @@ export class PasswordResetService {
 
   /**
    * Always the same answer, whether or not the address has an account — the
-   * caller learns nothing about who is registered.
+   * caller learns nothing about who is registered:
+   * - an unknown or inactive address still generates and hashes a code, so
+   *   both paths do comparable work;
+   * - the email is sent without waiting for it (MailService never throws), so
+   *   the SMTP round-trip doesn't show in the response time;
+   * - at most MAX_CODES_PER_HOUR codes per account per hour: beyond that the
+   *   answer is the same and nothing is sent (the Throttler is per IP and
+   *   per instance; this protects the inbox from any number of them).
    */
   async forgot(email: string): Promise<{ delivered: true }> {
     const user = await this.users.findByEmail(email);
-    if (user && user.status === 'active') {
-      await this.repo.update(
-        { userId: user.id, usedAt: IsNull() },
-        { usedAt: new Date() },
-      );
-      const otp = generateOtp();
-      await this.repo.insert(
-        this.repo.create({
-          userId: user.id,
-          otpHash: hashCode(this.pepper, PURPOSE, user.id, otp),
-          resetTokenHash: null,
-          attempts: 0,
-          expiresAt: new Date(Date.now() + this.otpTtlMs),
-          verifiedAt: null,
-          usedAt: null,
-        }),
-      );
-      await this.mail.sendPasswordResetOtp(user.email, user.displayName, otp);
+    const otp = generateOtp();
+    if (!user || user.status !== 'active') {
+      hashCode(this.pepper, PURPOSE, 'no-account', otp);
+      return { delivered: true };
     }
+
+    const recent = await this.repo.count({
+      where: {
+        userId: user.id,
+        createdAt: MoreThan(new Date(Date.now() - 3_600_000)),
+      },
+    });
+    if (recent >= MAX_CODES_PER_HOUR) {
+      this.logger.warn(`Reset code cap reached for user ${user.id}`);
+      return { delivered: true };
+    }
+
+    await this.repo.update(
+      { userId: user.id, usedAt: IsNull() },
+      { usedAt: new Date() },
+    );
+    await this.repo.insert(
+      this.repo.create({
+        userId: user.id,
+        otpHash: hashCode(this.pepper, PURPOSE, user.id, otp),
+        resetTokenHash: null,
+        attempts: 0,
+        expiresAt: new Date(Date.now() + this.otpTtlMs),
+        verifiedAt: null,
+        usedAt: null,
+      }),
+    );
+    void this.mail.sendPasswordResetOtp(user.email, user.displayName, otp);
     return { delivered: true };
   }
 
@@ -160,6 +184,9 @@ export class PasswordResetService {
         {
           passwordHash,
           tokenVersion: () => 'token_version + 1',
+          // Proving the inbox lifts a password lockout.
+          signinFailures: 0,
+          signinFailuresSince: null,
         },
       );
       await m.update(

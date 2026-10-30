@@ -97,14 +97,16 @@ export class TokenService {
       config.get<number>('jwt.refreshReuseGraceSeconds', 10) * 1000;
   }
 
-  /** Sign-in: a new device, so a new refresh family. */
-  async startSession(user: User, client: ClientInfo): Promise<TokenPair> {
-    const { pair } = await this.issue(
-      this.refreshRepo.manager,
-      user,
-      randomUUID(),
-      client,
-    );
+  /**
+   * Sign-in: a new device, so a new refresh family. `manager` puts it in the
+   * caller's transaction (a password change revokes and re-issues together).
+   */
+  async startSession(
+    user: User,
+    client: ClientInfo,
+    manager: EntityManager = this.refreshRepo.manager,
+  ): Promise<TokenPair> {
+    const { pair } = await this.issue(manager, user, randomUUID(), client);
     return pair;
   }
 

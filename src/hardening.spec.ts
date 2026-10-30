@@ -9,7 +9,11 @@ import { Writable } from 'stream';
 import * as Sentry from '@sentry/nestjs';
 import { AuthController } from './modules/auth/auth.controller';
 import { HealthController } from './modules/health/health.controller';
-import { buildLoggerParams, REDACT_PATHS } from './common/logging/pino-options';
+import {
+  buildLoggerParams,
+  REDACT_PATHS,
+  redactUrl,
+} from './common/logging/pino-options';
 import {
   AllExceptionsFilter,
   GENERIC_ERROR_MESSAGE,
@@ -110,6 +114,41 @@ describe('log redaction', () => {
     ]) {
       expect(REDACT_PATHS.some((p) => p.endsWith(key))).toBe(true);
     }
+  });
+});
+
+describe('log redaction: the verification link', () => {
+  it('a request log for GET /auth/verify never carries the token', () => {
+    let out = '';
+    const sink = new Writable({
+      write(chunk, _enc, cb) {
+        out += chunk.toString();
+        cb();
+      },
+    });
+    const { pinoHttp } = buildLoggerParams({
+      level: 'info',
+      pretty: false,
+    }) as {
+      pinoHttp: Pick<pino.LoggerOptions, 'redact' | 'serializers'>;
+    };
+    const logger = pino(
+      { redact: pinoHttp.redact, serializers: pinoHttp.serializers },
+      sink,
+    );
+    const token = 'SECRETTOKEN_abc-123';
+    // What pino-http hands the serializer: the standard serialized request.
+    logger.info({
+      req: {
+        method: 'GET',
+        url: `/api/v1/auth/verify?token=${token}&x=1`,
+        query: { token, x: '1' },
+      },
+    });
+    expect(out).not.toContain(token);
+    expect(out).toContain('/api/v1/auth/verify?token=[Redacted]&x=1');
+    expect(redactUrl('/a?resetToken=zz#f')).toBe('/a?resetToken=[Redacted]#f');
+    expect(redactUrl('/health')).toBe('/health');
   });
 });
 

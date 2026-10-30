@@ -1,9 +1,16 @@
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import {
+  lockedForSeconds,
+  recordFailure,
+  resetFailures,
+} from './abuse-counters';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { authenticator } from 'otplib';
@@ -24,6 +31,9 @@ const RECOVERY_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
 /** ±1 step (30 s) of clock drift between the server and the phone. */
 const totp = authenticator.clone({ window: 1 });
+
+/** Wrong codes per account within the window before sign-in step 2 answers 429. */
+export const TOTP_MAX_FAILURES = 5;
 
 export interface TotpEnrolment {
   otpauthUri: string;
@@ -90,7 +100,8 @@ export class TotpService {
         message: 'Start enrolment first (POST /admin/me/totp/enrol).',
       });
     }
-    if (!totp.check(code, open(fresh.totpPendingSecretEnc, this.encKey))) {
+    const step = this.matchedStep(fresh.totpPendingSecretEnc, code);
+    if (step === null) {
       // 400, not 401: this route is called with a session the app should keep.
       throw new BadRequestException({
         code: ErrorCode.TOTP_INVALID,
@@ -110,6 +121,10 @@ export class TotpService {
           totpSecretEnc: fresh.totpPendingSecretEnc,
           totpPendingSecretEnc: null,
           totpEnabled: true,
+          // The confirming code counts as used: it can't then sign in (step 2
+          // only accepts a later step). Never moves the mark backwards.
+          totpLastStep: () =>
+            `GREATEST(COALESCE(totp_last_step, ${step}), ${step})`,
         },
       );
       await m.delete(AdminRecoveryCode, { userId: user.id });
@@ -139,6 +154,13 @@ export class TotpService {
   /**
    * Admin sign-in step 2. Throws unless a valid code — or an unused recovery
    * code, which is spent — is given.
+   *
+   * - A code is accepted once: its time step must be later than the last one
+   *   accepted (users.totp_last_step), so a code seen over a shoulder or in a
+   *   log can't be replayed inside its 30–90 s window.
+   * - 5 wrong codes (TOTP or recovery) in 15 minutes answer 429 RATE_LIMITED
+   *   with `retryAfter` until the window ends, even for a right code.
+   *   AuthService.adminTotp then retires the challenge.
    */
   async verifySignin(
     user: User,
@@ -151,17 +173,84 @@ export class TotpService {
         details: { enrolmentRequired: true },
       });
     }
-    if (input.code && this.checkCode(user, input.code)) return 'totp';
+    const wait = lockedForSeconds(
+      user.totpFailures,
+      user.totpFailuresSince,
+      TOTP_MAX_FAILURES,
+    );
+    if (wait > 0) throw this.tooManyAttempts(wait);
+
+    let method: 'totp' | 'recovery_code' | null = null;
+    if (input.code) {
+      const step = this.matchedStep(user.totpSecretEnc, input.code);
+      if (step !== null && (await this.claimStep(user.id, step))) {
+        method = 'totp';
+      }
+    }
     if (
+      !method &&
       input.recoveryCode &&
       (await this.spendRecoveryCode(user.id, input.recoveryCode))
     ) {
-      return 'recovery_code';
+      method = 'recovery_code';
     }
+
+    if (method) {
+      if (user.totpFailures > 0) {
+        await resetFailures(this.dataSource, user.id, 'totp');
+      }
+      return method;
+    }
+
+    const { count, since } = await recordFailure(
+      this.dataSource,
+      user.id,
+      'totp',
+    );
+    const lockedFor = lockedForSeconds(count, since, TOTP_MAX_FAILURES);
+    if (lockedFor > 0) throw this.tooManyAttempts(lockedFor);
     throw new UnauthorizedException({
       code: ErrorCode.TOTP_INVALID,
       message: 'That code is not right.',
     });
+  }
+
+  /** The 30 s counter a code belongs to (±1 step of drift), or null. */
+  private matchedStep(secretEnc: string, code: string): number | null {
+    // One clock reading for both, so a step boundary can't fall between them.
+    const now = Date.now();
+    const at = totp.clone({ epoch: now });
+    const delta = at.checkDelta(code, open(secretEnc, this.encKey));
+    if (delta === null) return null;
+    return Math.floor(now / 1000 / at.allOptions().step) + delta;
+  }
+
+  /** Accept this step only if it's later than the last one accepted (atomic). */
+  private async claimStep(userId: string, step: number): Promise<boolean> {
+    const res = await this.dataSource
+      .createQueryBuilder()
+      .update(User)
+      .set({ totpLastStep: String(step) })
+      .where(
+        'id = :id AND (totp_last_step IS NULL OR totp_last_step < :step)',
+        {
+          id: userId,
+          step,
+        },
+      )
+      .execute();
+    return (res.affected ?? 0) > 0;
+  }
+
+  private tooManyAttempts(retryAfter: number) {
+    return new HttpException(
+      {
+        code: ErrorCode.RATE_LIMITED,
+        message: `Too many incorrect codes. Sign in again in ${Math.ceil(retryAfter / 60)} minutes.`,
+        details: { retryAfter },
+      },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
   }
 
   remainingRecoveryCodes(userId: string): Promise<number> {

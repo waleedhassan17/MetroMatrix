@@ -1,7 +1,7 @@
 import { registerAs } from '@nestjs/config';
 
 /**
- * SMTP (Brevo in production) + OTP tuning.
+ * SMTP (Brevo in production), the verification link, and OTP tuning.
  *
  * When MAIL_HOST is empty the MailService logs every email — OTPs included —
  * to the console so the flows are testable locally. That fallback exists only
@@ -17,6 +17,13 @@ export default registerAs('mail', () => {
     user: process.env.MAIL_USER ?? '',
     pass: process.env.MAIL_PASS ?? '',
     from: process.env.MAIL_FROM || 'MetroMatrix <no-reply@metromatrix.pk>',
+
+    /** The app's deep-link scheme (app.json `scheme`): metromatrix://verify-email?… */
+    appScheme: process.env.APP_SCHEME || 'metromatrix',
+    /** Optional: named in the business-suspended email. Empty → "contact MetroMatrix support". */
+    supportEmail: process.env.SUPPORT_EMAIL ?? '',
+    /** How long an email verification link works. */
+    verifyTtlHours: parseInt(process.env.EMAIL_VERIFY_TTL_HOURS || '24', 10),
 
     otpTtlMinutes: 10,
     otpMaxAttempts: 5,

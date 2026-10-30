@@ -92,7 +92,7 @@ describe('Password reset, change, account deletion (e2e)', () => {
     expect(weak.body.error.details.fields.password).toBeDefined();
   });
 
-  it('change-password: wrong current is 403; success signs out other devices but not this one', async () => {
+  it('change-password: wrong current is 403; success ends every session at once and hands this device a new pair', async () => {
     const u = await signup(t);
     const { api: tablet, res } = await signin(t, u.email, 'customer');
     const tabletRefresh = res.body.data.tokens.refreshToken;
@@ -104,25 +104,50 @@ describe('Password reset, change, account deletion (e2e)', () => {
       })
       .expect(403);
     expect(bad.body.error.code).toBe('INVALID_CREDENTIALS');
+    // A refused change touches nothing.
+    await tablet.get('/auth/me').expect(200);
 
-    await u.api
+    const ok = await u.api
       .post('/auth/change-password', {
         currentPassword: PASSWORD,
         newPassword: NEW_PASSWORD,
       })
       .expect(200);
+    expect(ok.body.data).toEqual({
+      changed: true,
+      tokens: {
+        accessToken: expect.any(String),
+        refreshToken: expect.any(String),
+        expiresIn: expect.any(Number),
+      },
+    });
 
-    await u.api.get('/auth/me').expect(200);
-    await u.api
-      .post('/auth/refresh-token', { refreshToken: u.refreshToken })
-      .expect(200);
+    // The other device's access token is refused now, not in 15 minutes …
+    const stale = await tablet.get('/auth/me').expect(401);
+    expect(stale.body.error.code).toBe('TOKEN_REVOKED');
+    // … and its refresh token is dead.
     await tablet
       .post('/auth/refresh-token', { refreshToken: tabletRefresh })
       .expect(401);
+    // So are this device's old tokens: it carries on with the new pair.
+    await u.api.get('/auth/me').expect(401);
+    await u.api
+      .post('/auth/refresh-token', { refreshToken: u.refreshToken })
+      .expect(401);
+    u.api.token = ok.body.data.tokens.accessToken;
+    await u.api.get('/auth/me').expect(200);
+    await u.api
+      .post('/auth/refresh-token', {
+        refreshToken: ok.body.data.tokens.refreshToken,
+      })
+      .expect(200);
 
     expect(
       (await signin(t, u.email, 'customer', NEW_PASSWORD)).res.status,
     ).toBe(200);
+    expect((await signin(t, u.email, 'customer', PASSWORD)).res.status).toBe(
+      401,
+    );
   });
 
   it('delete account: wrong password refused; then anonymised, signed out, email reusable', async () => {

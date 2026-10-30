@@ -188,6 +188,8 @@ export async function seedHealth(
           role: 'customer',
           isEmailVerified: true,
           phone: normalizePkPhone(p.phone) ?? null,
+          // Demo patients go straight to the app; Complete Profile may be skipped.
+          profileSkippable: true,
         }),
       );
       created.patients += 1;

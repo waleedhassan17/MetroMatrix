@@ -43,6 +43,11 @@ export const ErrorCode = {
   SERVICE_UNAVAILABLE: 'SERVICE_UNAVAILABLE',
   /** A POST with this Idempotency-Key is still being processed. */
   IDEMPOTENCY_IN_PROGRESS: 'IDEMPOTENCY_IN_PROGRESS',
+  /**
+   * An email verification link that is unknown, or spent/expired while the
+   * address is still unverified. (A spent link for a verified address succeeds.)
+   */
+  VERIFY_LINK_INVALID: 'VERIFY_LINK_INVALID',
 
   // ── Chunk 2: Shopping ─────────────────────────────────────────────────────
   /** A partner of another service (food, healthcare) on a shopping route. */

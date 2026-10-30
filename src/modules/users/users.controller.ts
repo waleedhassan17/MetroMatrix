@@ -9,7 +9,12 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { UsersService } from './users.service';
-import { RegisterDeviceDto, UpdateMeDto } from './dto/users.dto';
+import {
+  CompleteProfileDto,
+  RegisterDeviceDto,
+  UpdateMeDto,
+} from './dto/users.dto';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { MediaService } from '../media/media.service';
 import { toAuthUser } from '../auth/auth-result';
 import {
@@ -45,6 +50,29 @@ export class UsersController {
     }
     const user = await this.users.updateProfile(me.id, dto);
     return toAuthUser(user);
+  }
+
+  @Patch('me/profile')
+  @Roles('customer')
+  @ApiOperation({
+    summary:
+      "The customer's Complete Profile: date of birth, gender, street address, city (+ postal code, photo). Returns { user } with profileComplete.",
+  })
+  async completeProfile(
+    @CurrentUser() me: AuthenticatedUser,
+    @Body() dto: CompleteProfileDto,
+  ) {
+    if (typeof dto.avatarUrl === 'string') {
+      this.media.assertOwnedAsset(
+        me.id,
+        'avatar',
+        dto.avatarUrl,
+        undefined,
+        'avatarUrl',
+      );
+    }
+    const user = await this.users.completeProfile(me.id, dto);
+    return { user: toAuthUser(user) };
   }
 
   @Put('me/devices')
