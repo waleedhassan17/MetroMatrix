@@ -104,8 +104,21 @@ export class HygieneVerifyDto {
   note?: string;
 }
 
-export class ReasonDto {
-  @Trim() @IsString() @Length(3, 300) reason!: string;
+/**
+ * Its own name: Swagger keeps one schema per class name, and this one, as an
+ * undocumented `ReasonDto`, replaced the admin's (OpenAPI then said
+ * suspend and reinstate take no `reason`).
+ */
+export class SignatureReasonDto {
+  @ApiProperty({
+    example: 'Not this kitchen’s own recipe.',
+    minLength: 3,
+    maxLength: 300,
+  })
+  @Trim()
+  @IsString()
+  @Length(3, 300)
+  reason!: string;
 }
 
 export class SignatureQueueQueryDto extends PaginationQueryDto {

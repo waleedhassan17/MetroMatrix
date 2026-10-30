@@ -39,7 +39,7 @@ import {
 import {
   HygieneQueueQueryDto,
   HygieneVerifyDto,
-  ReasonDto,
+  SignatureReasonDto,
   SignatureQueueQueryDto,
 } from '../story/dto/story.dto';
 import { RamadanService } from '../ramadan/ramadan.service';
@@ -154,7 +154,7 @@ export class AdminGrowthController {
   @ApiEnvelopeOk(AdminGrowthRevokeView)
   revoke(
     @Param('brandId', ParseUUIDPipe) brandId: string,
-    @Body() dto: ReasonDto,
+    @Body() dto: SignatureReasonDto,
   ) {
     return this.stories.revoke(brandId, dto.reason);
   }
@@ -178,7 +178,7 @@ export class AdminGrowthController {
   @ApiEnvelopeOk(AdminGrowthRemoveSignatureView)
   removeSignature(
     @Param('recipeCardId', ParseUUIDPipe) id: string,
-    @Body() dto: ReasonDto,
+    @Body() dto: SignatureReasonDto,
   ) {
     return this.stories.removeSignature(id, dto.reason);
   }

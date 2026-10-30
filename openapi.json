@@ -11689,7 +11689,15 @@
         "type": "object"
       },
       "ReasonDto": {
-        "properties": {},
+        "properties": {
+          "reason": {
+            "example": "Out of chicken today",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "ReceiveItemDto": {
@@ -12331,6 +12339,20 @@
             "type": "object"
           }
         },
+        "type": "object"
+      },
+      "SignatureReasonDto": {
+        "properties": {
+          "reason": {
+            "example": "Not this kitchen’s own recipe.",
+            "maxLength": 300,
+            "minLength": 3,
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
         "type": "object"
       },
       "SigninDto": {
@@ -16832,7 +16854,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReasonDto"
+                "$ref": "#/components/schemas/SignatureReasonDto"
               }
             }
           },
@@ -17569,7 +17591,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/ReasonDto"
+                "$ref": "#/components/schemas/SignatureReasonDto"
               }
             }
           },
