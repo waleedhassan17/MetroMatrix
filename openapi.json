@@ -26136,6 +26136,26 @@
         ]
       }
     },
+    "/api/v1/food/vendor/kitchen/board": {
+      "get": {
+        "operationId": "KitchenHub_board",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The board’s kitchen side: dishes the stock makes 5 servings or fewer of, dishes sold out by stock, the prep time quotes use now, and the packing-photo rule.",
+        "tags": [
+          "kitchen · hub"
+        ]
+      }
+    },
     "/api/v1/food/vendor/kitchen/costing": {
       "get": {
         "operationId": "KitchenMoney_costingView",
@@ -26737,6 +26757,26 @@
         "summary": "What needs attention, most urgent first: expiring stock, food cost above target or rising, price spikes, dishes sold out by stock, negative stock, waste spikes — each with a deep link.",
         "tags": [
           "kitchen · purchases & costing"
+        ]
+      }
+    },
+    "/api/v1/food/vendor/kitchen/insights/cards/{key}/snooze": {
+      "post": {
+        "operationId": "KitchenHub_snooze",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Put a card away for 24 hours (by its key) → { key, snoozedUntil }. It comes back after that if it still applies.",
+        "tags": [
+          "kitchen · hub"
         ]
       }
     },
@@ -27868,6 +27908,26 @@
         ],
         "tags": [
           "kitchen · stock"
+        ]
+      }
+    },
+    "/api/v1/food/vendor/kitchen/summary": {
+      "get": {
+        "operationId": "KitchenHub_summary",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "The Kitchen tab’s numbers: stock, costing, this week’s purchases, tomorrow’s forecast, the week’s waste and meals rescued, and growth (tiffin, catering, storefront, demand, experiments, hygiene, Ramadan).",
+        "tags": [
+          "kitchen · hub"
         ]
       }
     },

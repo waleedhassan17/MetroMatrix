@@ -26,7 +26,21 @@ export interface InsightCard {
   /** Where the app should open: screen + params. */
   action: { label: string; screen: string; params?: Record<string, string> };
   data?: Record<string, unknown>;
+  /** Stable for the same card on later reads (its kind and what it is about): what a snooze names. */
+  key?: string;
 }
+
+/** A card's key: its kind, then the ingredient, dish and size it is about. */
+export function cardKey(c: InsightCard): string {
+  const d = c.data ?? {};
+  const about = [d.ingredientId, d.itemId, d.variantId].filter(
+    (x): x is string => typeof x === 'string' && x.length > 0,
+  );
+  return [c.kind, ...about].join(':');
+}
+
+/** How long a snoozed card stays away. */
+export const SNOOZE_HOURS = 24;
 
 export type CardProvider = (
   v: VendorRef,
@@ -62,16 +76,44 @@ export class InsightCardsService {
     this.providers.push(p);
   }
 
-  async cards(v: VendorRef): Promise<InsightCard[]> {
+  async cards(v: VendorRef, now = new Date()): Promise<InsightCard[]> {
     const today = await this.ingredients.today(
       this.dataSource.manager,
       v.branchId,
     );
+    const snoozed = new Set<string>(
+      (
+        await this.dataSource.query(
+          `SELECT card_key FROM kitchen_card_snoozes WHERE branch_id = $1 AND snoozed_until > $2`,
+          [v.branchId, now],
+        )
+      ).map((r: { card_key: string }) => r.card_key),
+    );
     const out: InsightCard[] = [];
-    for (const p of this.providers) out.push(...(await p(v, today)));
+    for (const p of this.providers)
+      for (const c of await p(v, today)) {
+        const key = cardKey(c);
+        if (!snoozed.has(key)) out.push({ ...c, key });
+      }
     return out.sort(
       (a, b) => b.priority - a.priority || a.title.localeCompare(b.title),
     );
+  }
+
+  /** Put a card away for SNOOZE_HOURS; snoozing it again starts the day over. */
+  async snooze(v: VendorRef, key: string, now = new Date()) {
+    const until = new Date(now.getTime() + SNOOZE_HOURS * 3_600_000);
+    await this.dataSource.query(
+      `INSERT INTO kitchen_card_snoozes (branch_id, card_key, snoozed_until) VALUES ($1, $2, $3)
+       ON CONFLICT (branch_id, card_key) DO UPDATE SET snoozed_until = EXCLUDED.snoozed_until`,
+      [v.branchId, key, until],
+    );
+    // Old snoozes are only clutter.
+    await this.dataSource.query(
+      `DELETE FROM kitchen_card_snoozes WHERE branch_id = $1 AND snoozed_until <= $2`,
+      [v.branchId, now],
+    );
+    return { key, snoozedUntil: until.toISOString() };
   }
 
   private async expiring(v: VendorRef, today: string): Promise<InsightCard[]> {

@@ -211,6 +211,10 @@
     {
       "key": "palakId",
       "value": ""
+    },
+    {
+      "key": "cardKey",
+      "value": ""
     }
   ],
   "item": [
@@ -1177,7 +1181,106 @@
                   "const body = pm.response.json();",
                   "const d = body.data;",
                   "const c = d.find((x) => x.kind === 'sold_out_by_stock' && x.data.itemId === pm.collectionVariables.get('dishId'));",
-                  "pm.test('a card that opens the purchase screen', () => pm.expect(c.action.screen).to.eql('kitchen.purchase.new'));"
+                  "pm.test('a card that opens the purchase screen', () => pm.expect(c.action.screen).to.eql('kitchen.purchase.new'));",
+                  "pm.collectionVariables.set('cardKey', c.key);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Board: the dish is sold out by stock",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/kitchen/board",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Board: the dish is sold out by stock → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('on the sold-out list', () => pm.expect(d.soldOutByStock.map((x) => x.itemId)).to.include(pm.collectionVariables.get('dishId')));",
+                  "pm.test('the prep time quotes use now', () => pm.expect(d.prep.source).to.be.oneOf(['learned', 'configured']));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insight card: snooze it for a day",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/kitchen/insights/cards/{{cardKey}}/snooze",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Insight card: snooze it for a day → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('the same key, away for 24 h', () => { pm.expect(d.key).to.eql(pm.collectionVariables.get('cardKey')); pm.expect(new Date(d.snoozedUntil) - Date.now()).to.be.above(23.9 * 3600e3); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Kitchen tab: the numbers in one read",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/kitchen/summary",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Kitchen tab: the numbers in one read → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('stock, recipes, purchases, forecast, waste and growth', () => pm.expect(d).to.include.keys('stock', 'recipes', 'purchases', 'forecast', 'waste', 'growth'));",
+                  "pm.test('growth from tiffin to Ramadan', () => pm.expect(d.growth).to.include.keys('experiments', 'tiffin', 'catering', 'storefront', 'demand', 'hygiene', 'ramadan'));"
                 ]
               }
             }

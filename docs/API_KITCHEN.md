@@ -261,6 +261,57 @@ The kinds today are:
 
 The app opens `action.screen` with `action.params`.
 
+- Every card has a **`key`**: its kind, then the ingredient, dish and size it is about
+  (`expiring_stock:<ingredientId>`, `food_cost_high:<itemId>:<variantId>`). The same card keeps its
+  key on later reads.
+- `POST /insights/cards/:key/snooze` puts that card away for **24 hours** →
+  `{ key, snoozedUntil }`. It comes back after that if it still applies; snoozing again starts the
+  day over. Snoozes are per kitchen. A key of the wrong form is `400 VALIDATION_FAILED`.
+
+**The Kitchen tab** — `GET /summary`, its numbers in one read. Each is the figure the screen it
+opens shows:
+
+```json
+{ "date": "2026-10-31",
+  "stock": { "ingredients": 16, "value": 48200, "belowPar": 2, "negative": 1, "expiring": 3, "attention": 2 },
+  "recipes": { "dishes": 12, "withRecipe": 11, "withoutRecipe": 1, "aboveTarget": 2, "avgFoodCostPct": 31.4, "targetFoodCostPct": 35 },
+  "purchases": { "weekTotal": 18450, "weekCount": 5 },
+  "forecast": { "date": "2026-11-01", "dishes": 12, "portions": 96, "learning": false },
+  "waste": { "weekCost": 1240, "mealsRescued": 18 },
+  "growth": { "experiments": { "running": 1, "results": 0 },
+              "tiffin": { "plans": 1, "subscribers": 2, "requested": 0, "mealsTomorrow": 2 },
+              "catering": { "requested": 1, "upcoming": 1 },
+              "storefront": { "days": 30, "orders": 7 },
+              "demand": { "week": "2026-10-26", "unmetSearches": 41 },
+              "hygiene": "self_declared",
+              "ramadan": { "enabled": false, "period": "none" } } }
+```
+
+- `stock` is `GET /stock`'s summary; `attention` counts each ingredient below par **or** below
+  zero once (`belowPar` also counts negative ones with a par level).
+- `recipes` is `GET /costing`'s summary; `forecast` is tomorrow from `GET /forecast` (`portions`:
+  your own number where you set one, else the forecast rounded); `waste.weekCost` is
+  `GET /waste/summary?range=7d`; `mealsRescued` is `GET /donations`'.
+- `growth`: running experiments and those finished in the last 14 days; active plans, active or
+  paused subscribers, requests and tomorrow's meals (`GET /food/vendor/tiffin/tomorrow`); catering
+  requests to quote and accepted-onward events from today; orders through your link or QR in the
+  last 30 days; unmet searches in your zone on the demand map's newest week (`week: null` when
+  there is none); the hygiene status; Ramadan `period: now | ahead | none` for your city.
+
+**The board** — `GET /board`, the board's kitchen side:
+
+```json
+{ "lowStock": [{ "itemId": "…", "name": "Roti", "servings": 3 }],
+  "soldOutByStock": [{ "itemId": "…", "name": "Malai Boti" }],
+  "prep": { "minutes": 20, "source": "learned" },
+  "requirePackingPhoto": false }
+```
+
+- `lowStock`: dishes the stock makes **1–5** servings of (the size that can make the most), fewest
+  first. `soldOutByStock`: dishes stock made unavailable (`auto_reason = 'stock'`).
+- `prep` is what a quote for a 1–2 item order uses now: the learned p75 for this hour, else your
+  `prepMinutes` (§9).
+
 ## 8. Forecast, prep sheet, shopping list, portions
 
 | Route | |

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { FoodModule } from '../food/food.module';
 import { KitchenModule } from '../kitchen/kitchen.module';
+import { GrowthSummaryService } from './common/growth-summary.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { MediaModule } from '../media/media.module';
 import {
@@ -89,6 +90,7 @@ import { VendorDemandController } from './demand/demand.controller';
     GrowthDiscoveryService,
     DemandService,
     GrowthLookupService,
+    GrowthSummaryService,
   ],
   exports: [
     TiffinService,

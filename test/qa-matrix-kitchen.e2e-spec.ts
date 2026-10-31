@@ -1563,4 +1563,105 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
     });
     expect(voice.body.error.code).toBe('WRONG_SERVICE');
   });
+
+  it('QA #39 the board → dishes running low and sold out by stock, with the prep time', async () => {
+    const v = await kitchen('QA Board Kitchen');
+    const rice = await ingredient(v, {
+      name: 'QA board rice',
+      openingStock: { qty: 400, unit: 'g', totalCost: 120 },
+    });
+    const plate = await dish(v, 'QA board pulao', 300);
+    await recipe(v, plate.id, [{ ingredientId: rice.id, qty: 200, unit: 'g' }]);
+    let board = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/board'),
+      200,
+    );
+    expect(board.lowStock).toEqual([
+      { itemId: plate.id, name: 'QA board pulao', servings: 2 },
+    ]);
+    expect(board.prep.source).toBe('configured');
+    await expectStatus(
+      await v.api.post('/food/vendor/kitchen/stock/count', {
+        lines: [{ ingredientId: rice.id, qty: 0, unit: 'g' }],
+      }),
+      200,
+    );
+    board = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/board'),
+      200,
+    );
+    expect(
+      board.soldOutByStock.map((d: { itemId: string }) => d.itemId),
+    ).toEqual([plate.id]);
+  });
+
+  it('QA #40 the Kitchen tab → its numbers equal the screens they open', async () => {
+    const v = await kitchen('QA Hub Kitchen');
+    await ingredient(v, {
+      name: 'QA hub oil',
+      baseUnit: 'ml',
+      openingStock: { qty: 1, unit: 'l', totalCost: 500 },
+    });
+    const s = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/summary'),
+      200,
+    );
+    const stock = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/stock'),
+      200,
+    );
+    const costing = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/costing'),
+      200,
+    );
+    expect(s.stock.ingredients).toBe(stock.summary.ingredients);
+    expect(s.stock.value).toBe(stock.summary.value);
+    expect(s.recipes.dishes).toBe(costing.summary.dishes);
+    expect(s.recipes.targetFoodCostPct).toBe(costing.targetFoodCostPct);
+    expect(Object.keys(s.growth).sort()).toEqual([
+      'catering',
+      'demand',
+      'experiments',
+      'hygiene',
+      'ramadan',
+      'storefront',
+      'tiffin',
+    ]);
+  });
+
+  it('QA #41 snoozing an insight card → gone for a day, then back while it still applies', async () => {
+    const v = await kitchen('QA Snooze Kitchen');
+    const milk = await ingredient(v, {
+      name: 'QA snooze milk',
+      baseUnit: 'ml',
+      openingStock: {
+        qty: 2,
+        unit: 'l',
+        totalCost: 400,
+        expiresOn: DateTime.now().setZone(TZ).plus({ days: 1 }).toISODate()!,
+      },
+    });
+    const key = `expiring_stock:${milk.id}`;
+    const keys = async () =>
+      (
+        await expectStatus(
+          await v.api.get('/food/vendor/kitchen/insights/cards'),
+          200,
+        )
+      ).map((c: { key: string }) => c.key);
+    expect(await keys()).toContain(key);
+    await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/insights/cards/${encodeURIComponent(key)}/snooze`,
+      ),
+      200,
+    );
+    expect(await keys()).not.toContain(key);
+    // A day later it is back: the milk still expires.
+    await sql(
+      `UPDATE kitchen_card_snoozes SET snoozed_until = now() - interval '1 minute' WHERE card_key = $1`,
+      [key],
+    );
+    expect(await keys()).toContain(key);
+  });
 });

@@ -61,6 +61,9 @@ import {
   KitchenSurplusController,
   RiderPackingController,
 } from './surplus/surplus.controller';
+import { KitchenCardSnooze } from './entities/card-snooze.entity';
+import { KitchenHubController } from './insights/kitchen-hub.controller';
+import { KitchenHubService } from './insights/kitchen-hub.service';
 import { MenuExperiment } from './entities/menu-experiment.entity';
 import { EngineeringService } from './engineering/engineering.service';
 import { KitchenEngineeringController } from './engineering/engineering.controller';
@@ -102,6 +105,7 @@ import { AliasesService } from './admin/aliases.service';
       PackingProof,
       MenuExperiment,
       ReviewInsight,
+      KitchenCardSnooze,
     ]),
     FoodModule,
     NotificationsModule,
@@ -118,6 +122,7 @@ import { AliasesService } from './admin/aliases.service';
     CustomerSurplusController,
     KitchenEngineeringController,
     KitchenAssistantController,
+    KitchenHubController,
   ],
   providers: [
     KitchenVendors,
@@ -146,6 +151,7 @@ import { AliasesService } from './admin/aliases.service';
     MenuAssistantService,
     ReviewInsightsService,
     AliasesService,
+    KitchenHubService,
   ],
   exports: [
     KitchenVendors,
@@ -160,6 +166,7 @@ import { AliasesService } from './admin/aliases.service';
     KitchenJobsService,
     EngineeringService,
     RecipesService,
+    KitchenHubService,
   ],
 })
 export class KitchenModule {}

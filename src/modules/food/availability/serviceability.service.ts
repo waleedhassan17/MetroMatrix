@@ -100,6 +100,19 @@ export class ServiceabilityService {
     return row ?? null;
   }
 
+  /** The prep time a quote uses: the learned p75 for this hour and order size, else the vendor's own. */
+  prepFor(
+    b: Pick<BranchRow, 'prep_stats' | 'prep_minutes' | 'timezone'>,
+    items = 1,
+    now = new Date(),
+  ): { minutes: number; source: 'learned' | 'configured' } {
+    const learned =
+      b.prep_stats?.[`${localHour(now, b.timezone)}:${sizeBucketOf(items)}`];
+    return learned !== undefined
+      ? { minutes: learned, source: 'learned' }
+      : { minutes: b.prep_minutes, source: 'configured' };
+  }
+
   quote(
     b: BranchRow,
     s: BranchSchedule,
@@ -107,11 +120,8 @@ export class ServiceabilityService {
     opts: { subtotal?: number; now?: Date; items?: number } = {},
   ): Quote {
     const now = opts.now ?? new Date();
-    const learned =
-      b.prep_stats?.[
-        `${localHour(now, b.timezone)}:${sizeBucketOf(opts.items ?? 1)}`
-      ];
-    const prepMinutes = learned ?? b.prep_minutes;
+    const prep = this.prepFor(b, opts.items ?? 1, now);
+    const prepMinutes = prep.minutes;
     const km =
       b.distance_m === null
         ? null
@@ -150,7 +160,7 @@ export class ServiceabilityService {
       eta,
       etaLabel: etaLabel(eta),
       prepMinutes,
-      prepSource: learned !== undefined ? 'learned' : 'configured',
+      prepSource: prep.source,
       open: this.state.state(b, s, now),
     };
   }
