@@ -96,6 +96,23 @@ export const RESERVATION_STATUSES = [
 ] as const;
 export type ReservationStatus = (typeof RESERVATION_STATUSES)[number];
 
+/**
+ * pay_at_pickup: unpaid ─▶ paid (collected)
+ * transfer:      awaiting_transfer ─▶ proof_submitted ─▶ paid (the vendor confirms; collected also settles it)
+ *                                       └─(rejected)─▶ awaiting_transfer
+ * cancelled or not collected before paying ─▶ void · cancelled after paying ─▶ refund_due
+ * The kitchen is paid directly: "refund_due" is what it sends back itself.
+ */
+export const SURPLUS_PAYMENT_STATUSES = [
+  'unpaid',
+  'awaiting_transfer',
+  'proof_submitted',
+  'paid',
+  'void',
+  'refund_due',
+] as const;
+export type SurplusPaymentStatus = (typeof SURPLUS_PAYMENT_STATUSES)[number];
+
 @Entity('surplus_reservations')
 @Index(['boxId', 'status'])
 @Index(['userId', 'createdAt'])
@@ -143,6 +160,39 @@ export class SurplusReservation extends BaseEntity {
   /** Rupees: price × quantity at the time of reserving. */
   @Column({ type: 'int' })
   total!: number;
+
+  @Column({
+    type: 'enum',
+    enum: SURPLUS_PAYMENT_STATUSES,
+    enumName: 'surplus_payment_status',
+    name: 'payment_status',
+    default: 'unpaid',
+  })
+  paymentStatus!: SurplusPaymentStatus;
+
+  /** A transfer is sent by then (15 minutes, never past the pickup window); null when paying at pickup. */
+  @Column({ type: 'timestamptz', name: 'pay_by', nullable: true })
+  payBy!: Date | null;
+
+  @Column({ type: 'varchar', length: 60, name: 'payment_ref', nullable: true })
+  paymentRef!: string | null;
+
+  /** The customer's `payment_proof` upload. */
+  @Column({
+    type: 'varchar',
+    length: 500,
+    name: 'payment_proof_url',
+    nullable: true,
+  })
+  paymentProofUrl!: string | null;
+
+  @Column({
+    type: 'varchar',
+    length: 300,
+    name: 'payment_rejected_reason',
+    nullable: true,
+  })
+  paymentRejectedReason!: string | null;
 
   @Column({ type: 'timestamptz', name: 'collected_at', nullable: true })
   collectedAt!: Date | null;

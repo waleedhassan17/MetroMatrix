@@ -2427,6 +2427,31 @@
           ]
         },
         {
+          "name": "Guest: the box’s own page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/surplus/{{boxId}}?lat=31.4834&lng=74.3256",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Guest: the box’s own page → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('the box, its kitchen and the distance', () => { pm.expect(d.id).to.eql(pm.collectionVariables.get('boxId')); pm.expect(d.vendor.name).to.be.a('string'); pm.expect(d.distanceKm).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Customer: reserve one",
           "request": {
             "method": "POST",
@@ -2463,7 +2488,8 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.collectionVariables.set('reserveKey', 'pm-bb-' + Date.now());"
+                  "pm.collectionVariables.set('reserveKey', 'pm-bb-' + Date.now());",
+                  "pm.test('its payment, at pickup', () => pm.expect(d.payment).to.include({ method: 'pay_at_pickup', status: 'unpaid' }));"
                 ]
               }
             },

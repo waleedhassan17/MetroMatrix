@@ -29,6 +29,8 @@ import {
   ReserveDto,
   ReservationsQueryDto,
   SurplusBoxDto,
+  SurplusBoxQueryDto,
+  SurplusProofDto,
   SurplusQueryDto,
   UpdateSurplusBoxDto,
 } from '../dto/surplus.dto';
@@ -39,6 +41,28 @@ import { ForecastService } from '../forecast/forecast.service';
 /** Three no-shows → no reservations for this long. */
 export const NO_SHOW_LIMIT = 3;
 export const BLOCK_DAYS = 14;
+/** A transfer is sent within this long (again after a rejected receipt), never past the pickup window. */
+export const PAY_WINDOW_MS = 15 * 60_000;
+
+/** Where a cancel or a no-show leaves the payment: a paid cancel is what the kitchen sends back. */
+const SETTLE_CANCEL = `CASE WHEN payment_status = 'paid' THEN 'refund_due'::surplus_payment_status ELSE 'void'::surplus_payment_status END`;
+const SETTLE_NO_SHOW = `CASE WHEN payment_status = 'paid' THEN 'paid'::surplus_payment_status ELSE 'void'::surplus_payment_status END`;
+
+const payBy = (now: Date, pickupTo: Date | string) =>
+  new Date(
+    Math.min(now.getTime() + PAY_WINDOW_MS, new Date(pickupTo).getTime()),
+  );
+
+/** The payment part of every reservation view (`proofUrl` only for the kitchen). */
+const paymentView = (r: any, kitchen = false) => ({
+  method: r.payment_method,
+  status: r.payment_status,
+  payBy: r.pay_by,
+  ref: r.payment_ref,
+  hasProof: !!r.payment_proof_url,
+  ...(kitchen ? { proofUrl: r.payment_proof_url } : {}),
+  rejectedReason: r.payment_rejected_reason,
+});
 
 const conflict = (
   code: string,
@@ -198,7 +222,7 @@ export class SurplusService implements OnModuleInit {
         );
       }
       const r = await m.query(
-        `UPDATE surplus_reservations SET status = 'cancelled', cancelled_at = now(), updated_at = now()
+        `UPDATE surplus_reservations SET status = 'cancelled', cancelled_at = now(), payment_status = ${SETTLE_CANCEL}, updated_at = now()
           WHERE box_id = $1 AND status = 'reserved' RETURNING user_id, code`,
         [id],
       );
@@ -255,7 +279,8 @@ export class SurplusService implements OnModuleInit {
     }
     const rows = await this.dataSource.query(
       `SELECT r.id, r.box_id, sb.title, r.quantity, r.code, r.status, r.payment_method, r.total, r.created_at,
-              r.collected_at, u.display_name, u.phone
+              r.collected_at, r.payment_status, r.pay_by, r.payment_ref, r.payment_proof_url, r.payment_rejected_reason,
+              u.display_name, u.phone
          FROM surplus_reservations r JOIN surplus_boxes sb ON sb.id = r.box_id JOIN users u ON u.id = r.user_id
         WHERE ${where.join(' AND ')} ORDER BY r.created_at DESC LIMIT 200`,
       params,
@@ -268,6 +293,7 @@ export class SurplusService implements OnModuleInit {
       code: r.code,
       status: r.status,
       paymentMethod: r.payment_method,
+      payment: paymentView(r, true),
       total: r.total,
       reservedAt: r.created_at,
       collectedAt: r.collected_at,
@@ -286,7 +312,7 @@ export class SurplusService implements OnModuleInit {
       if (dto.code && dto.code.toUpperCase() !== r.code)
         throw this.invalid('code', 'That code doesn’t match this reservation.');
       await m.query(
-        `UPDATE surplus_reservations SET status = 'collected', collected_at = now(), updated_at = now() WHERE id = $1`,
+        `UPDATE surplus_reservations SET status = 'collected', collected_at = now(), payment_status = 'paid', updated_at = now() WHERE id = $1`,
         [id],
       );
     });
@@ -310,7 +336,7 @@ export class SurplusService implements OnModuleInit {
           'The pickup window hasn’t closed yet.',
         );
       await m.query(
-        `UPDATE surplus_reservations SET status = 'no_show', updated_at = now() WHERE id = $1`,
+        `UPDATE surplus_reservations SET status = 'no_show', payment_status = ${SETTLE_NO_SHOW}, updated_at = now() WHERE id = $1`,
         [id],
       );
       const [s] = await m.query(
@@ -572,9 +598,10 @@ export class SurplusService implements OnModuleInit {
       let code = '';
       for (let i = 0; i < 5 && !code; i++) {
         const c = newCode('BB');
+        const transfer = dto.paymentMethod === 'transfer';
         const r = await m.query(
-          `INSERT INTO surplus_reservations (box_id, user_id, quantity, code, payment_method, total)
-           VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (code) DO NOTHING RETURNING id`,
+          `INSERT INTO surplus_reservations (box_id, user_id, quantity, code, payment_method, total, payment_status, pay_by)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8) ON CONFLICT (code) DO NOTHING RETURNING id`,
           [
             boxId,
             user.id,
@@ -582,6 +609,8 @@ export class SurplusService implements OnModuleInit {
             c,
             dto.paymentMethod ?? 'pay_at_pickup',
             box.price * dto.quantity,
+            transfer ? 'awaiting_transfer' : 'unpaid',
+            transfer ? payBy(now, box.pickup_to) : null,
           ],
         );
         if ((Array.isArray(r[0]) ? r[0] : r).length) code = c;
@@ -613,6 +642,7 @@ export class SurplusService implements OnModuleInit {
   async myReservations(user: AuthenticatedUser) {
     const rows = await this.dataSource.query(
       `SELECT r.id, r.code, r.quantity, r.status, r.payment_method, r.total, r.created_at, r.collected_at,
+              r.payment_status, r.pay_by, r.payment_ref, r.payment_proof_url, r.payment_rejected_reason,
               sb.id AS box_id, sb.title, sb.pickup_from, sb.pickup_to, fb.name AS vendor_name, fb.slug,
               br.address_line, br.area, br.city, br.timezone, br.phone
          FROM surplus_reservations r JOIN surplus_boxes sb ON sb.id = r.box_id
@@ -626,6 +656,7 @@ export class SurplusService implements OnModuleInit {
       quantity: r.quantity,
       status: r.status,
       paymentMethod: r.payment_method,
+      payment: paymentView(r),
       total: r.total,
       reservedAt: r.created_at,
       collectedAt: r.collected_at,
@@ -644,6 +675,146 @@ export class SurplusService implements OnModuleInit {
       pickupLabel: `${formatTime12(r.pickup_from, r.timezone)} – ${formatTime12(r.pickup_to, r.timezone)}, ${localDate(r.pickup_from, r.timezone)}`,
       canCancel: r.status === 'reserved' && new Date(r.pickup_to) > new Date(),
     }));
+  }
+
+  /** One box's page (any state, so an old link says it has gone); 404 when its kitchen isn't shown. */
+  async publicBox(boxId: string, q: SurplusBoxQueryDto) {
+    const near = q.lat !== undefined && q.lng !== undefined;
+    const [r] = await this.dataSource.query(
+      `SELECT sb.*, fb.name AS vendor_name, fb.slug, fb.logo_url, br.address_line, br.area, br.city, br.timezone,
+              ${near ? 'ST_Distance(br.geo, ST_SetSRID(ST_MakePoint($3::float8, $2::float8), 4326)::geography)' : 'NULL'} AS distance_m
+         FROM surplus_boxes sb JOIN branches br ON br.id = sb.branch_id
+         JOIN food_brands fb ON fb.id = br.brand_id JOIN businesses b ON b.id = br.business_id
+        WHERE sb.id = $1 AND ${VISIBLE_VENDOR_SQL}`,
+      near ? [boxId, q.lat, q.lng] : [boxId],
+    );
+    if (!r) throw kitchenNotFound('Bachat Box');
+    return {
+      ...this.boxView(r),
+      vendor: {
+        name: r.vendor_name,
+        slug: r.slug,
+        logoUrl: r.logo_url,
+        address: [r.address_line, r.area, r.city].filter(Boolean).join(', '),
+      },
+      distanceKm:
+        r.distance_m === null ? null : Math.round(r.distance_m / 100) / 10,
+      pickupLabel: `Pick up ${formatTime12(r.pickup_from, r.timezone)} – ${formatTime12(r.pickup_to, r.timezone)}`,
+    };
+  }
+
+  /** A transfer's receipt: awaiting_transfer → proof_submitted, and the kitchen is asked to check it. */
+  async paymentProof(
+    user: AuthenticatedUser,
+    id: string,
+    dto: SurplusProofDto,
+  ) {
+    this.media.assertOwnedAsset(
+      user.id,
+      'payment_proof',
+      dto.proofUrl,
+      dto.publicId,
+      'proofUrl',
+    );
+    const sent = await this.dataSource.transaction(async (m) => {
+      const [r] = await m.query(
+        `SELECT r.*, sb.title, br.business_id FROM surplus_reservations r JOIN surplus_boxes sb ON sb.id = r.box_id
+           JOIN branches br ON br.id = sb.branch_id WHERE r.id = $1 AND r.user_id = $2 FOR UPDATE OF r`,
+        [id, user.id],
+      );
+      if (!r) throw kitchenNotFound('Reservation');
+      if (r.status !== 'reserved' || r.payment_status !== 'awaiting_transfer')
+        throw conflict(
+          ErrorCode.INVALID_TRANSITION,
+          r.payment_status === 'proof_submitted'
+            ? 'The kitchen is checking your receipt.'
+            : `This reservation's payment is ${r.status === 'reserved' ? r.payment_status : r.status}.`,
+        );
+      await m.query(
+        `UPDATE surplus_reservations SET payment_status = 'proof_submitted', payment_proof_url = $2, payment_ref = $3,
+                payment_rejected_reason = NULL, updated_at = now() WHERE id = $1`,
+        [id, dto.proofUrl, dto.ref ?? null],
+      );
+      const [o] = await m.query(
+        `SELECT owner_user_id FROM businesses WHERE id = $1`,
+        [r.business_id],
+      );
+      return {
+        owner: o.owner_user_id as string,
+        code: r.code as string,
+        title: r.title as string,
+      };
+    });
+    await this.safeNotify(sent.owner, {
+      type: 'kitchen.surplus.payment_proof',
+      title: `Check a transfer: ${sent.code}`,
+      body: `${sent.title}: the customer sent a receipt.`,
+      data: { screen: 'kitchen.surplus.reservations' },
+    });
+    return (await this.myReservations(user)).find(
+      (x: { id: string }) => x.id === id,
+    );
+  }
+
+  /** The money reached the kitchen's account (with or without a receipt): paid. */
+  async confirmPayment(v: VendorRef, id: string) {
+    const userId = await this.dataSource.transaction(async (m) => {
+      const r = await this.ownReservation(m, v, id);
+      if (
+        r.status !== 'reserved' ||
+        !['awaiting_transfer', 'proof_submitted'].includes(r.payment_status)
+      )
+        throw conflict(
+          ErrorCode.INVALID_TRANSITION,
+          `This reservation's payment is ${r.payment_status}.`,
+        );
+      await m.query(
+        `UPDATE surplus_reservations SET payment_status = 'paid', payment_rejected_reason = NULL, updated_at = now() WHERE id = $1`,
+        [id],
+      );
+      return r.user_id as string;
+    });
+    await this.safeNotify(userId, {
+      type: 'food.surplus.payment_confirmed',
+      title: 'Bachat Box paid',
+      body: 'The kitchen has your transfer. Show your code at pickup.',
+      data: { screen: 'food.surplus.reservations' },
+    });
+    return (await this.reservations(v, {})).find(
+      (x: { id: string }) => x.id === id,
+    );
+  }
+
+  /** The receipt didn't check out: back to awaiting_transfer, with 15 more minutes and the reason. */
+  async rejectPayment(
+    v: VendorRef,
+    id: string,
+    reason: string,
+    now = new Date(),
+  ) {
+    const userId = await this.dataSource.transaction(async (m) => {
+      const r = await this.ownReservation(m, v, id);
+      if (r.status !== 'reserved' || r.payment_status !== 'proof_submitted')
+        throw conflict(
+          ErrorCode.INVALID_TRANSITION,
+          `This reservation's payment is ${r.payment_status}.`,
+        );
+      await m.query(
+        `UPDATE surplus_reservations SET payment_status = 'awaiting_transfer', payment_rejected_reason = $2, pay_by = $3,
+                updated_at = now() WHERE id = $1`,
+        [id, reason, payBy(now, r.pickup_to)],
+      );
+      return r.user_id as string;
+    });
+    await this.safeNotify(userId, {
+      type: 'food.surplus.payment_rejected',
+      title: 'Transfer not received',
+      body: `${reason} Send it again within 15 minutes.`,
+      data: { screen: 'food.surplus.reservations' },
+    });
+    return (await this.reservations(v, {})).find(
+      (x: { id: string }) => x.id === id,
+    );
   }
 
   /** Before the window closes: the box goes back on the shelf. */
@@ -666,7 +837,7 @@ export class SurplusService implements OnModuleInit {
           'The pickup window has closed.',
         );
       await m.query(
-        `UPDATE surplus_reservations SET status = 'cancelled', cancelled_at = now(), updated_at = now() WHERE id = $1`,
+        `UPDATE surplus_reservations SET status = 'cancelled', cancelled_at = now(), payment_status = ${SETTLE_CANCEL}, updated_at = now() WHERE id = $1`,
         [id],
       );
       await m.query(

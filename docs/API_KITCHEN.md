@@ -393,6 +393,25 @@ summarised per local hour and order size (`1-2`, `3-5`, `6+` items), as p50 and 
 | `POST /food/surplus/:boxId/reserve` | `{ quantity 1–10, paymentMethod?: pay_at_pickup\|transfer }` + **`Idempotency-Key`** → `{ code: "BB-7KQ2PX", total, payTo (transfer: the vendor's accounts), … }` |
 | `GET /food/surplus/reservations` | Mine. |
 | `POST /food/surplus/reservations/:id/cancel` | Before the window closes. The box goes back on the shelf. |
+| `POST /food/surplus/reservations/:id/payment-proof` | `{ proofUrl, publicId?, ref? }` (a `payment_proof` upload of yours): `awaiting_transfer → proof_submitted`. The kitchen is told. |
+| `GET /food/surplus/:boxId?lat&lng` | One box's page, in any state (so an old link says it has gone), with its kitchen; `distanceKm` when a point is given. Public; a hidden kitchen is `404`. |
+
+**Payments.** Every reservation view carries
+`payment: { method, status, payBy, ref, hasProof, rejectedReason }` (the kitchen's also has
+`proofUrl`):
+
+- `pay_at_pickup`: `unpaid → paid` when it is collected.
+- `transfer`: `awaiting_transfer → proof_submitted → paid`. `payBy` is 15 minutes from reserving
+  (never past the window); the reserve answer's `payTo` lists the kitchen's accounts.
+  - The kitchen confirms with `POST /food/vendor/kitchen/surplus-reservations/:id/payment/confirm`
+    (from `awaiting_transfer` too, when the money is already there).
+  - It rejects a receipt with `…/payment/reject { reason }`: back to `awaiting_transfer` with
+    `rejectedReason`, and 15 more minutes. The customer is told.
+  - Collecting the box settles it as `paid`.
+- A cancel or a no-show before paying is `void`; a cancel after paying is `refund_due` — the
+  kitchen sends the money back itself (MetroMatrix holds nothing).
+- Notifications: `kitchen.surplus.payment_proof` (vendor), `food.surplus.payment_confirmed` and
+  `food.surplus.payment_rejected` (customer).
 
 **Rules.**
 
@@ -480,6 +499,8 @@ no CSV or API. Staff transcribe the rows they need into this template, for examp
 | `kitchen.expired` | A batch is past its date (flagged, never written off). |
 | `kitchen.food_cost_high` | A purchase pushed a dish over the target. |
 | `kitchen.surplus.reserved` | A Bachat Box was reserved (to the vendor). |
+| `kitchen.surplus.payment_proof` | A customer sent a transfer receipt for a box (to the vendor). |
+| `food.surplus.payment_confirmed` / `food.surplus.payment_rejected` | The kitchen confirmed the transfer, or didn't find it (with the reason). |
 | `food.surplus.cancelled` | The kitchen cancelled a box you reserved. |
 | `food.surplus.blocked` | Three no-shows. |
 

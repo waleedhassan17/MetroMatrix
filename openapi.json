@@ -12772,6 +12772,22 @@
         ],
         "type": "object"
       },
+      "SurplusProofDto": {
+        "properties": {
+          "proofUrl": {
+            "description": "A `payment_proof` upload of yours.",
+            "type": "string"
+          },
+          "ref": {
+            "example": "IBFT 7781",
+            "type": "string"
+          }
+        },
+        "required": [
+          "proofUrl"
+        ],
+        "type": "object"
+      },
       "SymptomCheckDto": {
         "properties": {
           "age": {
@@ -25139,6 +25155,69 @@
         ]
       }
     },
+    "/api/v1/food/surplus/reservations/{id}/payment-proof": {
+      "post": {
+        "operationId": "CustomerSurplus_paymentProof",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SurplusProofDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ proofUrl, publicId?, ref? } — a `payment_proof` upload: awaiting_transfer → proof_submitted.",
+        "tags": [
+          "food · bachat box"
+        ]
+      }
+    },
+    "/api/v1/food/surplus/{boxId}": {
+      "get": {
+        "operationId": "CustomerSurplus_box",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "boxId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "?lat&lng — one box (any state, so an old link says it has gone), with its kitchen and the distance when given a point.",
+        "tags": [
+          "food · bachat box"
+        ]
+      }
+    },
     "/api/v1/food/surplus/{boxId}/reserve": {
       "post": {
         "operationId": "CustomerSurplus_reserve",
@@ -28265,6 +28344,74 @@
           }
         ],
         "summary": "After the pickup window. Three no-shows block the customer for 14 days.",
+        "tags": [
+          "kitchen · bachat box & packing"
+        ]
+      }
+    },
+    "/api/v1/food/vendor/kitchen/surplus-reservations/{id}/payment/confirm": {
+      "post": {
+        "operationId": "KitchenSurplus_confirmPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A transfer reached your account (with or without a receipt): awaiting_transfer | proof_submitted → paid.",
+        "tags": [
+          "kitchen · bachat box & packing"
+        ]
+      }
+    },
+    "/api/v1/food/vendor/kitchen/surplus-reservations/{id}/payment/reject": {
+      "post": {
+        "operationId": "KitchenSurplus_rejectPayment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReasonDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ reason } — the receipt didn’t check out: proof_submitted → awaiting_transfer, and the customer gets 15 more minutes.",
         "tags": [
           "kitchen · bachat box & packing"
         ]

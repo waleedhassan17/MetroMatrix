@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 import { createTestApp, ApiClient, TestApp } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
-import { Admin, asset } from './utils/shopping';
+import { Admin, asset, testIban } from './utils/shopping';
 import {
   Vendor,
   checkout,
@@ -458,5 +458,229 @@ describe('Bachat Box, donations, packing proof, expiry alerts (Chunk 5 P4)', () 
       priority: 4,
       title: 'Yogurt expires in 2 days',
     });
+  });
+
+  it('a transfer: receipt, rejected, sent again, confirmed; collected stays paid', async () => {
+    const v = await kitchen('Surplus Transfer Kitchen');
+    await expectStatus(
+      await v.api.post('/food/vendor/payment-accounts', {
+        kind: 'bank',
+        accountTitle: 'Transfer Kitchen',
+        accountNumber: testIban(),
+        bankName: 'HBL',
+      }),
+      201,
+    );
+    const b = await box(v, { quantity: 3 });
+    const c = await foodCustomer(t, SUK);
+    const r = await expectStatus(
+      await reserve(c, b.id, { quantity: 1, paymentMethod: 'transfer' }),
+      201,
+    );
+    expect(r.payment).toMatchObject({
+      method: 'transfer',
+      status: 'awaiting_transfer',
+      hasProof: false,
+      rejectedReason: null,
+    });
+    expect(r.payTo).toHaveLength(1);
+    const minutes = (new Date(r.payment.payBy).getTime() - Date.now()) / 60_000;
+    expect(minutes).toBeGreaterThan(14);
+    expect(minutes).toBeLessThanOrEqual(15);
+    // Nothing to reject before a receipt is sent.
+    const reject0 = await v.api.post(
+      `/food/vendor/kitchen/surplus-reservations/${r.id}/payment/reject`,
+      { reason: 'Nothing has arrived.' },
+    );
+    expect(reject0.body.error.code).toBe('INVALID_TRANSITION');
+
+    // Someone else's upload is refused; their own goes through.
+    const other = await foodCustomer(t, SUK);
+    const stolen = await c.api.post(
+      `/food/surplus/reservations/${r.id}/payment-proof`,
+      { proofUrl: asset(other.userId, 'payment_proof').url },
+    );
+    expect(stolen.status).toBe(400);
+    const sent = await expectStatus(
+      await c.api.post(`/food/surplus/reservations/${r.id}/payment-proof`, {
+        proofUrl: asset(c.userId, 'payment_proof').url,
+        ref: 'IBFT 5521',
+      }),
+      200,
+    );
+    expect(sent.payment).toMatchObject({
+      status: 'proof_submitted',
+      ref: 'IBFT 5521',
+      hasProof: true,
+    });
+    expect(sent.payment.proofUrl).toBeUndefined();
+    // Another person's reservation is not found.
+    const theirs = await other.api.post(
+      `/food/surplus/reservations/${r.id}/payment-proof`,
+      { proofUrl: asset(other.userId, 'payment_proof').url },
+    );
+    expect(theirs.status).toBe(404);
+
+    const list = await expectStatus(
+      await v.api.get(
+        `/food/vendor/kitchen/surplus-reservations?boxId=${b.id}`,
+      ),
+      200,
+    );
+    expect(list[0].payment).toMatchObject({
+      status: 'proof_submitted',
+      proofUrl: expect.any(String),
+    });
+    const rejected = await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/surplus-reservations/${r.id}/payment/reject`,
+        { reason: 'The amount is short.' },
+      ),
+      200,
+    );
+    expect(rejected.payment).toMatchObject({
+      status: 'awaiting_transfer',
+      rejectedReason: 'The amount is short.',
+    });
+    await expectStatus(
+      await c.api.post(`/food/surplus/reservations/${r.id}/payment-proof`, {
+        proofUrl: asset(c.userId, 'payment_proof').url,
+      }),
+      200,
+    );
+    const paid = await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/surplus-reservations/${r.id}/payment/confirm`,
+      ),
+      200,
+    );
+    expect(paid.payment).toMatchObject({
+      status: 'paid',
+      rejectedReason: null,
+    });
+    const again = await v.api.post(
+      `/food/vendor/kitchen/surplus-reservations/${r.id}/payment/confirm`,
+    );
+    expect(again.body.error.code).toBe('INVALID_TRANSITION');
+    const collected = await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/surplus-reservations/${r.id}/collected`,
+        { code: r.code },
+      ),
+      200,
+    );
+    expect(collected.payment.status).toBe('paid');
+
+    // Another kitchen can't touch it.
+    const stranger = await kitchen('Surplus Stranger Kitchen');
+    const nope = await stranger.api.post(
+      `/food/vendor/kitchen/surplus-reservations/${r.id}/payment/confirm`,
+    );
+    expect(nope.status).toBe(404);
+  });
+
+  it('paying at pickup: unpaid until collected; cancels void it, or leave a refund due once paid', async () => {
+    const v = await kitchen('Surplus Settle Kitchen');
+    await expectStatus(
+      await v.api.post('/food/vendor/payment-accounts', {
+        kind: 'bank',
+        accountTitle: 'Settle Kitchen',
+        accountNumber: testIban(),
+        bankName: 'MCB',
+      }),
+      201,
+    );
+    const b = await box(v, { quantity: 4 });
+    const [a, c, d] = [
+      await foodCustomer(t, SUK),
+      await foodCustomer(t, SUK),
+      await foodCustomer(t, SUK),
+    ];
+    const cash = await expectStatus(await reserve(a, b.id), 201);
+    expect(cash.payment).toMatchObject({
+      method: 'pay_at_pickup',
+      status: 'unpaid',
+      payBy: null,
+    });
+    expect(cash.payTo).toEqual([]);
+    const done = await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/surplus-reservations/${cash.id}/collected`,
+        {},
+      ),
+      200,
+    );
+    expect(done.payment.status).toBe('paid');
+
+    const unpaid = await expectStatus(
+      await reserve(c, b.id, { quantity: 1, paymentMethod: 'transfer' }),
+      201,
+    );
+    const cancelled = await expectStatus(
+      await c.api.post(`/food/surplus/reservations/${unpaid.id}/cancel`),
+      200,
+    );
+    expect(cancelled.payment.status).toBe('void');
+
+    const paid = await expectStatus(
+      await reserve(d, b.id, { quantity: 1, paymentMethod: 'transfer' }),
+      201,
+    );
+    await expectStatus(
+      await v.api.post(
+        `/food/vendor/kitchen/surplus-reservations/${paid.id}/payment/confirm`,
+      ),
+      200,
+    );
+    // The kitchen calls the box off: what was paid is now theirs to send back.
+    await expectStatus(
+      await v.api.post(`/food/vendor/kitchen/surplus-boxes/${b.id}/cancel`),
+      200,
+    );
+    const mine = await expectStatus(
+      await d.api.get('/food/surplus/reservations'),
+      200,
+    );
+    expect(mine.find((x: { id: string }) => x.id === paid.id)).toMatchObject({
+      status: 'cancelled',
+      payment: { status: 'refund_due' },
+    });
+  });
+
+  it('a box’s own page: any state, its kitchen, the distance from a point; a hidden kitchen is 404', async () => {
+    const v = await kitchen('Surplus Page Kitchen');
+    const b = await box(v);
+    const anon = new ApiClient(t.http);
+    const page = await expectStatus(
+      await anon.get(`/food/surplus/${b.id}`),
+      200,
+    );
+    expect(page).toMatchObject({
+      id: b.id,
+      status: 'live',
+      vendor: { name: 'Surplus Page Kitchen' },
+      distanceKm: null,
+      pickupLabel: expect.stringMatching(/^Pick up /),
+    });
+    const near = await expectStatus(
+      await anon.get(`/food/surplus/${b.id}?lat=${SUK.lat}&lng=${SUK.lng}`),
+      200,
+    );
+    expect(near.distanceKm).toEqual(expect.any(Number));
+    await expectStatus(
+      await v.api.post(`/food/vendor/kitchen/surplus-boxes/${b.id}/cancel`),
+      200,
+    );
+    expect(
+      (await expectStatus(await anon.get(`/food/surplus/${b.id}`), 200)).status,
+    ).toBe('cancelled');
+    await sql(`UPDATE businesses SET status = 'suspended' WHERE id = $1`, [
+      v.businessId,
+    ]);
+    expect((await anon.get(`/food/surplus/${b.id}`)).status).toBe(404);
+    expect(
+      (await anon.get('/food/surplus/00000000-0000-0000-0000-000000000000'))
+        .status,
+    ).toBe(404);
   });
 });

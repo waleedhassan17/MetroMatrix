@@ -8,6 +8,7 @@ import {
   categoryId,
   listProduct,
   storeOf,
+  testIban,
 } from './utils/shopping';
 import { approvedDoctor } from './utils/health';
 import {
@@ -1663,5 +1664,73 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
       [key],
     );
     expect(await keys()).toContain(key);
+  });
+
+  it('QA #42 a Bachat Box paid by transfer → receipt, a rejected one sent again, confirmed, collected', async () => {
+    const v = await kitchen('QA Box Transfer Kitchen');
+    await expectStatus(
+      await v.api.post('/food/vendor/payment-accounts', {
+        kind: 'bank',
+        accountTitle: 'QA Box Kitchen',
+        accountNumber: testIban(),
+        bankName: 'UBL',
+      }),
+      201,
+    );
+    const b = await expectStatus(
+      await v.api.post('/food/vendor/kitchen/surplus-boxes', {
+        title: 'QA transfer box',
+        originalValue: 1000,
+        price: 400,
+        quantity: 1,
+        ...window(),
+      }),
+      201,
+    );
+    const c = await foodCustomer(t, ATD);
+    const r = await expectStatus(
+      await c.api
+        .post(`/food/surplus/${b.id}/reserve`, {
+          quantity: 1,
+          paymentMethod: 'transfer',
+        })
+        .set('Idempotency-Key', `qa42-${Date.now()}`),
+      201,
+    );
+    expect(r.payment.status).toBe('awaiting_transfer');
+    const send = () =>
+      c.api.post(`/food/surplus/reservations/${r.id}/payment-proof`, {
+        proofUrl: asset(c.userId, 'payment_proof').url,
+      });
+    expect((await expectStatus(await send(), 200)).payment.status).toBe(
+      'proof_submitted',
+    );
+    const path = `/food/vendor/kitchen/surplus-reservations/${r.id}`;
+    expect(
+      (
+        await expectStatus(
+          await v.api.post(`${path}/payment/reject`, {
+            reason: 'Not in the account yet.',
+          }),
+          200,
+        )
+      ).payment,
+    ).toMatchObject({
+      status: 'awaiting_transfer',
+      rejectedReason: 'Not in the account yet.',
+    });
+    await expectStatus(await send(), 200);
+    expect(
+      (await expectStatus(await v.api.post(`${path}/payment/confirm`), 200))
+        .payment.status,
+    ).toBe('paid');
+    expect(
+      (
+        await expectStatus(
+          await v.api.post(`${path}/collected`, { code: r.code }),
+          200,
+        )
+      ).payment.status,
+    ).toBe('paid');
   });
 });

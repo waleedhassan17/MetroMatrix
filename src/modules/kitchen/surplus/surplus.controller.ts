@@ -28,11 +28,14 @@ import {
 } from '../../../common/decorators/current-user.decorator';
 import { RequireIdempotencyKey } from '../../../common/decorators/require-idempotency-key.decorator';
 import { PublicRoute } from '../../../common/decorators/public.decorator';
+import { ReasonDto } from '../../food/orders/dto/order-action.dto';
 import {
   CollectDto,
   DonationDto,
   PackingProofDto,
   ReserveDto,
+  SurplusBoxQueryDto,
+  SurplusProofDto,
   ReservationsQueryDto,
   SurplusBoxDto,
   SurplusQueryDto,
@@ -124,6 +127,33 @@ export class KitchenSurplusController {
     return this.surplus.noShow(v, id);
   }
 
+  @Post('surplus-reservations/:id/payment/confirm')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'A transfer reached your account (with or without a receipt): awaiting_transfer | proof_submitted → paid.',
+  })
+  confirmPayment(
+    @CurrentVendor() v: VendorRef,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.surplus.confirmPayment(v, id);
+  }
+
+  @Post('surplus-reservations/:id/payment/reject')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '{ reason } — the receipt didn’t check out: proof_submitted → awaiting_transfer, and the customer gets 15 more minutes.',
+  })
+  rejectPayment(
+    @CurrentVendor() v: VendorRef,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReasonDto,
+  ) {
+    return this.surplus.rejectPayment(v, id, dto.reason);
+  }
+
   @Get('donations')
   @ApiOperation({
     summary: 'Donations and “meals rescued” (collected boxes + donated meals).',
@@ -192,6 +222,21 @@ export class CustomerSurplusController {
     return this.surplus.myReservations(user);
   }
 
+  @Post('reservations/:id/payment-proof')
+  @HttpCode(200)
+  @FoodCustomer()
+  @ApiOperation({
+    summary:
+      '{ proofUrl, publicId?, ref? } — a `payment_proof` upload: awaiting_transfer → proof_submitted.',
+  })
+  paymentProof(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SurplusProofDto,
+  ) {
+    return this.surplus.paymentProof(user, id, dto);
+  }
+
   @Post('reservations/:id/cancel')
   @HttpCode(200)
   @FoodCustomer()
@@ -200,6 +245,19 @@ export class CustomerSurplusController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.surplus.cancelMine(user, id);
+  }
+
+  @Get(':boxId')
+  @PublicRoute()
+  @ApiOperation({
+    summary:
+      '?lat&lng — one box (any state, so an old link says it has gone), with its kitchen and the distance when given a point.',
+  })
+  box(
+    @Param('boxId', ParseUUIDPipe) boxId: string,
+    @Query() q: SurplusBoxQueryDto,
+  ) {
+    return this.surplus.publicBox(boxId, q);
   }
 
   @Post(':boxId/reserve')

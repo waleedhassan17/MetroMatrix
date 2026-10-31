@@ -89,6 +89,31 @@ export class SurplusQueryDto {
   radiusKm?: number;
 }
 
+/** A box's page: the distance comes along when the customer's point does. */
+export class SurplusBoxQueryDto {
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(-90) @Max(90) lat?: number;
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(-180)
+  @Max(180)
+  lng?: number;
+}
+
+export class SurplusProofDto {
+  @ApiProperty({ description: 'A `payment_proof` upload of yours.' })
+  @IsString()
+  @MaxLength(500)
+  proofUrl!: string;
+  @IsOptional() @IsString() @MaxLength(300) publicId?: string;
+  @ApiPropertyOptional({ example: 'IBFT 7781' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(60)
+  ref?: string;
+}
+
 export class ReserveDto {
   @ApiProperty({ minimum: 1, maximum: 10 })
   @IsInt()
