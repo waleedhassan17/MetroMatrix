@@ -663,8 +663,10 @@ describe('QA matrix — Shopping (Chunk 2)', () => {
       last,
       ...tree.map((c: any) => c.id).filter((id: string) => id !== last),
     ]);
+    // This suite's admin only: other suites reorder categories in the same database.
     const [{ n }] = await sql(
-      `SELECT count(*)::int AS n FROM operational_audit_events WHERE action = 'shop.category.reorder'`,
+      `SELECT count(*)::int AS n FROM operational_audit_events WHERE action = 'shop.category.reorder' AND actor_user_id = $1`,
+      [admin.userId],
     );
     expect(n).toBe(1);
   });
