@@ -900,6 +900,49 @@ describe('Shopping P4: checkout, orders, state machines, jobs (e2e)', () => {
     });
   });
 
+  it("the store's private note: saved, cleared, its own only, never shown to the customer", async () => {
+    const lamp = await product(a, 'Brass lamp', 3500, 3);
+    const cust = await customer();
+    const order = await placeOne(cust, lamp.variantId, storeA.id);
+    const note = 'Packed by Ali; the glass is fragile.';
+
+    const saved = await a.api
+      .patch(`/shop/partner/orders/${order.id}/note`, { note: `  ${note}  ` })
+      .expect(200);
+    expect(saved.body.data).toMatchObject({ id: order.id, internalNote: note });
+    expect(
+      (await a.api.get(`/shop/partner/orders/${order.id}`).expect(200)).body
+        .data.internalNote,
+    ).toBe(note);
+
+    // The customer never sees it, on any of their views.
+    const own = await cust.api
+      .get(`/shop/store-orders/${order.id}`)
+      .expect(200);
+    expect(own.body.data).not.toHaveProperty('internalNote');
+    const group = await cust.api
+      .get(`/shop/orders/${own.body.data.groupCode}`)
+      .expect(200);
+    const list = await cust.api.get('/shop/orders').expect(200);
+    for (const view of [own.body, group.body, list.body]) {
+      expect(JSON.stringify(view)).not.toContain('fragile');
+    }
+
+    // Another store gets 404; the note is checked; null clears it.
+    await c.api
+      .patch(`/shop/partner/orders/${order.id}/note`, { note: 'Mine?' })
+      .expect(404);
+    const long = await a.api
+      .patch(`/shop/partner/orders/${order.id}/note`, { note: 'x'.repeat(501) })
+      .expect(400);
+    expect(long.body.error.details.fields.note).toBeDefined();
+    await a.api.patch(`/shop/partner/orders/${order.id}/note`, {}).expect(400);
+    const cleared = await a.api
+      .patch(`/shop/partner/orders/${order.id}/note`, { note: null })
+      .expect(200);
+    expect(cleared.body.data.internalNote).toBeNull();
+  });
+
   it('isolation: another store and another customer get 404 on every order route', async () => {
     const bag = await product(a, 'Leather bag', 5000, 3);
     const cust = await customer();

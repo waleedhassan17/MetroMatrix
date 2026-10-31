@@ -142,6 +142,15 @@ export class StoreOrder extends BaseEntity {
   @Column({ type: 'text', name: 'customer_note', nullable: true })
   customerNote!: string | null;
 
+  /** The store's own note on the order (packed by, fragile …): only the store sees it. */
+  @Column({
+    type: 'varchar',
+    length: 500,
+    name: 'internal_note',
+    nullable: true,
+  })
+  internalNote!: string | null;
+
   @Column({ type: 'varchar', length: 80, name: 'courier_name', nullable: true })
   courierName!: string | null;
 

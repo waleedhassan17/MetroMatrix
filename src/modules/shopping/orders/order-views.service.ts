@@ -404,6 +404,8 @@ export class OrderViewsService {
     return {
       ...storeOrderCore(o, d.items(o.id), d.events(o.id)),
       groupCode: group.code,
+      // The store's own note: only this view carries it.
+      internalNote: o.internalNote,
       // What the store needs to deliver — nothing more about the customer.
       customer: {
         name: a.fullName,

@@ -41,6 +41,21 @@ export class PartnerOrderQueryDto extends PaginationQueryDto {
   q?: string;
 }
 
+/** The store's private note on an order; null clears it. */
+export class InternalNoteDto {
+  @ApiProperty({
+    nullable: true,
+    maxLength: 500,
+    example: 'Packed by Ali; the vase is fragile.',
+    description: 'Only your store sees it; customers never do. null clears it.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @Trim()
+  @IsString()
+  @MaxLength(500)
+  note!: string | null;
+}
+
 /** Cancel, reject, request-cancel, payment reject: a reason is required. */
 export class ReasonDto {
   @ApiProperty({ example: 'Ordered the wrong size.' })

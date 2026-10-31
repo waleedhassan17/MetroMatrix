@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -13,6 +14,7 @@ import { OrderViewsService } from './order-views.service';
 import { OrderActionsService } from './order-actions.service';
 import {
   CustomerOrderQueryDto,
+  InternalNoteDto,
   PartnerOrderQueryDto,
   PaymentProofDto,
   ReasonDto,
@@ -135,6 +137,19 @@ export class PartnerOrdersController {
   @Get(':id')
   get(@CurrentStore() store: PartnerStore, @Param('id', uuid) id: string) {
     return this.views.partnerOrder(store.id, id);
+  }
+
+  @Patch(':id/note')
+  @ApiOperation({
+    summary:
+      "{ note } — the store's private note on the order (null clears it); customers never see it.",
+  })
+  saveNote(
+    @CurrentStore() s: PartnerStore,
+    @Param('id', uuid) id: string,
+    @Body() dto: InternalNoteDto,
+  ) {
+    return this.actions.saveNote(s.id, s.ownerUserId, id, dto.note);
   }
 
   @Post(':id/confirm')

@@ -239,6 +239,14 @@ export class OrderActionsService {
     return this.views.partnerOrder(storeId, id);
   }
 
+  /** The store's private note (null or blank clears it); it never reaches the customer. */
+  saveNote(storeId: string, ownerId: string, id: string, note: string | null) {
+    return this.asStore(storeId, ownerId, id, async (m, o) => {
+      await m.update(StoreOrder, { id: o.id }, { internalNote: note || null });
+      return [];
+    });
+  }
+
   confirm(storeId: string, ownerId: string, id: string) {
     return this.asStore(storeId, ownerId, id, async (m, o, actor) => {
       await this.transitions.moveStatus(m, o, 'confirmed', actor);
