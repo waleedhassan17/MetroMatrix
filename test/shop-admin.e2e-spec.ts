@@ -1,5 +1,5 @@
 import { ApiClient, createTestApp, TestApp } from './utils/test-app';
-import { enrolledAdmin } from './utils/admin';
+import { enrolledAdmin, limitedAdmin } from './utils/admin';
 import {
   Admin,
   Partner,
@@ -42,6 +42,123 @@ describe('Shopping P6: admin (e2e)', () => {
       (await c.api.get('/admin/shop/categories').expect(403)).body.error.code,
     ).toBe('FORBIDDEN');
     await p.api.get('/admin/shop/orders').expect(403);
+  });
+
+  it('overview: stores and products customers see, open reports, store orders placed today', async () => {
+    const read = async () =>
+      (await admin.api.get('/admin/shop/overview').expect(200)).body.data;
+    const before = await read();
+    expect(Object.keys(before).sort()).toEqual([
+      'activeProducts',
+      'openReports',
+      'ordersToday',
+      'stores',
+    ]);
+    const lamp = await simpleProduct(t, p, 'Overview lamp', 2000, 5);
+    const c = await customer(t);
+    await orderFrom(c, store.id, [[lamp.variantId, 1]]);
+    const after = await read();
+    expect(after.activeProducts).toBe(before.activeProducts + 1);
+    expect(after.ordersToday).toBe(before.ordersToday + 1);
+
+    await p.api
+      .patch('/shop/partner/store/settings', { isPaused: true })
+      .expect(200);
+    expect((await read()).stores).toBe(after.stores - 1);
+    await p.api
+      .patch('/shop/partner/store/settings', { isPaused: false })
+      .expect(200);
+  });
+
+  it('stores: every store for staff, paused ones too, searchable, featured first', async () => {
+    const other = await approvedPartner(t, admin, 'store', 'Quiet Quilts');
+    const otherStore = await storeOf(other);
+    await other.api
+      .patch('/shop/partner/store/settings', { isPaused: true })
+      .expect(200);
+    await admin.api
+      .post(`/admin/shop/stores/${otherStore.id}/feature`)
+      .expect(200);
+
+    const all = (await admin.api.get('/admin/shop/stores').expect(200)).body
+      .data;
+    expect(all.total).toBeGreaterThanOrEqual(2);
+    expect(all.items[0].isFeatured).toBe(true);
+    const quilts = (
+      await admin.api.get('/admin/shop/stores?q=quiet%20quilts').expect(200)
+    ).body.data.items;
+    expect(quilts).toHaveLength(1);
+    expect(quilts[0]).toMatchObject({
+      id: otherStore.id,
+      slug: otherStore.slug,
+      name: 'Quiet Quilts',
+      isPaused: true,
+      isFeatured: true,
+      businessStatus: 'approved',
+      productCount: 0,
+    });
+    expect(quilts[0].ownerEmail).toMatch(/@/);
+    const paused = (
+      await admin.api.get('/admin/shop/stores?status=paused').expect(200)
+    ).body.data.items.map((s: any) => s.id);
+    expect(paused).toContain(otherStore.id);
+    const live = (
+      await admin.api.get('/admin/shop/stores?status=live').expect(200)
+    ).body.data.items.map((s: any) => s.id);
+    expect(live).not.toContain(otherStore.id);
+    await admin.api.get('/admin/shop/stores?status=closed').expect(400);
+  });
+
+  it('category order: one set of siblings, the rest follow, audited once; bad ids refused', async () => {
+    const tree = (await admin.api.get('/admin/shop/categories').expect(200))
+      .body.data;
+    const women = tree.find((c: any) => c.slug === 'women');
+    const kids = women.children.map((c: any) => c.id);
+    expect(kids.length).toBeGreaterThanOrEqual(2);
+    const last = kids[kids.length - 1];
+
+    const res = await admin.api
+      .put('/admin/shop/categories/order', { parentId: women.id, ids: [last] })
+      .expect(200);
+    const reordered = res.body.data.find((c: any) => c.id === women.id);
+    expect(reordered.children.map((c: any) => c.id)).toEqual([
+      last,
+      ...kids.filter((id: string) => id !== last),
+    ]);
+    expect(await audited('shop.category.reorder', women.id)).toBe(1);
+
+    await admin.api
+      .put('/admin/shop/categories/order', {
+        parentId: women.id,
+        ids: [last, last],
+      })
+      .expect(400);
+    // A top-level category is not one of women's children.
+    await admin.api
+      .put('/admin/shop/categories/order', {
+        parentId: women.id,
+        ids: [women.id],
+      })
+      .expect(404);
+    const top = await admin.api
+      .put('/admin/shop/categories/order', {
+        parentId: null,
+        ids: [tree[1].id],
+      })
+      .expect(200);
+    expect(top.body.data[0].id).toBe(tree[1].id);
+  });
+
+  it('the new staff routes need manageShopping', async () => {
+    const content = await limitedAdmin(t, admin, ['manageContent']);
+    for (const path of ['/admin/shop/overview', '/admin/shop/stores']) {
+      expect((await content.api.get(path).expect(403)).body.error.code).toBe(
+        'FORBIDDEN',
+      );
+    }
+    await content.api
+      .put('/admin/shop/categories/order', { parentId: null, ids: [] })
+      .expect(403);
   });
 
   it('categories: two levels, unique slugs, in-use ones deactivate rather than delete', async () => {

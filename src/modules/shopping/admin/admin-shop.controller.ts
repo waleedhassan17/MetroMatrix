@@ -9,9 +9,11 @@ import {
   AdminShopHideReviewView,
   AdminShopOrderView,
   AdminShopOrdersView,
+  AdminShopOverviewView,
   AdminShopRemoveView,
   AdminShopReportsView,
   AdminShopRestoreView,
+  AdminShopStoresView,
   AdminShopUnfeatureView,
   AdminShopUnhideReviewView,
   AdminShopUpdateBannerView,
@@ -31,6 +33,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -40,8 +43,10 @@ import {
   AdminOrderQueryDto,
   AdminReasonDto,
   AdminReportQueryDto,
+  AdminStoreQueryDto,
   CreateBannerDto,
   CreateCategoryDto,
+  ReorderCategoriesDto,
   UpdateBannerDto,
   UpdateCategoryDto,
 } from './dto/admin-shop.dto';
@@ -63,6 +68,16 @@ const uuid = new ParseUUIDPipe();
 export class AdminShopController {
   constructor(private readonly admin: AdminShopService) {}
 
+  @Get('overview')
+  @ApiOperation({
+    summary:
+      'Stores customers can see, live products, open reports, and store orders placed today (Pakistan time).',
+  })
+  @ApiEnvelopeOk(AdminShopOverviewView)
+  overview() {
+    return this.admin.overview();
+  }
+
   // Categories
   @Get('categories')
   @ApiOperation({ summary: 'The full taxonomy, inactive included.' })
@@ -75,6 +90,16 @@ export class AdminShopController {
   @ApiEnvelopeOk(AdminShopCreateCategoryView, { status: 201 })
   createCategory(@Body() dto: CreateCategoryDto) {
     return this.admin.createCategory(dto);
+  }
+
+  @Put('categories/order')
+  @ApiOperation({
+    summary:
+      '{ parentId, ids } — one set of sibling categories in a new order; any left out follow. Audited.',
+  })
+  @ApiEnvelopeOk(AdminShopCategoriesView, { isArray: true })
+  reorderCategories(@Body() dto: ReorderCategoriesDto) {
+    return this.admin.reorderCategories(dto);
   }
 
   @Patch('categories/:id')
@@ -130,6 +155,16 @@ export class AdminShopController {
   }
 
   // Stores
+  @Get('stores')
+  @ApiOperation({
+    summary:
+      'Every store, paused and suspended too: ?q (name, slug, city, owner email) &status=live|paused|suspended &page. Featured first.',
+  })
+  @ApiPagedOk(AdminShopStoresView)
+  stores(@Query() q: AdminStoreQueryDto) {
+    return this.admin.stores(q);
+  }
+
   @Post('stores/:id/feature')
   @HttpCode(200)
   @ApiEnvelopeOk(AdminShopFeatureView)

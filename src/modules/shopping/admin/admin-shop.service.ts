@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, IsNull } from 'typeorm';
 import { ShopCategory } from '../catalog/entities/shop-category.entity';
 import { ShopBanner } from '../catalog/entities/shop-banner.entity';
 import { Store } from '../stores/entities/store.entity';
@@ -18,8 +18,10 @@ import { ReviewsService } from '../reviews/reviews.service';
 import {
   AdminOrderQueryDto,
   AdminReportQueryDto,
+  AdminStoreQueryDto,
   CreateBannerDto,
   CreateCategoryDto,
+  ReorderCategoriesDto,
   UpdateBannerDto,
   UpdateCategoryDto,
 } from './dto/admin-shop.dto';
@@ -29,8 +31,17 @@ import { OperationalAuditService } from '../../../common/audit/operational-audit
 import { slugify } from '../../businesses/businesses.service';
 import { MediaService } from '../../media/media.service';
 import { NotificationsService } from '../../notifications/notifications.service';
-import { SqlParams, likeEscape } from '../common/catalog-sql';
+import {
+  PRODUCT_FROM_SQL,
+  SqlParams,
+  VISIBLE_PRODUCT_SQL,
+  VISIBLE_STORE_SQL,
+  likeEscape,
+} from '../common/catalog-sql';
+import { localDayBounds, todayIn } from '../../../common/time/time.util';
 import { invalidTransition } from '../../../common/state/transitions';
+
+const PKT = 'Asia/Karachi';
 
 const notFound = (what: string) =>
   new NotFoundException({
@@ -84,6 +95,29 @@ export class AdminShopService {
     private readonly media: MediaService,
     private readonly notifications: NotificationsService,
   ) {}
+
+  // ── Overview ──────────────────────────────────────────────────────────────
+
+  /** The console's Shopping numbers; today is the Pakistan day. */
+  async overview(now: Date = new Date()) {
+    const { start, end } = localDayBounds(todayIn(PKT, now), PKT);
+    const [row] = await this.dataSource.query(
+      `SELECT
+         (SELECT count(*)::int FROM stores s JOIN businesses b ON b.id = s.business_id
+           WHERE ${VISIBLE_STORE_SQL}) AS stores,
+         (SELECT count(*)::int ${PRODUCT_FROM_SQL} WHERE ${VISIBLE_PRODUCT_SQL}) AS active_products,
+         (SELECT count(*)::int FROM product_reports WHERE status = 'open') AS open_reports,
+         (SELECT count(*)::int FROM store_orders
+           WHERE created_at >= $1 AND created_at < $2) AS orders_today`,
+      [start, end],
+    );
+    return {
+      stores: row.stores,
+      activeProducts: row.active_products,
+      openReports: row.open_reports,
+      ordersToday: row.orders_today,
+    };
+  }
 
   // ── Categories ────────────────────────────────────────────────────────────
 
@@ -164,6 +198,44 @@ export class AdminShopService {
       after: categoryView(c),
     });
     return categoryView(c);
+  }
+
+  /**
+   * One set of siblings (the top level, or one parent's children) in a new
+   * order; any left out follow in their current order. One audit row.
+   */
+  async reorderCategories(dto: ReorderCategoriesDto) {
+    const unique = [...new Set(dto.ids)];
+    if (unique.length !== dto.ids.length)
+      throw invalid('ids', 'Each category may appear once.');
+    const parentId = dto.parentId ?? null;
+    let previous: string[] = [];
+    let next: string[] = [];
+    await this.dataSource.transaction(async (m) => {
+      const siblings = await m.find(ShopCategory, {
+        where: { parentId: parentId === null ? IsNull() : parentId },
+        order: { sort: 'ASC', name: 'ASC' },
+        lock: { mode: 'pessimistic_write' },
+      });
+      const known = new Set(siblings.map((c) => c.id));
+      if (unique.some((id) => !known.has(id))) throw notFound('Category');
+      const order = [
+        ...unique,
+        ...siblings.map((c) => c.id).filter((id) => !unique.includes(id)),
+      ];
+      for (const [i, id] of order.entries())
+        await m.update(ShopCategory, { id }, { sort: i });
+      previous = siblings.map((c) => c.id);
+      next = order;
+    });
+    await this.audit.record({
+      action: 'shop.category.reorder',
+      targetType: 'shop_category',
+      targetId: parentId,
+      before: { parentId, order: previous },
+      after: { parentId, order: next },
+    });
+    return this.categories();
   }
 
   /** Only an unused leaf can be deleted; anything in use is deactivated instead. */
@@ -344,6 +416,60 @@ export class AdminShopService {
   }
 
   // ── Stores ────────────────────────────────────────────────────────────────
+
+  /** Every store, paused and suspended ones too; featured first. */
+  async stores(q: AdminStoreQueryDto) {
+    const params = new SqlParams();
+    const where: string[] = ['TRUE'];
+    if (q.status === 'live')
+      where.push(`b.status = 'approved' AND NOT s.is_paused`);
+    if (q.status === 'paused') where.push(`s.is_paused`);
+    if (q.status === 'suspended') where.push(`b.status = 'suspended'`);
+    if (q.q) {
+      const like = params.add(`%${likeEscape(q.q)}%`);
+      where.push(
+        `(b.name ILIKE ${like} OR s.slug ILIKE ${like} OR b.city ILIKE ${like} OR u.email ILIKE ${like})`,
+      );
+    }
+    const from = `FROM stores s JOIN businesses b ON b.id = s.business_id
+      JOIN users u ON u.id = b.owner_user_id WHERE ${where.join(' AND ')}`;
+    const [{ total }] = await this.dataSource.query(
+      `SELECT count(*)::int AS total ${from}`,
+      params.values,
+    );
+    const rows = await this.dataSource.query(
+      `SELECT s.id, s.slug, b.name, b.city, s.logo_url, s.brand_color, s.on_brand_color,
+              s.is_featured, s.is_paused, b.status AS business_status, s.rating_avg,
+              s.rating_count, u.email AS owner_email, s.created_at,
+              (SELECT count(*)::int FROM products p
+                WHERE p.store_id = s.id AND p.status = 'active') AS product_count
+         ${from}
+        ORDER BY s.is_featured DESC, b.name, s.id
+        LIMIT ${params.add(q.pageSize)} OFFSET ${params.add((q.page - 1) * q.pageSize)}`,
+      params.values,
+    );
+    return paged(
+      rows.map((r: any) => ({
+        id: r.id,
+        slug: r.slug,
+        name: r.name,
+        city: r.city,
+        logoUrl: r.logo_url,
+        brandColor: r.brand_color,
+        onBrandColor: r.on_brand_color,
+        isFeatured: r.is_featured,
+        isPaused: r.is_paused,
+        businessStatus: r.business_status,
+        productCount: r.product_count,
+        ratingAvg: parseFloat(r.rating_avg),
+        ratingCount: r.rating_count,
+        ownerEmail: r.owner_email,
+        createdAt: r.created_at,
+      })),
+      total,
+      q,
+    );
+  }
 
   async setFeatured(id: string, featured: boolean) {
     const was = await this.dataSource.manager.findOne(Store, {

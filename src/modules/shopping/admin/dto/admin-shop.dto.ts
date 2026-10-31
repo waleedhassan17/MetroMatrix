@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -175,4 +178,48 @@ export class AdminOrderQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsIn(ORDER_STATUSES)
   status?: OrderStatus;
+}
+
+/** One set of sibling categories (the top level, or one parent's children) in a new order. */
+export class ReorderCategoriesDto {
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'The parent whose children these are; null for the top level.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsUUID()
+  parentId?: string | null;
+
+  @ApiProperty({
+    description:
+      'The categories in their new order (the first shows first); any siblings left out follow.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(200)
+  @IsUUID('all', { each: true })
+  ids!: string[];
+}
+
+export const ADMIN_STORE_STATES = ['live', 'paused', 'suspended'] as const;
+
+export class AdminStoreQueryDto extends PaginationQueryDto {
+  @ApiPropertyOptional({
+    description: 'Store name, slug, city or owner email.',
+  })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({
+    enum: ADMIN_STORE_STATES,
+    description:
+      'live: approved and open · paused: the store paused itself · suspended: staff suspended the business.',
+  })
+  @IsOptional()
+  @IsIn(ADMIN_STORE_STATES)
+  status?: (typeof ADMIN_STORE_STATES)[number];
 }

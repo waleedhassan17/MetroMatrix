@@ -327,3 +327,53 @@ export class AdminShopUnfeatureView {
   @ApiProperty({ type: Boolean })
   isFeatured!: boolean;
 }
+
+export class AdminShopOverviewView {
+  @ApiProperty({ type: 'integer', description: 'Stores customers can see.' })
+  stores!: number;
+  @ApiProperty({ type: 'integer', description: 'Products customers can buy.' })
+  activeProducts!: number;
+  @ApiProperty({ type: 'integer' })
+  openReports!: number;
+  @ApiProperty({
+    type: 'integer',
+    description: 'Store orders placed today (Pakistan time).',
+  })
+  ordersToday!: number;
+}
+
+export class AdminShopStoresView {
+  @ApiProperty({ type: String })
+  id!: string;
+  @ApiProperty({ type: String })
+  slug!: string;
+  @ApiProperty({ type: String })
+  name!: string;
+  @ApiProperty({ type: String })
+  city!: string;
+  @ApiProperty({ type: String, nullable: true })
+  logoUrl!: string | null;
+  @ApiProperty({ type: String })
+  brandColor!: string;
+  @ApiProperty({ type: String })
+  onBrandColor!: string;
+  @ApiProperty({ type: Boolean })
+  isFeatured!: boolean;
+  @ApiProperty({ type: Boolean })
+  isPaused!: boolean;
+  @ApiProperty({
+    type: String,
+    description: 'The business: approved or suspended.',
+  })
+  businessStatus!: string;
+  @ApiProperty({ type: 'integer' })
+  productCount!: number;
+  @ApiProperty({ type: Number })
+  ratingAvg!: number;
+  @ApiProperty({ type: 'integer' })
+  ratingCount!: number;
+  @ApiProperty({ type: String })
+  ownerEmail!: string;
+  @ApiProperty({ type: String, format: 'date-time' })
+  createdAt!: string;
+}
