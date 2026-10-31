@@ -5,6 +5,7 @@ import {
   HttpCode,
   Param,
   ParseUUIDPipe,
+  Patch,
   Post,
   Query,
 } from '@nestjs/common';
@@ -25,6 +26,7 @@ import {
   CateringQueryDto,
   CateringReasonDto,
   CateringRequestDto,
+  CateringSettingsDto,
   QuoteDto,
 } from './dto/catering.dto';
 import { CateringService } from './catering.service';
@@ -39,6 +41,27 @@ export class VendorCateringController {
   @Get()
   list(@CurrentVendor() v: VendorRef, @Query() q: CateringQueryDto) {
     return this.catering.list(v, q);
+  }
+
+  @Get('settings')
+  @ApiOperation({
+    summary:
+      '{ open, minGuests, leadDays } — whether you take requests, the smallest party, the days of notice.',
+  })
+  settings(@CurrentVendor() v: VendorRef) {
+    return this.catering.settings(v);
+  }
+
+  @Patch('settings')
+  @ApiOperation({
+    summary:
+      '{ open?, minGuests? (1–5000), leadDays? (1–60) } — what is sent changes.',
+  })
+  updateSettings(
+    @CurrentVendor() v: VendorRef,
+    @Body() dto: CateringSettingsDto,
+  ) {
+    return this.catering.updateSettings(v, dto);
   }
 
   @Get(':id')
@@ -100,6 +123,15 @@ export class VendorCateringController {
 @Controller('food/catering')
 export class CustomerCateringController {
   constructor(private readonly catering: CateringService) {}
+
+  @Get('vendors/:idOrSlug')
+  @ApiOperation({
+    summary:
+      'A kitchen’s catering page: open, minGuests, leadDays, earliestDate, the ways it can serve (delivery, pickup, on_site) and its menu.',
+  })
+  vendor(@Param('idOrSlug') idOrSlug: string) {
+    return this.catering.vendorInfo(idOrSlug.slice(0, 80));
+  }
 
   @Post()
   @ApiOperation({

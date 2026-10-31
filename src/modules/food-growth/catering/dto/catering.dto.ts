@@ -16,6 +16,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  IsBoolean,
 } from 'class-validator';
 import { Trim } from '../../../../common/validation/transforms';
 import { CATERING_FULFILMENTS, EVENT_TYPES } from '../entities/catering.entity';
@@ -139,4 +140,25 @@ export class CateringQueryDto {
     'cancelled',
   ])
   status?: string;
+}
+
+/** PATCH /food/vendor/catering/settings — what is sent changes. */
+export class CateringSettingsDto {
+  @IsOptional() @IsBoolean() open?: boolean;
+  @ApiPropertyOptional({ minimum: 1, maximum: 5000 })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(5000)
+  minGuests?: number;
+  @ApiPropertyOptional({
+    minimum: 1,
+    maximum: 60,
+    description: 'Days of notice.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  leadDays?: number;
 }

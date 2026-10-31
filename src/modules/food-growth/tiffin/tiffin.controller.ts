@@ -24,6 +24,7 @@ import { RequireIdempotencyKey } from '../../../common/decorators/require-idempo
 import { PublicRoute } from '../../../common/decorators/public.decorator';
 import {
   SubscribeDto,
+  TiffinCalendarQueryDto,
   TiffinDateDto,
   TiffinPauseDto,
   TiffinPlanDto,
@@ -110,6 +111,19 @@ export class VendorTiffinController {
     return this.tiffin.vendorPause(v, id, dto.until);
   }
 
+  @Post('subscriptions/:id/resume')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'paused → active now: the paused days whose cut-off is still open are back on.',
+  })
+  resume(
+    @CurrentVendor() v: VendorRef,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tiffin.vendorResume(v, id);
+  }
+
   @Post('subscriptions/:id/end')
   @HttpCode(200)
   end(
@@ -165,6 +179,16 @@ export class CustomerTiffinController {
     return this.tiffin.vendorPlans(idOrSlug.slice(0, 80));
   }
 
+  @Get('tiffin/plans/:id')
+  @PublicRoute()
+  @ApiOperation({
+    summary:
+      'One active plan (from a home rail or a link) with its kitchen, seatsLeft, full, and the rotation’s dish names.',
+  })
+  plan(@Param('id', ParseUUIDPipe) id: string) {
+    return this.tiffin.publicPlan(id);
+  }
+
   @Post('tiffin/subscribe')
   @FoodCustomer()
   @RequireIdempotencyKey()
@@ -217,6 +241,34 @@ export class CustomerTiffinController {
     @Body() dto: TiffinPauseDto,
   ) {
     return this.tiffin.pause(user, id, dto.until);
+  }
+
+  @Get('tiffin/subscriptions/:id/calendar')
+  @FoodCustomer()
+  @ApiOperation({
+    summary:
+      '?month=YYYY-MM — each day: off, before_start, pending, upcoming, skipped, paused, ordered, delivered, missed or none, with its dishes, cut-off, canSkip/canUnskip and the order code.',
+  })
+  calendar(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() q: TiffinCalendarQueryDto,
+  ) {
+    return this.tiffin.calendar(user, id, q.month);
+  }
+
+  @Post('tiffin/subscriptions/:id/resume')
+  @HttpCode(200)
+  @FoodCustomer()
+  @ApiOperation({
+    summary:
+      'paused → active now: the paused days whose cut-off is still open are back on.',
+  })
+  resume(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.tiffin.resume(user, id);
   }
 
   @Post('tiffin/subscriptions/:id/cancel')

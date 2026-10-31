@@ -390,4 +390,85 @@ describe('Catering: requests, versioned quotes, advance, the event-day order (Ch
       'declined',
     ]);
   });
+
+  it('catering settings: the page customers read, and a request outside them is refused', async () => {
+    const v = await kitchen('Catering Settings Kitchen');
+    const c = await foodCustomer(t, ISB);
+    expect(
+      await expectStatus(
+        await v.api.get('/food/vendor/catering/settings'),
+        200,
+      ),
+    ).toEqual({ open: true, minGuests: 1, leadDays: 1 });
+    expect(
+      await expectStatus(
+        await v.api.patch('/food/vendor/catering/settings', {
+          minGuests: 20,
+          leadDays: 3,
+        }),
+        200,
+      ),
+    ).toEqual({ open: true, minGuests: 20, leadDays: 3 });
+    const bad = await v.api.patch('/food/vendor/catering/settings', {
+      leadDays: 0,
+    });
+    expect(bad.status).toBe(400);
+
+    const page = await expectStatus(
+      await c.api.get(`/food/catering/vendors/${v.brandId}`),
+      200,
+    );
+    expect(page).toMatchObject({
+      vendorId: v.brandId,
+      name: 'Catering Settings Kitchen',
+      open: true,
+      minGuests: 20,
+      leadDays: 3,
+      earliestDate: day(3),
+      fulfilments: expect.arrayContaining(['on_site']),
+    });
+    expect(page.menu[0]).toEqual({
+      itemId: expect.any(String),
+      name: expect.any(String),
+      price: expect.any(Number),
+      photoUrl: null,
+    });
+    expect(
+      (await c.api.get('/food/catering/vendors/no-such-kitchen')).status,
+    ).toBe(404);
+
+    const ask = (extra: Record<string, unknown>) =>
+      c.api.post('/food/catering', {
+        vendorId: v.brandId,
+        eventDate: day(5),
+        eventTime: '13:00',
+        guests: 30,
+        eventType: 'office',
+        requestedItems: [{ name: 'Biryani', qty: 30 }],
+        fulfilment: 'pickup',
+        ...extra,
+      });
+    const few = await ask({ guests: 10 });
+    expect(few.status).toBe(400);
+    expect(few.body.error.details.fields.guests[0]).toMatch(
+      /20 guests or more/,
+    );
+    const soon = await ask({ eventDate: day(2) });
+    expect(soon.status).toBe(400);
+    expect(soon.body.error.details.fields.eventDate[0]).toBe(
+      'Book at least 3 days ahead.',
+    );
+    await expectStatus(await ask({}), 201);
+
+    await expectStatus(
+      await v.api.patch('/food/vendor/catering/settings', { open: false }),
+      200,
+    );
+    const closed = await ask({});
+    expect(closed.status).toBe(409);
+    expect(closed.body.error.code).toBe('CATERING_CLOSED');
+    expect(
+      (await c.api.get(`/food/catering/vendors/${v.brandId}`)).body.data.open,
+    ).toBe(false);
+  });
 });

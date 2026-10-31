@@ -8764,6 +8764,22 @@
         ],
         "type": "object"
       },
+      "CateringSettingsDto": {
+        "properties": {
+          "leadDays": {
+            "description": "Days of notice.",
+            "maximum": 60,
+            "minimum": 1,
+            "type": "number"
+          },
+          "minGuests": {
+            "maximum": 5000,
+            "minimum": 1,
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
       "ChangePasswordDto": {
         "properties": {
           "currentPassword": {
@@ -23954,6 +23970,35 @@
         ]
       }
     },
+    "/api/v1/food/catering/vendors/{idOrSlug}": {
+      "get": {
+        "operationId": "CustomerCatering_vendor",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "idOrSlug",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "A kitchen’s catering page: open, minGuests, leadDays, earliestDate, the ways it can serve (delivery, pickup, on_site) and its menu.",
+        "tags": [
+          "growth · catering"
+        ]
+      }
+    },
     "/api/v1/food/catering/{id}": {
       "get": {
         "operationId": "CustomerCatering_get",
@@ -25257,6 +25302,30 @@
         ]
       }
     },
+    "/api/v1/food/tiffin/plans/{id}": {
+      "get": {
+        "operationId": "CustomerTiffin_plan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "summary": "One active plan (from a home rail or a link) with its kitchen, seatsLeft, full, and the rotation’s dish names.",
+        "tags": [
+          "growth · tiffin"
+        ]
+      }
+    },
     "/api/v1/food/tiffin/subscribe": {
       "post": {
         "operationId": "CustomerTiffin_subscribe",
@@ -25301,6 +25370,44 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "growth · tiffin"
+        ]
+      }
+    },
+    "/api/v1/food/tiffin/subscriptions/{id}/calendar": {
+      "get": {
+        "operationId": "CustomerTiffin_calendar",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "month",
+            "required": true,
+            "schema": {
+              "example": "2026-11",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "?month=YYYY-MM — each day: off, before_start, pending, upcoming, skipped, paused, ordered, delivered, missed or none, with its dishes, cut-off, canSkip/canUnskip and the order code.",
         "tags": [
           "growth · tiffin"
         ]
@@ -25406,6 +25513,35 @@
           }
         ],
         "summary": "{ proofUrl (a payment_proof upload), ref? } — the vendor confirms or rejects.",
+        "tags": [
+          "growth · tiffin"
+        ]
+      }
+    },
+    "/api/v1/food/tiffin/subscriptions/{id}/resume": {
+      "post": {
+        "operationId": "CustomerTiffin_resume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "paused → active now: the paused days whose cut-off is still open are back on.",
         "tags": [
           "growth · tiffin"
         ]
@@ -25579,6 +25715,54 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "growth · catering"
+        ]
+      }
+    },
+    "/api/v1/food/vendor/catering/settings": {
+      "get": {
+        "operationId": "VendorCatering_settings",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ open, minGuests, leadDays } — whether you take requests, the smallest party, the days of notice.",
+        "tags": [
+          "growth · catering"
+        ]
+      },
+      "patch": {
+        "operationId": "VendorCatering_updateSettings",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CateringSettingsDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ open?, minGuests? (1–5000), leadDays? (1–60) } — what is sent changes.",
         "tags": [
           "growth · catering"
         ]
@@ -30995,6 +31179,35 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "growth · tiffin"
+        ]
+      }
+    },
+    "/api/v1/food/vendor/tiffin/subscriptions/{id}/resume": {
+      "post": {
+        "operationId": "VendorTiffin_resume",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "paused → active now: the paused days whose cut-off is still open are back on.",
         "tags": [
           "growth · tiffin"
         ]

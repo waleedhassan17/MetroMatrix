@@ -603,16 +603,19 @@ period, a catering advance and the balance are paid straight to the vendor.
 
 | Who | Route | |
 |---|---|---|
-| Customer | `GET /food/vendors/:idOrSlug/tiffin-plans` | Active plans with `seatsLeft` and `full`. |
+| Customer | `GET /food/vendors/:idOrSlug/tiffin-plans` | Active plans with `seatsLeft` and `full`; each rotation day names its `dishes: [{ itemId, name }]`. |
+| Public | `GET /food/tiffin/plans/:id` | One active plan (from a home rail or a link) with its `vendor: { id, name, slug, logoUrl }`; `404` when it or its kitchen is hidden. |
 | Customer | `POST /food/tiffin/subscribe` + `Idempotency-Key` | `{ planId, startsOn, paymentMethod: cash_weekly\|transfer_per_period, fulfilment: delivery\|pickup, addressId? }` → `requested`. `409 TIFFIN_FULL` when no seat is left. |
-| Customer | `GET /food/tiffin/subscriptions` | An array. |
+| Customer | `GET /food/tiffin/subscriptions` | An array. Each carries `plan` (name, meal, days, period, price, `mealValue`, delivery mode and window, cut-off hour), `vendor` (with its phone), `address`, `nextMeal`, `nextCutoffAt`, `nextDishes` and `can: { pause, resume, cancel, sendProof }`. |
+| Customer | `GET …/:id/calendar?month=YYYY-MM` | Every day of the month: `state` (`off` not a served day, `before_start`, `pending`, `upcoming`, `skipped`, `paused` a skip inside the pause, `ordered`, `delivered`, `missed`, `none`), `dishes`, `cutoffAt`, `canSkip`, `canUnskip` and the day's `orderCode`. |
 | Customer | `POST …/:id/skip` · `…/unskip` `{ date }` | Before the date's cut-off only, else `409 TIFFIN_SKIP_CUTOFF_PASSED` (`details.date`). |
 | Customer | `POST …/:id/pause` `{ until }` | Every served day up to `until` whose cut-off is still open becomes a skip; days already closed are cooked as planned. |
+| Customer | `POST …/:id/resume` | `paused → active` now: every paused day whose cut-off is still open is back on (`409 INVALID_TRANSITION` unless paused). |
 | Customer | `POST …/:id/cancel` | |
 | Customer | `POST …/:id/payment-proof` `{ proofUrl, ref? }` | A `payment_proof` upload → `proof_submitted`. |
 | Vendor | `GET /food/vendor/tiffin/subscriptions?status&planId` | An array (plans and subscriptions are bounded by capacity). |
 | Vendor | `POST …/:id/approve` | `requested → active` while a seat is free (else `409 TIFFIN_FULL`). |
-| Vendor | `POST …/:id/decline` · `…/end` `{ reason }` · `…/pause` `{ until }` | |
+| Vendor | `POST …/:id/decline` · `…/end` `{ reason }` · `…/pause` `{ until }` · `…/resume` | Resume as the customer's. |
 | Vendor | `POST …/:id/payment/confirm` · `…/payment/reject` `{ reason }` | The period is `paid`, or back to `due`. |
 | Vendor | `GET /food/vendor/tiffin/tomorrow?date` | Meals per plan, skips, what to cook, `cutoffAt`. |
 
@@ -639,10 +642,12 @@ and resumes pauses that have ended.
 |---|---|---|
 | Customer | `POST /food/catering` | `{ vendorId, eventDate, eventTime, guests, eventType: dawat\|wedding\|office\|birthday\|milad\|other, requestedItems: [{ menuItemId?, name, qty? }], budget?, fulfilment: delivery\|pickup\|on_site, addressId?, notes? }` → a `CT-XXXXXX` code. |
 | Customer | `GET /food/catering` (an array) · `GET /:id` | |
+| Customer | `GET /food/catering/vendors/:idOrSlug` | A kitchen's catering page: `open`, `minGuests`, `leadDays`, `earliestDate`, `fulfilments` (delivery and pickup as the kitchen offers them, and `on_site`) and its `menu: [{ itemId, name, price, photoUrl }]`. |
 | Customer | `POST /:id/accept` `{ version }` | Only the **newest** version and only before `validUntil`. An older one is `409 INVALID_TRANSITION` with `details: { version, latestVersion }`; an expired one `409 CATERING_QUOTE_EXPIRED`. With `advancePct: 0` it is `confirmed` straight away. |
 | Customer | `POST /:id/advance-proof` `{ proofUrl, ref? }` | A `payment_proof` upload: `accepted → advance_proof`. |
 | Customer | `POST /:id/cancel` `{ reason }` | Until confirmed. |
 | Vendor | `GET /food/vendor/catering?status` · `GET /:id` | The list is an array (by event date, at most 200), each with `customer: { name, phone }`. |
+| Vendor | `GET/PATCH /food/vendor/catering/settings` | `{ open, minGuests (1–5000), leadDays (1–60) }`, by default open, 1 guest, a day's notice. A request from a closed kitchen is `409 CATERING_CLOSED`; fewer guests, or a date sooner than `leadDays`, is `400` on `guests` / `eventDate`. |
 | Vendor | `POST /:id/quote` | `{ lines: [{ menuItemId?, name, qty, unitPrice }], deliveryFee?, advancePct (0–100), validUntil? (3 days), notes? }` — a new version every time, editable until accepted. `total = Σ lines + deliveryFee`; `advance = round(total × advancePct / 100)`. |
 | Vendor | `POST /:id/decline` `{ reason }` | |
 | Vendor | `POST /:id/advance/confirm` · `/advance/reject` `{ reason }` | The advance reached your account → `confirmed`, or back to `accepted`. |
@@ -841,6 +846,7 @@ initial bearing).
 | `TIFFIN_FULL` | 409 | No seat on the plan (subscribe or approve). |
 | `TIFFIN_SKIP_CUTOFF_PASSED` | 409 | Skip or unskip after the date's cut-off. `details.date`. |
 | `CATERING_QUOTE_EXPIRED` | 409 | Accepting a quote past `validUntil`. |
+| `CATERING_CLOSED` | 409 | A catering request to a kitchen that has catering switched off. |
 | `INVALID_TRANSITION` (reused) | 409 | An older quote version (`details.latestVersion`), a hygiene verify that isn't pending, a finished experiment. |
 | `SLOT_INVALID` (reused) | 400 | An iftar window taken only as pre-orders (`details.iftarPreorderOnly`). |
 | `CONFLICT` (reused) | 409 | A second running experiment for a dish. |

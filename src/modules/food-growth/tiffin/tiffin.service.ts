@@ -27,6 +27,7 @@ import { NotificationsService } from '../../notifications/notifications.service'
 import { MediaService } from '../../media/media.service';
 import { ForecastService } from '../../kitchen/forecast/forecast.service';
 import { kitchenNotFound } from '../../kitchen/common/errors';
+import { VISIBLE_VENDOR_SQL } from '../../food/discovery/discovery.service';
 import { TiffinPlan } from './entities/tiffin.entity';
 import {
   SubscribeDto,
@@ -495,10 +496,76 @@ export class TiffinService implements OnModuleInit {
         WHERE p.is_active AND (fb.slug = $1 OR fb.id::text = $1) ORDER BY p.price_per_period`,
       [idOrSlug],
     );
+    const names = await this.dishNames(rows);
     return rows.map((r: any) => {
       const v = this.planView(r);
-      return { ...v, full: v.seatsLeft === 0 };
+      return {
+        ...v,
+        rotation: this.namedRotation(r.rotation, names),
+        full: v.seatsLeft === 0,
+      };
     });
+  }
+
+  /** One active plan's page (from a home rail or a link), with its kitchen; 404 when either is hidden. */
+  async publicPlan(id: string) {
+    const [r] = await this.dataSource.query(
+      `SELECT p.*, (SELECT count(*)::int FROM tiffin_subscriptions s WHERE s.plan_id = p.id AND s.status IN ${SEATED}) AS seated,
+              fb.name AS vendor_name, fb.slug, fb.logo_url
+         FROM tiffin_plans p JOIN food_brands fb ON fb.id = p.brand_id JOIN branches br ON br.id = p.branch_id
+         JOIN businesses b ON b.id = fb.business_id
+        WHERE p.id = $1 AND p.is_active AND ${VISIBLE_VENDOR_SQL}`,
+      [id],
+    );
+    if (!r) throw kitchenNotFound('Tiffin plan');
+    const v = this.planView(r);
+    return {
+      ...v,
+      rotation: this.namedRotation(r.rotation, await this.dishNames([r])),
+      full: v.seatsLeft === 0,
+      vendor: {
+        id: r.brand_id,
+        name: r.vendor_name,
+        slug: r.slug,
+        logoUrl: r.logo_url,
+      },
+    };
+  }
+
+  /** The names of every dish the plans' rotations list. */
+  private async dishNames(plans: Array<{ rotation: unknown }>) {
+    const ids = [
+      ...new Set(
+        plans.flatMap((p) =>
+          ((p.rotation ?? []) as Array<{ menuItemIds?: string[] }>).flatMap(
+            (r) => r.menuItemIds ?? [],
+          ),
+        ),
+      ),
+    ];
+    const rows: Array<{ id: string; name: string }> = ids.length
+      ? await this.dataSource.query(
+          `SELECT id, name FROM menu_items WHERE id = ANY($1::uuid[])`,
+          [ids],
+        )
+      : [];
+    return new Map(rows.map((r) => [r.id, r.name]));
+  }
+
+  private namedRotation(rotation: unknown, names: Map<string, string>) {
+    return (
+      (rotation ?? []) as Array<{
+        weekday: number;
+        menuItemIds: string[];
+        note?: string;
+      }>
+    ).map((r) => ({
+      ...r,
+      dishes: r.menuItemIds.map((id) => ({
+        itemId: id,
+        name: names.get(id) ?? null,
+      })),
+    }));
   }
 
   async subscribe(
@@ -595,27 +662,232 @@ export class TiffinService implements OnModuleInit {
 
   async mine(user: AuthenticatedUser) {
     const rows = await this.dataSource.query(
-      `SELECT s.*, p.name AS plan_name, p.skip_cutoff_hour, p.days_mask, p.meal, fb.name AS vendor_name, fb.slug, br.timezone
+      `SELECT s.*, p.name AS plan_name, p.skip_cutoff_hour, p.days_mask, p.meal, p.period, p.price_per_period,
+              p.delivery_mode, p.delivery_window_from, p.delivery_window_to, p.rotation, p.brand_id,
+              fb.name AS vendor_name, fb.slug, fb.logo_url, br.phone AS vendor_phone, br.timezone
          FROM tiffin_subscriptions s JOIN tiffin_plans p ON p.id = s.plan_id JOIN food_brands fb ON fb.id = p.brand_id
          JOIN branches br ON br.id = p.branch_id
         WHERE s.user_id = $1 ORDER BY s.created_at DESC LIMIT 50`,
       [user.id],
     );
+    const names = await this.dishNames(rows);
     return rows.map((r: any) => {
       const next = this.nextServed(
         r.days_mask,
         todayIn(r.timezone),
         r.starts_on,
       );
+      const rot = (
+        r.rotation as Array<{ weekday: number; menuItemIds: string[] }>
+      ).find((x) => next !== null && x.weekday === weekdayOf(next));
+      const a = r.address_snapshot;
+      const live = ['active', 'paused'].includes(r.status);
       return {
         ...this.subView(r),
-        vendor: { name: r.vendor_name, slug: r.slug },
+        vendor: {
+          id: r.brand_id,
+          name: r.vendor_name,
+          slug: r.slug,
+          logoUrl: r.logo_url,
+          phone: r.vendor_phone,
+        },
+        plan: {
+          id: r.plan_id,
+          name: r.plan_name,
+          meal: r.meal,
+          days: daysOf(r.days_mask),
+          period: r.period,
+          pricePerPeriod: r.price_per_period,
+          mealValue: mealValue({
+            pricePerPeriod: r.price_per_period,
+            period: r.period,
+            daysMask: r.days_mask,
+          }),
+          deliveryMode: r.delivery_mode,
+          deliveryWindow: {
+            from: String(r.delivery_window_from).slice(0, 5),
+            to: String(r.delivery_window_to).slice(0, 5),
+          },
+          skipCutoffHour: r.skip_cutoff_hour,
+        },
+        address: a
+          ? {
+              line1: a.line1,
+              area: a.area,
+              city: a.city,
+              lat: a.lat,
+              lng: a.lng,
+            }
+          : null,
         nextMeal: next,
         nextCutoffAt: next
           ? cutoffFor(next, r.skip_cutoff_hour, r.timezone)
           : null,
+        nextDishes: (rot?.menuItemIds ?? []).map((id) => ({
+          itemId: id,
+          name: names.get(id) ?? null,
+        })),
+        can: {
+          pause: r.status === 'active',
+          resume: r.status === 'paused',
+          cancel: ['requested', 'active', 'paused'].includes(r.status),
+          sendProof:
+            live &&
+            r.payment_method === 'transfer_per_period' &&
+            r.period_payment_status === 'due',
+        },
       };
     });
+  }
+
+  /**
+   * A month of one subscription, day by day: off (not a served day), before_start, pending
+   * (not approved yet), upcoming, skipped, paused (a skip inside the pause), ordered (the
+   * day's order is written), delivered, missed, or none (cancelled, ended, or a past day with
+   * no order). Each served day carries its dishes, its cut-off and whether it can be skipped.
+   */
+  async calendar(
+    user: AuthenticatedUser,
+    id: string,
+    month: string,
+    now = new Date(),
+  ) {
+    const [s] = await this.dataSource.query(
+      `SELECT s.*, p.days_mask, p.rotation, p.skip_cutoff_hour, br.timezone FROM tiffin_subscriptions s
+         JOIN tiffin_plans p ON p.id = s.plan_id JOIN branches br ON br.id = p.branch_id
+        WHERE s.id = $1 AND s.user_id = $2`,
+      [id, user.id],
+    );
+    if (!s) throw kitchenNotFound('Subscription');
+    const first = `${month}-01`;
+    const last = DateTime.fromISO(first, { zone: 'UTC' })
+      .endOf('month')
+      .toISODate()!;
+    const deliveries = new Map<string, { status: string; code: string | null }>(
+      (
+        await this.dataSource.query(
+          `SELECT to_char(d.date, 'YYYY-MM-DD') AS date, d.status, o.code FROM tiffin_deliveries d
+             LEFT JOIN food_orders o ON o.id = d.food_order_id
+            WHERE d.subscription_id = $1 AND d.date BETWEEN $2::date AND $3::date`,
+          [id, first, last],
+        )
+      ).map((d: { date: string; status: string; code: string | null }) => [
+        d.date,
+        d,
+      ]),
+    );
+    const names = await this.dishNames([s]);
+    const skips = new Set<string>(
+      (s.skips ?? []).map((d: string | Date) => pgDate(d)!),
+    );
+    const today = todayIn(s.timezone, now);
+    const start = pgDate(s.starts_on)!;
+    const pausedUntil = pgDate(s.paused_until);
+    const live = ['active', 'paused'].includes(s.status);
+    const days = [];
+    for (let d = first; d <= last; d = addDays(d, 1)) {
+      if (!serves(s.days_mask, d)) {
+        days.push({
+          date: d,
+          state: 'off',
+          dishes: [],
+          cutoffAt: null,
+          canSkip: false,
+          canUnskip: false,
+          orderCode: null,
+        });
+        continue;
+      }
+      const del = deliveries.get(d);
+      const cutoffAt = cutoffFor(d, s.skip_cutoff_hour, s.timezone);
+      const open = now < cutoffAt;
+      const skipped = skips.has(d);
+      const state =
+        d < start
+          ? 'before_start'
+          : del?.status === 'delivered'
+            ? 'delivered'
+            : del?.status === 'missed'
+              ? 'missed'
+              : del && ['scheduled', 'prepared'].includes(del.status)
+                ? 'ordered'
+                : skipped
+                  ? s.status === 'paused' &&
+                    pausedUntil &&
+                    d >= today &&
+                    d <= pausedUntil
+                    ? 'paused'
+                    : 'skipped'
+                  : s.status === 'requested'
+                    ? 'pending'
+                    : !live || d < today
+                      ? 'none'
+                      : 'upcoming';
+      const rot = (
+        s.rotation as Array<{ weekday: number; menuItemIds: string[] }>
+      ).find((r) => r.weekday === weekdayOf(d));
+      days.push({
+        date: d,
+        state,
+        dishes: (rot?.menuItemIds ?? []).map((i) => ({
+          itemId: i,
+          name: names.get(i) ?? null,
+        })),
+        cutoffAt,
+        canSkip: live && open && d >= start && !skipped && !del,
+        canUnskip: live && open && skipped && !del,
+        orderCode: del?.code ?? null,
+      });
+    }
+    return { month, days };
+  }
+
+  /** Back to eating early: every paused day whose cut-off is still open comes off the skip list. */
+  async resume(user: AuthenticatedUser, id: string, now = new Date()) {
+    await this.dataSource.transaction(async (m) => {
+      const s = await this.mySub(m, user, id);
+      await this.resumeDays(m, s, now);
+    });
+    return (await this.mine(user)).find((x: { id: string }) => x.id === id);
+  }
+
+  async vendorResume(v: VendorRef, id: string, now = new Date()) {
+    await this.dataSource.transaction(async (m) => {
+      const [s] = await m.query(
+        `SELECT s.*, p.skip_cutoff_hour, p.days_mask, br.timezone FROM tiffin_subscriptions s
+           JOIN tiffin_plans p ON p.id = s.plan_id JOIN branches br ON br.id = p.branch_id
+          WHERE s.id = $1 AND p.brand_id = $2 FOR UPDATE OF s`,
+        [id, v.brandId],
+      );
+      if (!s) throw kitchenNotFound('Subscription');
+      await this.resumeDays(m, s, now);
+    });
+    return this.subFor(v, id);
+  }
+
+  private async resumeDays(m: EntityManager, s: any, now: Date) {
+    if (s.status !== 'paused')
+      throw conflict(
+        ErrorCode.INVALID_TRANSITION,
+        `This subscription is ${s.status}.`,
+      );
+    const today = todayIn(s.timezone, now);
+    const until = pgDate(s.paused_until);
+    const skips = (s.skips ?? [])
+      .map((d: string | Date) => pgDate(d)!)
+      .filter(
+        (d: string) =>
+          !(
+            until &&
+            d >= today &&
+            d <= until &&
+            now < cutoffFor(d, s.skip_cutoff_hour, s.timezone)
+          ),
+      );
+    await m.query(
+      `UPDATE tiffin_subscriptions SET status = 'active', paused_until = NULL, skips = $2::date[], updated_at = now() WHERE id = $1`,
+      [s.id, skips],
+    );
   }
 
   async skip(

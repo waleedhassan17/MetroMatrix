@@ -149,6 +149,12 @@ export class TiffinSubscriptionsQueryDto {
   @IsOptional() @IsUUID() planId?: string;
 }
 
+export class TiffinCalendarQueryDto {
+  @ApiProperty({ example: '2026-11' })
+  @Matches(/^\d{4}-(0[1-9]|1[0-2])$/, { message: 'month: YYYY-MM' })
+  month!: string;
+}
+
 export class TomorrowQueryDto {
   @ApiPropertyOptional({ description: 'Default tomorrow.' })
   @IsOptional()

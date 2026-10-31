@@ -1733,4 +1733,74 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
       ).payment.status,
     ).toBe('paid');
   });
+
+  it('QA #43 catering outside the kitchen’s settings → refused (too few guests, too soon, catering off)', async () => {
+    const v = await kitchen('QA Catering Settings');
+    await expectStatus(
+      await v.api.patch('/food/vendor/catering/settings', {
+        minGuests: 25,
+        leadDays: 2,
+      }),
+      200,
+    );
+    const c = await foodCustomer(t, ATD);
+    expect(
+      await expectStatus(
+        await c.api.get(`/food/catering/vendors/${v.brandId}`),
+        200,
+      ),
+    ).toMatchObject({
+      open: true,
+      minGuests: 25,
+      leadDays: 2,
+      earliestDate: pkDay(2),
+    });
+    const ask = (extra: Record<string, unknown>) =>
+      c.api.post('/food/catering', {
+        vendorId: v.brandId,
+        eventDate: pkDay(6),
+        eventTime: '20:00',
+        guests: 40,
+        eventType: 'dawat',
+        requestedItems: [{ name: 'Chicken Karahi', qty: 10 }],
+        fulfilment: 'pickup',
+        ...extra,
+      });
+    expect((await ask({ guests: 10 })).status).toBe(400);
+    expect((await ask({ eventDate: pkDay(1) })).status).toBe(400);
+    await expectStatus(
+      await v.api.patch('/food/vendor/catering/settings', { open: false }),
+      200,
+    );
+    const off = await ask({});
+    expect([off.status, off.body.error.code]).toEqual([409, 'CATERING_CLOSED']);
+  });
+
+  it('QA #44 a tiffin month → each day’s state; resuming a pause brings the open days back', async () => {
+    const v = await kitchen('QA Tiffin Month');
+    const { c, s } = await tiffinSubscriber(v);
+    const target = pkDay(2);
+    const day = async () =>
+      (
+        await expectStatus(
+          await c.api.get(
+            `/food/tiffin/subscriptions/${s.id}/calendar?month=${target.slice(0, 7)}`,
+          ),
+          200,
+        )
+      ).days.find((d: { date: string }) => d.date === target);
+    expect((await day()).state).toBe('upcoming');
+    await expectStatus(
+      await c.api.post(`/food/tiffin/subscriptions/${s.id}/pause`, {
+        until: pkDay(3),
+      }),
+      200,
+    );
+    expect((await day()).state).toBe('paused');
+    await expectStatus(
+      await c.api.post(`/food/tiffin/subscriptions/${s.id}/resume`),
+      200,
+    );
+    expect(await day()).toMatchObject({ state: 'upcoming', canSkip: true });
+  });
 });

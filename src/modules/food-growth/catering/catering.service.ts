@@ -9,6 +9,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { ErrorCode } from '../../../common/errors/codes';
 import { newCode } from '../../../common/utils/codes';
 import {
+  addDays,
   parseTime,
   todayIn,
   wallTimeToInstant,
@@ -31,6 +32,7 @@ import {
   AdvanceProofDto,
   CateringQueryDto,
   CateringRequestDto,
+  CateringSettingsDto,
   QuoteDto,
 } from './dto/catering.dto';
 
@@ -94,6 +96,66 @@ export class CateringService implements OnModuleInit {
     );
   }
 
+  // ── settings ──
+  async settings(v: VendorRef) {
+    const [b] = await this.dataSource.query(
+      `SELECT catering_open, catering_min_guests, catering_lead_days FROM food_brands WHERE id = $1`,
+      [v.brandId],
+    );
+    return {
+      open: b.catering_open as boolean,
+      minGuests: b.catering_min_guests as number,
+      leadDays: b.catering_lead_days as number,
+    };
+  }
+
+  async updateSettings(v: VendorRef, dto: CateringSettingsDto) {
+    await this.dataSource.query(
+      `UPDATE food_brands SET catering_open = coalesce($2, catering_open),
+              catering_min_guests = coalesce($3, catering_min_guests),
+              catering_lead_days = coalesce($4, catering_lead_days), updated_at = now() WHERE id = $1`,
+      [
+        v.brandId,
+        dto.open ?? null,
+        dto.minGuests ?? null,
+        dto.leadDays ?? null,
+      ],
+    );
+    return this.settings(v);
+  }
+
+  /** What a customer needs before asking: open or not, the party size and notice, how it can be served, the menu. */
+  async vendorInfo(idOrSlug: string, now = new Date()) {
+    const [v] = await this.dataSource.query(
+      `SELECT fb.id, fb.name, fb.slug, fb.catering_open, fb.catering_min_guests, fb.catering_lead_days,
+              br.timezone, br.accepts_delivery, br.accepts_pickup
+         FROM food_brands fb JOIN branches br ON br.brand_id = fb.id JOIN businesses b ON b.id = fb.business_id
+        WHERE (fb.slug = $1 OR fb.id::text = $1) AND ${VISIBLE_VENDOR_SQL}`,
+      [idOrSlug],
+    );
+    if (!v) throw kitchenNotFound('Vendor');
+    const menu = await this.dataSource.query(
+      `SELECT id AS "itemId", name, base_price AS price, photo_url AS "photoUrl" FROM menu_items
+        WHERE brand_id = $1 AND is_active ORDER BY name LIMIT 200`,
+      [v.id],
+    );
+    return {
+      vendorId: v.id,
+      name: v.name,
+      slug: v.slug,
+      open: v.catering_open,
+      minGuests: v.catering_min_guests,
+      leadDays: v.catering_lead_days,
+      earliestDate: addDays(todayIn(v.timezone, now), v.catering_lead_days),
+      fulfilments: [
+        ...(v.accepts_delivery ? ['delivery'] : []),
+        ...(v.accepts_pickup ? ['pickup'] : []),
+        'on_site',
+      ],
+      menu,
+    };
+  }
+
   // ── customers ──
   async request(
     user: AuthenticatedUser,
@@ -102,14 +164,31 @@ export class CateringService implements OnModuleInit {
   ) {
     const out = await this.dataSource.transaction(async (m) => {
       const [v] = await m.query(
-        `SELECT fb.id, fb.name, br.timezone, b.owner_user_id FROM food_brands fb
-           JOIN branches br ON br.brand_id = fb.id JOIN businesses b ON b.id = fb.business_id
+        `SELECT fb.id, fb.name, fb.catering_open, fb.catering_min_guests, fb.catering_lead_days, br.timezone, b.owner_user_id
+           FROM food_brands fb JOIN branches br ON br.brand_id = fb.id JOIN businesses b ON b.id = fb.business_id
           WHERE fb.id = $1 AND ${VISIBLE_VENDOR_SQL}`,
         [dto.vendorId],
       );
       if (!v) throw kitchenNotFound('Vendor');
-      if (dto.eventDate <= todayIn(v.timezone, now))
-        throw invalid('eventDate', 'Book at least a day ahead.');
+      if (!v.catering_open)
+        throw new ConflictException({
+          code: ErrorCode.CATERING_CLOSED,
+          message: `${v.name} isn’t taking catering requests right now.`,
+        });
+      if (dto.guests < v.catering_min_guests)
+        throw invalid(
+          'guests',
+          `${v.name} caters for ${v.catering_min_guests} guests or more.`,
+        );
+      if (
+        dto.eventDate < addDays(todayIn(v.timezone, now), v.catering_lead_days)
+      )
+        throw invalid(
+          'eventDate',
+          v.catering_lead_days === 1
+            ? 'Book at least a day ahead.'
+            : `Book at least ${v.catering_lead_days} days ahead.`,
+        );
       const menuIds = dto.requestedItems
         .map((i) => i.menuItemId)
         .filter(Boolean) as string[];

@@ -463,4 +463,139 @@ describe('Tiffin: plans, subscriptions, skips, daily orders (Chunk 5 P5)', () =>
       ).meals,
     ).toBe(1);
   });
+
+  it('a plan’s own page; the list a subscription opens from; its month; resuming a pause', async () => {
+    const v = await kitchen('Tiffin Page Kitchen');
+    const p = await plan(v);
+    const anon = new ApiClient(t.http);
+    const page = await expectStatus(
+      await anon.get(`/food/tiffin/plans/${p.id}`),
+      200,
+    );
+    expect(page).toMatchObject({
+      id: p.id,
+      name: 'Office lunch',
+      full: false,
+      vendor: { id: v.brandId, name: 'Tiffin Page Kitchen' },
+    });
+    expect(page.rotation[0].dishes[0]).toEqual({
+      itemId: expect.any(String),
+      name: expect.any(String),
+    });
+
+    const b = await active(v, p.id);
+    const [mine] = await expectStatus(
+      await b.c.api.get('/food/tiffin/subscriptions'),
+      200,
+    );
+    expect(mine).toMatchObject({
+      id: b.s.id,
+      status: 'active',
+      plan: {
+        id: p.id,
+        name: 'Office lunch',
+        meal: 'lunch',
+        days: ALL,
+        period: 'weekly',
+        pricePerPeriod: 2100,
+        deliveryMode: 'both',
+        deliveryWindow: { from: '12:30', to: '13:30' },
+      },
+      vendor: { id: v.brandId, name: 'Tiffin Page Kitchen' },
+      address: { city: expect.any(String) },
+      can: { pause: true, resume: false, cancel: true, sendProof: false },
+    });
+    expect(mine.nextDishes[0]).toEqual({
+      itemId: expect.any(String),
+      name: expect.any(String),
+    });
+
+    // A month, day by day: the day after tomorrow is open to skip.
+    const target = day(2);
+    const month = target.slice(0, 7);
+    const calendar = async () =>
+      (
+        await expectStatus(
+          await b.c.api.get(
+            `/food/tiffin/subscriptions/${b.s.id}/calendar?month=${month}`,
+          ),
+          200,
+        )
+      ).days.find((d: { date: string }) => d.date === target);
+    expect(await calendar()).toMatchObject({
+      state: 'upcoming',
+      canSkip: true,
+      canUnskip: false,
+      orderCode: null,
+      dishes: [{ itemId: expect.any(String), name: expect.any(String) }],
+    });
+
+    await expectStatus(
+      await b.c.api.post(`/food/tiffin/subscriptions/${b.s.id}/pause`, {
+        until: day(4),
+      }),
+      200,
+    );
+    expect(await calendar()).toMatchObject({
+      state: 'paused',
+      canUnskip: true,
+    });
+    const resumed = await expectStatus(
+      await b.c.api.post(`/food/tiffin/subscriptions/${b.s.id}/resume`),
+      200,
+    );
+    expect(resumed).toMatchObject({
+      status: 'active',
+      pausedUntil: null,
+      can: { resume: false },
+    });
+    expect(resumed.skips).not.toContain(target);
+    expect(await calendar()).toMatchObject({
+      state: 'upcoming',
+      canSkip: true,
+    });
+    const again = await b.c.api.post(
+      `/food/tiffin/subscriptions/${b.s.id}/resume`,
+    );
+    expect(again.body.error.code).toBe('INVALID_TRANSITION');
+
+    // The kitchen pauses and resumes too.
+    await expectStatus(
+      await v.api.post(`/food/vendor/tiffin/subscriptions/${b.s.id}/pause`, {
+        until: day(3),
+      }),
+      200,
+    );
+    expect(
+      (
+        await expectStatus(
+          await v.api.post(
+            `/food/vendor/tiffin/subscriptions/${b.s.id}/resume`,
+          ),
+          200,
+        )
+      ).status,
+    ).toBe('active');
+    // Someone else's subscription has no month for you; a month must look like one.
+    const stranger = await foodCustomer(t, RWP);
+    expect(
+      (
+        await stranger.api.get(
+          `/food/tiffin/subscriptions/${b.s.id}/calendar?month=${month}`,
+        )
+      ).status,
+    ).toBe(404);
+    expect(
+      (
+        await b.c.api.get(
+          `/food/tiffin/subscriptions/${b.s.id}/calendar?month=2026-13`,
+        )
+      ).status,
+    ).toBe(400);
+    // A plan taken off the shelf has no page.
+    await sql(`UPDATE tiffin_plans SET is_active = false WHERE id = $1`, [
+      p.id,
+    ]);
+    expect((await anon.get(`/food/tiffin/plans/${p.id}`)).status).toBe(404);
+  });
 });

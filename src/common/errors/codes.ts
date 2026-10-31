@@ -158,6 +158,8 @@ export const ErrorCode = {
   TIFFIN_FULL: 'TIFFIN_FULL',
   TIFFIN_SKIP_CUTOFF_PASSED: 'TIFFIN_SKIP_CUTOFF_PASSED',
   CATERING_QUOTE_EXPIRED: 'CATERING_QUOTE_EXPIRED',
+  /** The kitchen has catering switched off for now. */
+  CATERING_CLOSED: 'CATERING_CLOSED',
   NUTRITION_UNAVAILABLE: 'NUTRITION_UNAVAILABLE',
   /** Delivery needs a saved address with a map pin (lat/lng). */
   ADDRESS_LOCATION_REQUIRED: 'ADDRESS_LOCATION_REQUIRED',

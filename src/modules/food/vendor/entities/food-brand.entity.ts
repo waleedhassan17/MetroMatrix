@@ -20,6 +20,10 @@ const decimal = {
 @Index('IDX_food_brands_search', { synchronize: false })
 @Index('IDX_food_brands_name_trgm', { synchronize: false })
 @Check('CHK_food_brands_price_level', '"price_level" BETWEEN 1 AND 3')
+@Check(
+  'CHK_food_brands_catering',
+  '"catering_min_guests" BETWEEN 1 AND 5000 AND "catering_lead_days" BETWEEN 1 AND 60',
+)
 export class FoodBrand extends BaseEntity {
   @Column({ type: 'uuid', name: 'business_id' })
   businessId!: string;
@@ -74,6 +78,16 @@ export class FoodBrand extends BaseEntity {
 
   @Column({ type: 'boolean', name: 'is_home_kitchen', default: false })
   isHomeKitchen!: boolean;
+
+  /** Catering (5B): whether the kitchen takes requests, the smallest party and the notice it needs. */
+  @Column({ type: 'boolean', name: 'catering_open', default: true })
+  cateringOpen!: boolean;
+
+  @Column({ type: 'smallint', name: 'catering_min_guests', default: 1 })
+  cateringMinGuests!: number;
+
+  @Column({ type: 'smallint', name: 'catering_lead_days', default: 1 })
+  cateringLeadDays!: number;
 
   @Column({
     type: 'enum',

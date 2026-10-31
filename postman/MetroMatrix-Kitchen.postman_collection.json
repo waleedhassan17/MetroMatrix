@@ -215,6 +215,10 @@
     {
       "key": "cardKey",
       "value": ""
+    },
+    {
+      "key": "openMonth",
+      "value": ""
     }
   ],
   "item": [
@@ -2813,7 +2817,8 @@
                   "pm.collectionVariables.set('lateDate', iso(late));",
                   "pm.collectionVariables.set('openDate', iso(open));",
                   "pm.collectionVariables.set('eventDate', iso(new Date(today.getTime() + 14 * day)));",
-                  "pm.collectionVariables.set('pestDate', iso(new Date(today.getTime() - (1 + (Date.now() % 300)) * day)));"
+                  "pm.collectionVariables.set('pestDate', iso(new Date(today.getTime() - (1 + (Date.now() % 300)) * day)));",
+                  "pm.collectionVariables.set('openMonth', pm.collectionVariables.get('openDate').slice(0, 7));"
                 ]
               }
             },
@@ -2863,6 +2868,31 @@
                   "const p = d.find((x) => x.name === 'Office lunch — weekdays');",
                   "pm.test('the seeded weekday plan, a meal value and free seats', () => { pm.expect(p.days).to.eql([1, 2, 3, 4, 5]); pm.expect(p.mealValue).to.eql(450); pm.expect(p.seatsLeft).to.be.above(0); });",
                   "pm.collectionVariables.set('planId', p.id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Guest: one plan’s page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/tiffin/plans/{{planId}}",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Guest: one plan’s page → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('the plan, its kitchen, the dishes by name', () => { pm.expect(d.id).to.eql(pm.collectionVariables.get('planId')); pm.expect(d.vendor.id).to.eql(pm.collectionVariables.get('rukhsanaBrandId')); pm.expect(d.rotation[0].dishes[0].name).to.be.a('string'); });"
                 ]
               }
             }
@@ -3043,6 +3073,72 @@
           ]
         },
         {
+          "name": "Customer: my subscriptions (the plan, the kitchen, what I can do)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/tiffin/subscriptions",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: my subscriptions (the plan, the kitchen, what I can do) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "const s = d.find((x) => x.id === pm.collectionVariables.get('subscriptionId'));",
+                  "pm.test('the plan’s terms and what can be done now', () => { pm.expect(s.plan.name).to.be.a('string'); pm.expect(s.can).to.include.keys('pause', 'resume', 'cancel', 'sendProof'); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: the month, day by day",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/tiffin/subscriptions/{{subscriptionId}}/calendar?month={{openMonth}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: the month, day by day → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "const open = d.days.find((x) => x.date === pm.collectionVariables.get('openDate'));",
+                  "pm.test('the skipped day', () => pm.expect(open.state).to.eql('skipped'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Vendor: tomorrow’s meals",
           "request": {
             "method": "GET",
@@ -3164,6 +3260,70 @@
                   "const d = body.data;",
                   "pm.collectionVariables.set('qandeelToken', d.tokens.accessToken);",
                   "pm.collectionVariables.set('qandeelBrandId', d.business.food.brandId);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Vendor: catering settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/catering/settings",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{qandeelToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Vendor: catering settings → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('open, the smallest party and the notice', () => pm.expect(d).to.have.keys('open', 'minGuests', 'leadDays'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: the kitchen’s catering page",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/catering/vendors/{{qandeelBrandId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: the kitchen’s catering page → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('open, from when, and the menu', () => { pm.expect(d.vendorId).to.eql(pm.collectionVariables.get('qandeelBrandId')); pm.expect(d.earliestDate).to.be.a('string'); pm.expect(d.menu.length).to.be.above(0); });"
                 ]
               }
             }

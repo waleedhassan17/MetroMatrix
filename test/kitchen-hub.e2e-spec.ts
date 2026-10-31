@@ -138,12 +138,27 @@ describe('Kitchen hub: summary, board, card snooze', () => {
       learning: expect.any(Boolean),
     });
     expect(s.waste).toEqual({ weekCost: 0, mealsRescued: 0 });
-    expect(s.growth).toEqual({
+    // Demand is the vendor's own map: unmet searches in its zone on the newest week (other
+    // suites search in this city too).
+    const map = await expectStatus(
+      await v.api.get('/food/vendor/demand-map'),
+      200,
+    );
+    expect(s.growth.demand).toEqual({
+      week: map.week ?? null,
+      unmetSearches: map.cells
+        .filter((c: { inYourZone: boolean }) => c.inYourZone)
+        .reduce(
+          (n: number, c: { unmetSearches: number }) => n + c.unmetSearches,
+          0,
+        ),
+    });
+    expect({ ...s.growth, demand: null }).toEqual({
       experiments: { running: 0, results: 0 },
       tiffin: { plans: 0, subscribers: 0, requested: 0, mealsTomorrow: 0 },
       catering: { requested: 0, upcoming: 0 },
       storefront: { days: 30, orders: 0 },
-      demand: { week: null, unmetSearches: 0 },
+      demand: null,
       hygiene: null,
       ramadan: { enabled: false, period: expect.any(String) },
     });
