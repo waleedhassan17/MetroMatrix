@@ -598,4 +598,74 @@ describe('QA matrix — Shopping (Chunk 2)', () => {
       events: await events(),
     }).toEqual(once);
   });
+
+  it('QA #25 a store phone shows once the store sets one, on the storefront and its orders; never the business number', async () => {
+    expect(
+      (await anon.get(`/shop/stores/${A.slug}`).expect(200)).body.data.phone,
+    ).toBeNull();
+    await a.api
+      .patch('/shop/partner/store', { phone: '0300 1112233' })
+      .expect(200);
+    expect(
+      (await anon.get(`/shop/stores/${A.slug}`).expect(200)).body.data.phone,
+    ).toBe('+923001112233');
+    const p = await simpleProduct(t, a, 'QA phone', 1000, 5);
+    const cust = await customer(t);
+    const o = await orderFrom(cust, A.id, [[p.variantId, 1]]);
+    expect(o.store.phone).toBe('+923001112233');
+    expect(JSON.stringify(o)).not.toContain('4235761234');
+    await a.api.patch('/shop/partner/store', { phone: null }).expect(200);
+  });
+
+  it("QA #26 the store's private note never reaches the customer", async () => {
+    const p = await simpleProduct(t, a, 'QA note', 1000, 5);
+    const cust = await customer(t);
+    const o = await orderFrom(cust, A.id, [[p.variantId, 1]]);
+    await a.api
+      .patch(`/shop/partner/orders/${o.id}/note`, { note: 'QA secret note' })
+      .expect(200);
+    const mine = await cust.api.get(`/shop/store-orders/${o.id}`).expect(200);
+    const list = await cust.api.get('/shop/orders').expect(200);
+    expect(JSON.stringify([mine.body, list.body])).not.toContain('QA secret');
+    await b.api
+      .patch(`/shop/partner/orders/${o.id}/note`, { note: 'not mine' })
+      .expect(404);
+  });
+
+  it('QA #27 the staff overview counts orders placed today; the staff store list includes paused stores', async () => {
+    const before = (await admin.api.get('/admin/shop/overview').expect(200))
+      .body.data;
+    const p = await simpleProduct(t, a, 'QA overview', 1000, 5);
+    await orderFrom(await customer(t), A.id, [[p.variantId, 1]]);
+    const after = (await admin.api.get('/admin/shop/overview').expect(200)).body
+      .data;
+    expect(after.ordersToday).toBe(before.ordersToday + 1);
+    await c.api
+      .patch('/shop/partner/store/settings', { isPaused: true })
+      .expect(200);
+    const paused = (
+      await admin.api.get('/admin/shop/stores?status=paused').expect(200)
+    ).body.data.items.map((s: any) => s.id);
+    expect(paused).toContain(C.id);
+    await c.api
+      .patch('/shop/partner/store/settings', { isPaused: false })
+      .expect(200);
+  });
+
+  it('QA #28 category order moves one set of siblings, the rest following, with one audit row', async () => {
+    const tree = (await admin.api.get('/admin/shop/categories').expect(200))
+      .body.data;
+    const last = tree[tree.length - 1].id;
+    const res = await admin.api
+      .put('/admin/shop/categories/order', { parentId: null, ids: [last] })
+      .expect(200);
+    expect(res.body.data.map((c: any) => c.id)).toEqual([
+      last,
+      ...tree.map((c: any) => c.id).filter((id: string) => id !== last),
+    ]);
+    const [{ n }] = await sql(
+      `SELECT count(*)::int AS n FROM operational_audit_events WHERE action = 'shop.category.reorder'`,
+    );
+    expect(n).toBe(1);
+  });
 });

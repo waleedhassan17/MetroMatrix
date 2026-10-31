@@ -83,10 +83,13 @@ riders get 403 everywhere, and no admin route lacks a mapping.
 
 | Method | Path |
 |---|---|
+| GET | `/admin/shop/overview` |
 | GET | `/admin/shop/categories` |
 | POST | `/admin/shop/categories` |
+| PUT | `/admin/shop/categories/order` |
 | PATCH | `/admin/shop/categories/:id` |
 | DELETE | `/admin/shop/categories/:id` |
+| GET | `/admin/shop/stores` |
 | POST | `/admin/shop/stores/:id/feature` |
 | POST | `/admin/shop/stores/:id/unfeature` |
 | GET | `/admin/shop/reports` |

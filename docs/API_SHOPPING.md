@@ -68,7 +68,8 @@ neither does).
 ```json
 {
   "stores": [{
-    "store": { "id": "…", "slug": "lahore-loom", "name": "Lahore Loom", "logoUrl": "…" },
+    "store": { "id": "…", "slug": "lahore-loom", "name": "Lahore Loom", "logoUrl": "…",
+               "brandColor": "#7F1D1D", "onBrandColor": "#FFFFFF" },
     "isAvailable": true,
     "warnings": [],
     "items": [{
@@ -102,6 +103,7 @@ neither does).
   "issues": [],
   "stores": [{
     "storeId": "…", "storeSlug": "lahore-loom", "storeName": "Lahore Loom",
+    "storeLogoUrl": "…", "storeBrandColor": "#7F1D1D", "storeOnBrandColor": "#FFFFFF",
     "paymentMethod": "cod", "couponCode": "LOOM10",
     "items": [{ "cartItemId": "…", "variantId": "…", "productId": "…", "productName": "…",
                 "variantLabel": "M", "imageUrl": "…", "unitPrice": 3900, "quantity": 2, "lineTotal": 7800 }],
@@ -141,7 +143,8 @@ means checkout would fail with the first issue.
   "placedAt": "…", "confirmedAt": null, "packedAt": null, "shippedAt": null,
   "deliveredAt": null, "completedAt": null, "cancelledAt": null,
   "events": [{ "kind": "status", "from": null, "to": "placed", "actorRole": "customer", "note": null, "at": "…" }],
-  "store": { "id": "…", "slug": "transfer-traders", "name": "Transfer Traders", "logoUrl": null },
+  "store": { "id": "…", "slug": "transfer-traders", "name": "Transfer Traders", "logoUrl": null,
+             "brandColor": "#16151A", "onBrandColor": "#FFFFFF", "phone": null, "whatsapp": null },
   "can": { "cancel": true, "requestCancel": false, "submitPaymentProof": true, "markReceived": false, "requestReturn": false }
 }
 ```
@@ -151,6 +154,8 @@ means checkout would fail with the first issue.
 - Lines are snapshots: name, label, image and price never change after checkout.
 - `events` is the timeline, oldest first. `kind`: `status` | `payment` | `note`.
 - `can.*` tells the app which buttons to show; the server enforces the same rules.
+- `store.phone` and `store.whatsapp` are the contact the store chose to show (its profile's
+  phone and WhatsApp), `null` when it set none; never the business's own number.
 
 ### `OrderGroup` (checkout response, `GET /shop/orders/:groupCode`)
 ```json
@@ -170,12 +175,14 @@ order `total = subtotal − discount + shippingFee`, each line `lineTotal = unit
 ```json
 {
   "groupCode": "MM-7KQ2PX",
+  "internalNote": null,
   "customer": { "name": "Ayesha Khan", "phone": "+923124890176",
                 "address": { "city": "Lahore", "area": "Gulberg III", "line1": "House 12, Street 4", "landmark": null, "lat": null, "lng": null } },
   "can": { "moveTo": ["confirmed", "cancelled"] }
 }
 ```
 Stores get the delivery contact from the address snapshot — never the customer's email or account.
+`internalNote` is the store's own note on the order (`PATCH …/note`): no customer view carries it.
 
 ### `ReturnRequest`
 ```json
@@ -346,10 +353,10 @@ deleting it never changes an order. Push: Expo tokens registered via `PUT /users
 | GET | `/shop/home` | `{ banners, featuredStores: StoreCard[], newArrivals: ProductCard[], trending: ProductCard[], categories }` — one call for the home screen. `trending` = units sold in the last 14 days (cancelled orders excluded), topped up by all-time sales. Banners are active, inside their window, and only point at things a customer can open. |
 | GET | `/shop/categories` | `[{ id, name, slug, icon, children: [{ id, name, slug, icon }] }]` — includes *(Chunk 5)* the **Grocery** root (`grocery`) and its aisles (`grocery-vegetables-fruit`, `-meat-poultry`, `-dairy-eggs`, `-rice-flour`, `-pulses`, `-spices`, `-oil-ghee`, `-bakery`, `-sauces`, `-beverages`, `-snacks`). |
 | GET | `/shop/stores` | `?q&categoryId&city&featured=true&page&pageSize` → `StoreCard` list. `categoryId` (root matches its subtree) = stores selling there; `city` = stores delivering there. |
-| GET | `/shop/stores/:slug` | `StoreCard` + `{ about, socials, collections: [{ id, name, slug, productCount }], policies: { shippingFlatFee, freeShippingOver, returnWindowDays, dispatchDaysMin, dispatchDaysMax, deliveryCities, paymentMethods: ["cod","transfer"], codLimit, transferVia: ["bank","jazzcash"] } }` — **never account numbers**. |
+| GET | `/shop/stores/:slug` | `StoreCard` + `{ about, socials, phone, collections: [{ id, name, slug, productCount }], policies: { shippingFlatFee, freeShippingOver, returnWindowDays, dispatchDaysMin, dispatchDaysMax, deliveryCities, paymentMethods: ["cod","transfer"], codLimit, transferVia: ["bank","jazzcash"] } }` — **never account numbers**. | `phone` is the store's own (set in its profile), `null` until it sets one.
 | GET | `/shop/products` | `?q&storeId&categoryId&collectionId&minPrice&maxPrice&inStock=true&minRating&onSale=true&sort&page&pageSize` → `ProductCard` list. `sort`: `relevance` (default; with `q` = text rank, without = popularity) `newest`, `price_asc`, `price_desc`, `rating`, `popular`. Prices filter/sort on the effective price. `categoryId` of a root matches its children. `q` supports words, `"phrases"` and `-exclusions`; when nothing matches, a typo-tolerant name match runs instead ("kurtta" finds "kurta"). |
 | GET | `/shop/products/suggest` | `?q` (required) → `{ products: ProductCard[≤5], stores: StoreCard[≤3] }` for search-as-you-type. |
-| GET | `/shop/products/:id` | `ProductCard` + `{ description, tags, categoryId, collectionId, images: [{ id, url }], options: { option1: ["S","M"], option2: ["Maroon"] }, variants: [{ id, option1, option2, label, colorHex, price, pack, pricePer, inStock, lowStock }], pack, pricePer, store: { …StoreCard essentials, returnWindowDays, codEnabled, shippingFlatFee, freeShippingOver, dispatchDaysMin, dispatchDaysMax }, ratingBreakdown: { "1": 0, …, "5": 7 }, isWishlisted }` |
+| GET | `/shop/products/:id` | `ProductCard` + `{ description, tags, categoryId, collectionId, images: [{ id, url }], options: { option1: ["S","M"], option2: ["Maroon"] }, variants: [{ id, option1, option2, label, colorHex, price, pack, pricePer, inStock, lowStock }], pack, pricePer, store: { …StoreCard essentials, returnWindowDays, codEnabled, shippingFlatFee, freeShippingOver, dispatchDaysMin, dispatchDaysMax }, ratingBreakdown: { "1": 0, …, "5": 7 }, isWishlisted }` | The `store` block carries `phone` and `whatsapp` when the store set them.
 | GET | `/shop/products/:id/reviews` | `?rating=1..5&withPhotos=true&page` → `Review` list + `summary: { ratingAvg, ratingCount, breakdown }` |
 | GET | `/shop/products/:id/related` | up to 10 `ProductCard`s from the same category, other stores first |
 
@@ -400,7 +407,7 @@ Visible = business approved, store not paused, product `active`. Anything else i
 |---|---|---|---|
 | GET | `/dashboard` | | `{ todayNewOrders, newOrders, toShip, awaitingPaymentConfirmation, refundsDue, cancelRequests, lowStockVariants, openReturns, unrepliedReviews, rating: { avg, count }, recordedSales: { last7Days, last30Days } }` |
 | GET | `/insights` | `?range=7d\|30d\|90d` (default 30d) | `{ range, days, ordersPerDay: [{ date, orders }], recordedSalesPerDay: [{ date, amount }], totals: { orders, recordedSales }, topProducts: [{ productId, name, units, value }], repeatCustomers: { customers, repeat, share }, conversion: { placed, delivered, cancelled, rate } }` |
-| GET / PATCH | `/store` | `{ tagline?, about?, logoUrl?, coverUrl?, brandColor?, socials? }` | profile; `brandColor` that fails AA contrast with both white and ink → `400 VALIDATION_FAILED` |
+| GET / PATCH | `/store` | `{ tagline?, about?, logoUrl?, coverUrl?, brandColor?, socials?, phone? }` | profile; `phone` is a number customers may call (`IsPkPhone`, landlines allowed; `null` removes it), shown only once set; `brandColor` that fails AA contrast with both white and ink → `400 VALIDATION_FAILED` |
 | GET / PATCH | `/store/settings` | `{ returnWindowDays 0–30, codEnabled, codLimit, shippingFlatFee, freeShippingOver?, deliveryCities[], dispatchDaysMin, dispatchDaysMax, isPaused, pauseMessage? }` | settings |
 | GET / POST | `/store/payment-accounts` | `{ kind: raast\|jazzcash\|easypaisa\|bank, accountTitle, accountNumber, bankName? }` | list / `201` account. Bank = PK IBAN (24 chars, checksum) + `bankName`; others = PK mobile. Max 4 active. |
 | PATCH / DELETE | `/store/payment-accounts/:id` | `{ kind?, accountTitle?, accountNumber?, bankName?, isActive? }` | account · `{ removed: true }` (placed orders keep their snapshot) |
@@ -428,6 +435,7 @@ Visible = business approved, store not paused, product `active`. Anything else i
 |---|---|---|
 | GET | `/orders` | `?status&paymentStatus&q (code, customer name or phone)&page` → `[{ id, code, status, paymentMethod, paymentStatus, total, itemCount, customerName, city, payBy, cancelRequested, placedAt }]` |
 | GET | `/orders/:id` | `PartnerStoreOrder` |
+| PATCH | `/orders/:id/note` | `{ note }` (≤ 500; `null` clears it) — the store's private note, `internalNote` in `PartnerStoreOrder`; customers never see it |
 | POST | `/orders/:id/confirm` · `/pack` · `/deliver` | — |
 | POST | `/orders/:id/reject` · `/cancel` | `{ reason }` |
 | POST | `/orders/:id/ship` | `{ courierName, trackingRef }` or `{ courierName: "self", riderName, riderPhone }` |
@@ -449,10 +457,13 @@ All order actions return `PartnerStoreOrder`.
 
 | Method | Path | Body / notes |
 |---|---|---|
+| GET | `/overview` | `{ stores, activeProducts, openReports, ordersToday }` — stores and products customers can see, open reports, store orders placed today (Pakistan day) |
 | GET / POST | `/categories` | tree incl. inactive · `{ name, slug?, parentId?, icon?, sort? }` (two levels; slug unique → 409) |
+| PUT | `/categories/order` | `{ parentId (null = top level), ids }` — one set of siblings in a new order, the rest following; duplicates `400`, an id outside the set `404`; returns the tree |
 | PATCH / DELETE | `/categories/:id` | `+ isActive` · delete only an unused leaf (`409 CONFLICT` with `{ children, products }` → deactivate instead) |
 | GET / POST | `/banners` | `{ imageUrl (admin banner upload), title, subtitle?, targetType: store\|category\|collection\|product\|none, targetId?, startsAt?, endsAt?, sort?, isActive? }` |
 | PATCH / DELETE | `/banners/:id` | |
+| GET | `/stores` | `?q (name, slug, city, owner email)&status=live\|paused\|suspended&page` — every store, featured first: `{ id, slug, name, city, logoUrl, brandColor, onBrandColor, isFeatured, isPaused, businessStatus, productCount, ratingAvg, ratingCount, ownerEmail, createdAt }` |
 | POST | `/stores/:id/feature` · `/unfeature` | |
 | GET | `/reports` | `?status=open\|dismissed\|actioned` (default open), oldest first, with product + store |
 | POST | `/reports/:id/dismiss` | `{ note? }` |

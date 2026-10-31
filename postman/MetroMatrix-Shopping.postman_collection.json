@@ -1486,6 +1486,48 @@
           ]
         },
         {
+          "name": "Store: private note",
+          "request": {
+            "method": "PATCH",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Packed by Postman; the mug is fragile.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/shop/partner/orders/{{codOrderId}}/note",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{fashionToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Store: private note → 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test(\"only the store sees it\", () => pm.expect(d.internalNote).to.eql(\"Packed by Postman; the mug is fragile.\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Store: pack before confirming is refused",
           "request": {
             "method": "POST",
@@ -3226,6 +3268,74 @@
           ]
         },
         {
+          "name": "Admin: Shopping overview",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/overview",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Admin: Shopping overview → 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test(\"four numbers\", () => pm.expect(Object.keys(d).sort()).to.eql([\"activeProducts\", \"openReports\", \"ordersToday\", \"stores\"]));",
+                  "pm.test(\"today has the run's orders\", () => pm.expect(d.ordersToday).to.be.at.least(2));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: stores",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/admin/shop/stores?q=glow",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Admin: stores → 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test(\"finds Glow Theory\", () => pm.expect(d.items.map(s => s.id)).to.include(pm.collectionVariables.get(\"beautyStoreId\")));",
+                  "pm.test(\"owner email for staff\", () => pm.expect(d.items[0].ownerEmail).to.include(\"@\"));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Admin: feature Glow Theory",
           "request": {
             "method": "POST",
@@ -3325,7 +3435,50 @@
                   "",
                   "const body = pm.response.json();",
                   "const d = body.data;",
-                  "pm.test('eight roots or more', () => pm.expect(d.length).to.be.at.least(8));"
+                  "pm.test('eight roots or more', () => pm.expect(d.length).to.be.at.least(8));",
+                  "pm.collectionVariables.set(\"firstRootId\", d[0].id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Admin: category order",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"parentId\": null,\n  \"ids\": [\n    \"{{firstRootId}}\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": "{{baseUrl}}/admin/shop/categories/order",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Admin: category order → 200\", () => pm.response.to.have.status(200));",
+                  "",
+                  "const body = pm.response.json();",
+                  "const d = body.data;",
+                  "pm.test(\"the first root stays first\", () => pm.expect(d[0].id).to.eql(pm.collectionVariables.get(\"firstRootId\")));"
                 ]
               }
             }

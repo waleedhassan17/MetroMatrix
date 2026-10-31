@@ -6823,6 +6823,32 @@
         ],
         "type": "object"
       },
+      "AdminShopOverviewView": {
+        "properties": {
+          "activeProducts": {
+            "description": "Products customers can buy.",
+            "type": "integer"
+          },
+          "openReports": {
+            "type": "integer"
+          },
+          "ordersToday": {
+            "description": "Store orders placed today (Pakistan time).",
+            "type": "integer"
+          },
+          "stores": {
+            "description": "Stores customers can see.",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "stores",
+          "activeProducts",
+          "openReports",
+          "ordersToday"
+        ],
+        "type": "object"
+      },
       "AdminShopRemoveView": {
         "properties": {
           "id": {
@@ -6940,6 +6966,76 @@
         "required": [
           "id",
           "status"
+        ],
+        "type": "object"
+      },
+      "AdminShopStoresView": {
+        "properties": {
+          "brandColor": {
+            "type": "string"
+          },
+          "businessStatus": {
+            "description": "The business: approved or suspended.",
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "createdAt": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isFeatured": {
+            "type": "boolean"
+          },
+          "isPaused": {
+            "type": "boolean"
+          },
+          "logoUrl": {
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "onBrandColor": {
+            "type": "string"
+          },
+          "ownerEmail": {
+            "type": "string"
+          },
+          "productCount": {
+            "type": "integer"
+          },
+          "ratingAvg": {
+            "type": "number"
+          },
+          "ratingCount": {
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "slug",
+          "name",
+          "city",
+          "logoUrl",
+          "brandColor",
+          "onBrandColor",
+          "isFeatured",
+          "isPaused",
+          "businessStatus",
+          "productCount",
+          "ratingAvg",
+          "ratingCount",
+          "ownerEmail",
+          "createdAt"
         ],
         "type": "object"
       },
@@ -10598,6 +10694,21 @@
         ],
         "type": "object"
       },
+      "InternalNoteDto": {
+        "properties": {
+          "note": {
+            "description": "Only your store sees it; customers never do. null clears it.",
+            "example": "Packed by Ali; the vase is fragile.",
+            "maxLength": 500,
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "note"
+        ],
+        "type": "object"
+      },
       "ItemDto": {
         "properties": {
           "basePrice": {
@@ -11895,6 +12006,26 @@
         },
         "required": [
           "note"
+        ],
+        "type": "object"
+      },
+      "ReorderCategoriesDto": {
+        "properties": {
+          "ids": {
+            "description": "The categories in their new order (the first shows first); any siblings left out follow.",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "parentId": {
+            "description": "The parent whose children these are; null for the top level.",
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "ids"
         ],
         "type": "object"
       },
@@ -13838,6 +13969,12 @@
           },
           "logoUrl": {
             "description": "From an upload signed for purpose store_branding.",
+            "nullable": true,
+            "type": "object"
+          },
+          "phone": {
+            "description": "A number customers may call (landlines allowed); null removes it. The storefront shows it only when set.",
+            "example": "+923001112233",
             "nullable": true,
             "type": "object"
           },
@@ -21140,6 +21277,64 @@
         ]
       }
     },
+    "/api/v1/admin/shop/categories/order": {
+      "put": {
+        "operationId": "AdminShop_reorderCategories",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReorderCategoriesDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "items": {
+                        "$ref": "#/components/schemas/AdminShopCategoriesView"
+                      },
+                      "type": "array"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ parentId, ids } — one set of sibling categories in a new order; any left out follow. Audited.",
+        "tags": [
+          "admin · shop"
+        ]
+      }
+    },
     "/api/v1/admin/shop/categories/{id}": {
       "delete": {
         "operationId": "AdminShop_deleteCategory",
@@ -21419,6 +21614,51 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "admin · shop"
+        ]
+      }
+    },
+    "/api/v1/admin/shop/overview": {
+      "get": {
+        "operationId": "AdminShop_overview",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdminShopOverviewView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Stores customers can see, live products, open reports, and store orders placed today (Pakistan time).",
         "tags": [
           "admin · shop"
         ]
@@ -21820,6 +22060,119 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "admin · shop"
+        ]
+      }
+    },
+    "/api/v1/admin/shop/stores": {
+      "get": {
+        "operationId": "AdminShop_stores",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "in": "query",
+            "name": "pageSize",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "description": "Store name, slug, city or owner email.",
+            "in": "query",
+            "name": "q",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "live: approved and open · paused: the store paused itself · suspended: staff suspended the business.",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "enum": [
+                "live",
+                "paused",
+                "suspended"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "items": {
+                          "items": {
+                            "$ref": "#/components/schemas/AdminShopStoresView"
+                          },
+                          "type": "array"
+                        },
+                        "page": {
+                          "type": "integer"
+                        },
+                        "pageSize": {
+                          "type": "integer"
+                        },
+                        "total": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "total",
+                        "page",
+                        "pageSize"
+                      ],
+                      "type": "object"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Every store, paused and suspended too: ?q (name, slug, city, owner email) &status=live|paused|suspended &page. Featured first.",
         "tags": [
           "admin · shop"
         ]
@@ -35293,6 +35646,45 @@
             "bearer": []
           }
         ],
+        "tags": [
+          "shop · partner"
+        ]
+      }
+    },
+    "/api/v1/shop/partner/orders/{id}/note": {
+      "patch": {
+        "operationId": "PartnerOrders_saveNote",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InternalNoteDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ note } — the store's private note on the order (null clears it); customers never see it.",
         "tags": [
           "shop · partner"
         ]
