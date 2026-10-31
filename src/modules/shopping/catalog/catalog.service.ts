@@ -241,6 +241,7 @@ export class CatalogService {
     const [row] = await this.dataSource.query(
       `SELECT ${PRODUCT_CARD_COLUMNS}, p.description, p.tags, p.category_id, p.collection_id, p.store_id,
               s.logo_url AS store_logo_url, s.brand_color, s.on_brand_color,
+              s.phone AS store_phone, s.socials AS store_socials,
               s.rating_avg AS store_rating_avg, s.rating_count AS store_rating_count,
               s.return_window_days, s.cod_enabled, s.shipping_flat_fee, s.free_shipping_over,
               s.dispatch_days_min, s.dispatch_days_max, p.pack_qty, p.pack_unit
@@ -307,6 +308,9 @@ export class CatalogService {
         logoUrl: row.store_logo_url,
         brandColor: row.brand_color,
         onBrandColor: row.on_brand_color,
+        // Contact the store chose to show: its phone (opt-in) and WhatsApp.
+        phone: row.store_phone,
+        whatsapp: row.store_socials?.whatsapp ?? null,
         ratingAvg: parseFloat(row.store_rating_avg),
         ratingCount: row.store_rating_count,
         returnWindowDays: row.return_window_days,
@@ -383,7 +387,7 @@ export class CatalogService {
   /** The public storefront. Policies, never account numbers. */
   async store(slug: string) {
     const [row] = await this.dataSource.query(
-      `SELECT ${STORE_CARD_COLUMNS}, s.about, s.socials, s.delivery_cities, s.return_window_days,
+      `SELECT ${STORE_CARD_COLUMNS}, s.about, s.socials, s.phone, s.delivery_cities, s.return_window_days,
               s.cod_enabled, s.cod_limit, s.shipping_flat_fee, s.free_shipping_over,
               s.dispatch_days_min, s.dispatch_days_max
          FROM stores s JOIN businesses b ON b.id = s.business_id
@@ -408,6 +412,8 @@ export class CatalogService {
       ...storeCard(row),
       about: row.about,
       socials: row.socials,
+      // Shown only when the store set one (never the business's own number).
+      phone: row.phone,
       collections: collections.map((c: any) => ({
         id: c.id,
         name: c.name,

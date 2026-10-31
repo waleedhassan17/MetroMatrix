@@ -18,6 +18,7 @@ import {
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { IsPkPhone } from '../../../../common/validation/phone';
 import { Trim } from '../../../../common/validation/transforms';
 import { HEX_COLOR } from '../../common/contrast';
 import {
@@ -84,6 +85,17 @@ export class UpdateStoreProfileDto {
   @ValidateNested()
   @Type(() => StoreSocialsDto)
   socials?: StoreSocialsDto;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    example: '+923001112233',
+    description:
+      'A number customers may call (landlines allowed); null removes it. The storefront shows it only when set.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsPkPhone({ allowLandline: true, nullable: true })
+  phone?: string | null;
 }
 
 export class UpdateStoreSettingsDto {

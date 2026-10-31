@@ -7,6 +7,9 @@ export interface CartStore {
   slug: string;
   name: string;
   logoUrl: string | null;
+  /** The store's colours, so a bag or plan draws each store in its own. */
+  brandColor: string;
+  onBrandColor: string;
   ownerUserId: string;
   /** Approved business and not paused. */
   isOpen: boolean;
@@ -55,7 +58,7 @@ export async function loadCartLines(
             p.base_price, p.sale_price,
             (SELECT i.url FROM product_images i WHERE i.product_id = p.id ORDER BY i.sort, i.created_at LIMIT 1) AS image_url,
             s.id AS store_id, s.slug AS store_slug, b.name AS store_name, s.logo_url,
-            b.owner_user_id, (s.is_paused = false AND b.status = 'approved') AS store_open,
+            s.brand_color, s.on_brand_color, b.owner_user_id, (s.is_paused = false AND b.status = 'approved') AS store_open,
             s.pause_message, s.shipping_flat_fee, s.free_shipping_over, s.cod_enabled, s.cod_limit,
             s.delivery_cities, s.return_window_days
        FROM cart_items ci
@@ -76,6 +79,8 @@ export async function loadCartLines(
         slug: r.store_slug,
         name: r.store_name,
         logoUrl: r.logo_url,
+        brandColor: r.brand_color,
+        onBrandColor: r.on_brand_color,
         ownerUserId: r.owner_user_id,
         isOpen: r.store_open,
         pauseMessage: r.pause_message,

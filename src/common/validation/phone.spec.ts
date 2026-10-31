@@ -1,6 +1,6 @@
 import { validate } from 'class-validator';
 import { plainToInstance } from 'class-transformer';
-import { IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString, ValidateIf } from 'class-validator';
 import {
   IsPkPhone,
   isPkLandline,
@@ -88,6 +88,13 @@ class MobileDto {
   phone?: string;
 }
 
+class ClearablePhoneDto {
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsPkPhone({ allowLandline: true, nullable: true })
+  phone?: string | null;
+}
+
 class BusinessPhoneDto {
   @IsOptional()
   @IsString()
@@ -152,5 +159,22 @@ describe('@IsPkPhone', () => {
     expect(Object.values(errors[0].constraints ?? {})[0]).toContain(
       'valid Pakistani phone number',
     );
+  });
+
+  it('nullable keeps an explicit null (it clears the number) and still checks a number', async () => {
+    const cleared = await runPipe(ClearablePhoneDto, { phone: null });
+    expect(cleared.errors).toHaveLength(0);
+    expect(cleared.instance.phone).toBeNull();
+    const absent = await runPipe(ClearablePhoneDto, {});
+    expect(absent.instance.phone).toBeUndefined();
+    const set = await runPipe(ClearablePhoneDto, { phone: '0300 1112233' });
+    expect(set.instance.phone).toBe('+923001112233');
+    expect(
+      (await runPipe(ClearablePhoneDto, { phone: '12345' })).errors,
+    ).toHaveLength(1);
+    // Without the option, null still reads as "not sent".
+    expect(
+      (await runPipe(BusinessPhoneDto, { phone: null })).instance.phone,
+    ).toBeUndefined();
   });
 });

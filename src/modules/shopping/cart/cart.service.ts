@@ -123,6 +123,8 @@ export class CartService implements OnModuleInit {
           slug: store.slug,
           name: store.name,
           logoUrl: store.logoUrl,
+          brandColor: store.brandColor,
+          onBrandColor: store.onBrandColor,
         },
         isAvailable: store.isOpen,
         warnings: store.isOpen

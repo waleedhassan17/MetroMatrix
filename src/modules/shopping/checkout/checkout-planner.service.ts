@@ -290,6 +290,9 @@ export function planView(plan: CheckoutPlan) {
       storeId: s.store.id,
       storeSlug: s.store.slug,
       storeName: s.store.name,
+      storeLogoUrl: s.store.logoUrl,
+      storeBrandColor: s.store.brandColor,
+      storeOnBrandColor: s.store.onBrandColor,
       paymentMethod: s.paymentMethod,
       couponCode: s.couponCode,
       items: s.lines.map((l) => ({

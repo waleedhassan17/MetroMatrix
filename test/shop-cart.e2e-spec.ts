@@ -319,6 +319,31 @@ describe('Shopping P3: cart, wishlist, coupons, preview (e2e)', () => {
       });
     });
 
+    it('the bag and the plan draw each store in its own colours', async () => {
+      await a.api
+        .patch('/shop/partner/store', { brandColor: '#BE123C' })
+        .expect(200);
+      const bag = await c.api.get('/shop/cart').expect(200);
+      const byId = Object.fromEntries(
+        bag.body.data.stores.map((s: any) => [s.store.id, s.store]),
+      );
+      expect(byId[storeA.id]).toMatchObject({
+        brandColor: '#BE123C',
+        onBrandColor: '#FFFFFF',
+      });
+      expect(byId[storeB.id]).toMatchObject({
+        brandColor: '#16151A',
+        onBrandColor: '#FFFFFF',
+      });
+      const plan = await preview(both(karachi));
+      expect(plan.body.data.stores[0]).toMatchObject({
+        storeId: storeA.id,
+        storeLogoUrl: null,
+        storeBrandColor: '#BE123C',
+        storeOnBrandColor: '#FFFFFF',
+      });
+    });
+
     it('checks payment methods, COD limit, stock and the store set — and writes nothing', async () => {
       const stockBefore = await t.ds.query(
         `SELECT id, stock FROM product_variants ORDER BY id`,

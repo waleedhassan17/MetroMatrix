@@ -66,6 +66,7 @@ export const storeProfileView = (s: Store) => ({
   brandColor: s.brandColor,
   onBrandColor: s.onBrandColor,
   socials: s.socials,
+  phone: s.phone,
   ratingAvg: s.ratingAvg,
   ratingCount: s.ratingCount,
   isFeatured: s.isFeatured,
@@ -221,6 +222,7 @@ export class StoresService implements OnModuleInit {
     if (dto.tagline !== undefined) store.tagline = dto.tagline || null;
     if (dto.about !== undefined) store.about = dto.about || null;
     if (dto.socials !== undefined) store.socials = { ...dto.socials };
+    if (dto.phone !== undefined) store.phone = dto.phone;
     await this.stores.save(store);
     return this.getProfile(storeId);
   }

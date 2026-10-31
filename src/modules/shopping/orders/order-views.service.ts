@@ -17,11 +17,16 @@ const notFound = () =>
     message: 'Order not found.',
   });
 
+/** The store on a customer's order: its look, and the contact it chose to show. */
 export interface StoreBrief {
   id: string;
   slug: string;
   name: string;
   logoUrl: string | null;
+  brandColor: string;
+  onBrandColor: string;
+  phone: string | null;
+  whatsapp: string | null;
 }
 
 const itemView = (i: StoreOrderItem) => ({
@@ -173,14 +178,25 @@ export class OrderViewsService {
   private async stores(storeIds: string[]): Promise<Map<string, StoreBrief>> {
     if (!storeIds.length) return new Map();
     const rows = await this.dataSource.query(
-      `SELECT s.id, s.slug, b.name, s.logo_url FROM stores s JOIN businesses b ON b.id = s.business_id
+      `SELECT s.id, s.slug, b.name, s.logo_url, s.brand_color, s.on_brand_color, s.phone,
+              s.socials->>'whatsapp' AS whatsapp
+         FROM stores s JOIN businesses b ON b.id = s.business_id
         WHERE s.id = ANY($1::uuid[])`,
       [storeIds],
     );
     return new Map(
       rows.map((r: any) => [
         r.id,
-        { id: r.id, slug: r.slug, name: r.name, logoUrl: r.logo_url },
+        {
+          id: r.id,
+          slug: r.slug,
+          name: r.name,
+          logoUrl: r.logo_url,
+          brandColor: r.brand_color,
+          onBrandColor: r.on_brand_color,
+          phone: r.phone,
+          whatsapp: r.whatsapp || null,
+        },
       ]),
     );
   }

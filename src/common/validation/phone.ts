@@ -95,15 +95,20 @@ export const PK_PHONE_MESSAGE =
  * @param opts.allowLandline accept landlines too — used for BUSINESS phones,
  *   which are legitimately landlines (the repo's own seed data uses
  *   +92-42-35761234). User/personnel phones stay mobile-only.
+ * @param opts.nullable keep an explicit `null` (it clears the number) instead
+ *   of reading it as "not sent".
  */
 export function IsPkPhone(
-  opts: { allowLandline?: boolean } = {},
+  opts: { allowLandline?: boolean; nullable?: boolean } = {},
   validationOptions?: ValidationOptions,
 ): PropertyDecorator {
   const allowLandline = opts.allowLandline ?? false;
+  const nullable = opts.nullable ?? false;
 
   return applyDecorators(
-    Transform(({ value }) => normalizePkPhone(value)),
+    Transform(({ value }) =>
+      nullable && value === null ? null : normalizePkPhone(value),
+    ),
     (target: object, propertyName: string | symbol) => {
       registerDecorator({
         name: 'isPkPhone',

@@ -324,6 +324,46 @@ describe('Shopping P4: checkout, orders, state machines, jobs (e2e)', () => {
     ).toBe(0);
   });
 
+  it("a customer's order draws each store in its colours, with the contact the store chose to show", async () => {
+    await a.api
+      .patch('/shop/partner/store', {
+        brandColor: '#BE123C',
+        phone: '0300 1112233',
+        socials: { whatsapp: '+923001112233' },
+      })
+      .expect(200);
+    const dupatta = await product(a, 'Silk dupatta', 3000, 5);
+    const shawl = await product(b, 'Cotton shawl', 2000, 5);
+    const cust = await customer();
+    await fill(cust, [
+      [dupatta.variantId, 1],
+      [shawl.variantId, 1],
+    ]);
+    const g = (
+      await checkout(
+        cust,
+        body(cust, [storeA.id, 'cod'], [storeB.id, 'cod']),
+      ).expect(201)
+    ).body.data;
+    const [oa, ob] = g.storeOrders;
+    expect(oa.store).toMatchObject({
+      brandColor: '#BE123C',
+      onBrandColor: '#FFFFFF',
+      phone: '+923001112233',
+      whatsapp: '+923001112233',
+    });
+    // B shows no number: never its business's own.
+    expect(ob.store).toMatchObject({ phone: null, whatsapp: null });
+    expect(JSON.stringify(g)).not.toContain('4235761234');
+    const one = await cust.api.get(`/shop/store-orders/${oa.id}`).expect(200);
+    expect(one.body.data.store).toMatchObject({
+      brandColor: '#BE123C',
+      phone: '+923001112233',
+    });
+    const list = await cust.api.get('/shop/orders').expect(200);
+    expect(JSON.stringify(list.body.data)).toContain('#BE123C');
+  });
+
   it('two buyers, last unit, at the same instant: exactly one wins; stock ends at 0', async () => {
     const last = await product(c, 'Last kurta', 1500, 1);
     const [x, y] = await Promise.all([customer(), customer()]);

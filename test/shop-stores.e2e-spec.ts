@@ -1,4 +1,4 @@
-import { createTestApp, TestApp } from './utils/test-app';
+import { createTestApp, TestApp, ApiClient } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
 import {
   signup,
@@ -134,6 +134,41 @@ describe('Shopping P1: stores, payment accounts, collections (e2e)', () => {
         logoUrl: asset(store.userId, 'avatar').url,
       })
       .expect(400);
+  });
+
+  it('contact: a phone shows on the storefront only once the store sets one, never the business number', async () => {
+    const store = await approvedPartner(t, admin, 'store', 'Phulkari Phone');
+    const anon = new ApiClient(t.http);
+    const slug = (await store.api.get('/shop/partner/store').expect(200)).body
+      .data.slug;
+    const before = await anon.get(`/shop/stores/${slug}`).expect(200);
+    expect(before.body.data.phone).toBeNull();
+    expect(JSON.stringify(before.body)).not.toContain('4235761234');
+
+    const bad = await store.api
+      .patch('/shop/partner/store', { phone: '12345' })
+      .expect(400);
+    expect(bad.body.error.details.fields.phone).toBeDefined();
+    const set = await store.api
+      .patch('/shop/partner/store', {
+        phone: '0300 1112233',
+        socials: { whatsapp: '+923001112233' },
+      })
+      .expect(200);
+    expect(set.body.data).toMatchObject({
+      phone: '+923001112233',
+      socials: { whatsapp: '+923001112233' },
+    });
+    const shown = await anon.get(`/shop/stores/${slug}`).expect(200);
+    expect(shown.body.data.phone).toBe('+923001112233');
+
+    const cleared = await store.api
+      .patch('/shop/partner/store', { phone: null })
+      .expect(200);
+    expect(cleared.body.data.phone).toBeNull();
+    expect(
+      (await anon.get(`/shop/stores/${slug}`).expect(200)).body.data.phone,
+    ).toBeNull();
   });
 
   it('settings: cities normalised and de-duplicated; dispatch range checked', async () => {

@@ -66,6 +66,13 @@ export class Store extends BaseEntity {
   @Column({ type: 'jsonb' })
   socials!: StoreSocials;
 
+  /**
+   * A number customers may call (+92…), shown only when the store set one.
+   * Never copied from the business: showing a phone is the store's choice.
+   */
+  @Column({ type: 'varchar', length: 16, nullable: true })
+  phone!: string | null;
+
   @Column({ type: 'int', name: 'return_window_days', default: 7 })
   returnWindowDays!: number;
 
