@@ -40,6 +40,7 @@ export class NutritionProfileService {
       targetKcal: p.targetKcal,
       targetMethod: p.targetMethod,
       formula: p.targetMethod === 'mifflin_st_jeor' ? MIFFLIN : null,
+      showCalories: p.showCalories,
       updatedAt: p.updatedAt,
     };
   }
@@ -64,15 +65,18 @@ export class NutritionProfileService {
         code: ErrorCode.FORBIDDEN,
         message: 'Nutrition profiles are for customers.',
       });
-    let target: number;
-    let method: 'mifflin_st_jeor' | 'manual';
+    let target: number | null;
+    let method: 'mifflin_st_jeor' | 'manual' | null;
+    const details = ['sex', 'age', 'heightCm', 'weightKg', 'activity'] as const;
+    const missing = details.filter((k) => dto[k] === undefined);
     if (dto.manualTargetKcal) {
       target = dto.manualTargetKcal;
       method = 'manual';
+    } else if (missing.length === details.length) {
+      // No details and no number: a profile with no target (the person tracks what they order).
+      target = null;
+      method = null;
     } else {
-      const missing = (
-        ['sex', 'age', 'heightCm', 'weightKg', 'activity'] as const
-      ).filter((k) => dto[k] === undefined);
       if (missing.length)
         throw new BadRequestException({
           code: ErrorCode.VALIDATION_FAILED,
@@ -104,6 +108,7 @@ export class NutritionProfileService {
       activity: dto.activity ?? null,
       targetKcal: target,
       targetMethod: method,
+      showCalories: dto.showCalories ?? true,
     });
     return this.get(user);
   }

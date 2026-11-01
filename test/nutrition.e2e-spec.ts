@@ -439,4 +439,41 @@ describe('Nutrition: mapping, recipe-based values, AI estimates, profile and sum
     });
     expect(s.label).toMatch(/ordered on MetroMatrix only/);
   });
+
+  it('a profile with no target (tracking only), and calories the person chose not to see', async () => {
+    const c = await foodCustomer(t, SGD);
+    const p = await expectStatus(
+      await c.api.put('/food/me/nutrition/profile', {
+        goal: 'maintain',
+        showCalories: false,
+      }),
+      200,
+    );
+    expect(p).toMatchObject({
+      goal: 'maintain',
+      targetKcal: null,
+      targetMethod: null,
+      formula: null,
+      showCalories: false,
+    });
+    expect(
+      await expectStatus(
+        await c.api.get('/food/me/nutrition/summary?range=7d'),
+        200,
+      ),
+    ).toMatchObject({ targetKcal: null });
+    expect(
+      await expectStatus(
+        await c.api.put('/food/me/nutrition/profile', {
+          goal: 'lose',
+          manualTargetKcal: 1700,
+        }),
+        200,
+      ),
+    ).toMatchObject({
+      targetKcal: 1700,
+      targetMethod: 'manual',
+      showCalories: true,
+    });
+  });
 });

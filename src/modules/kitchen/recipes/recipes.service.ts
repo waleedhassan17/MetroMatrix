@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource, EntityManager, IsNull } from 'typeorm';
 import type { VendorRef } from '../../food/vendor/food-vendor.service';
 import { RecipeCard } from '../entities/recipe-card.entity';
 import { RecipeLine } from '../entities/recipe-line.entity';
@@ -204,9 +204,10 @@ export class RecipesService {
 
   async remove(v: VendorRef, itemId: string, variantId?: string) {
     await this.ownedItem(this.dataSource.manager, v, itemId, variantId);
+    // The dish's own card has no size: IS NULL, not = NULL (which matches nothing).
     const res = await this.dataSource.manager.delete(RecipeCard, {
       menuItemId: itemId,
-      variantId: variantId ?? (null as unknown as undefined),
+      variantId: variantId ?? IsNull(),
     });
     if (!res.affected) throw kitchenNotFound('Recipe card');
     await this.tellSaved(v, itemId);

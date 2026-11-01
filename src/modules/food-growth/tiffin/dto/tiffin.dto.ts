@@ -17,6 +17,7 @@ import {
   MaxLength,
   Min,
   ValidateNested,
+  ValidateIf,
 } from 'class-validator';
 import { Trim } from '../../../../common/validation/transforms';
 import {
@@ -96,6 +97,17 @@ export class TiffinPlanDto {
   rotation!: RotationDayDto[];
 
   @IsOptional() @IsBoolean() isActive?: boolean;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'A `menu_item` upload of yours; null removes it, left out keeps it.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  photoUrl?: string | null;
 }
 
 export class SubscribeDto {

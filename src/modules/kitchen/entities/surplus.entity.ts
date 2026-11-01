@@ -58,6 +58,10 @@ export class SurplusBox extends BaseEntity {
   })
   contentsHint!: string | null;
 
+  /** A `menu_item` upload of the kitchen's: what a box usually looks like. */
+  @Column({ type: 'varchar', length: 500, name: 'photo_url', nullable: true })
+  photoUrl!: string | null;
+
   @Column({ type: 'int', name: 'original_value' })
   originalValue!: number;
 

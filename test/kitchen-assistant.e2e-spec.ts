@@ -499,4 +499,72 @@ describe('Menu assistant and review insights (Chunk 5 P9)', () => {
     expect(ai.latest).toMatchObject({ method: 'ai', reviewCount: 5 });
     expect(ai.history).toHaveLength(1);
   });
+
+  it('specials from chosen ingredients: only those count as expiring; the others stay usable', async () => {
+    const v = await kitchen('Assistant Chosen Kitchen');
+    const okra = await ingredient(v, {
+      name: 'Chosen okra',
+      category: 'vegetable',
+      openingStock: { qty: 2, unit: 'kg', totalCost: 400, expiresOn: day(1) },
+    });
+    const curd = await ingredient(v, {
+      name: 'Chosen curd',
+      category: 'dairy',
+      openingStock: { qty: 3, unit: 'kg', totalCost: 900, expiresOn: day(2) },
+    });
+    const fresh = await ingredient(v, {
+      name: 'Chosen rice',
+      category: 'grain',
+      openingStock: { qty: 5, unit: 'kg', totalCost: 2000, expiresOn: day(20) },
+    });
+    // Rice isn't expiring: nothing to suggest, and no model call.
+    const none = await expectStatus(
+      await v.api.post('/food/vendor/kitchen/ai/specials', {
+        ingredientIds: [fresh.id],
+      }),
+      200,
+    );
+    expect(none).toMatchObject({
+      ideas: [],
+      message: 'None of these expire in the next 3 days.',
+    });
+    expect(f.ai.calls).toHaveLength(0);
+    f.ai.answer({
+      ideas: [
+        {
+          name: 'Bhindi Raita Plate',
+          description: 'Crisp fried okra with a cool curd raita on the side.',
+          servings: 4,
+          lines: [
+            { ingredientId: okra.id, qty: 800, unit: 'g' },
+            { ingredientId: curd.id, qty: 500, unit: 'g' },
+          ],
+          why: 'Uses the okra that expires tomorrow.',
+        },
+      ],
+    });
+    const r = await expectStatus(
+      await v.api.post('/food/vendor/kitchen/ai/specials', {
+        ingredientIds: [okra.id],
+      }),
+      200,
+    );
+    expect(r.expiring.map((e: { name: string }) => e.name)).toEqual([
+      'Chosen okra',
+    ]);
+    const input = f.ai.lastInput() as {
+      expiring: Array<{ id: string }>;
+      pantry: Array<{ id: string }>;
+    };
+    expect(input.expiring.map((e) => e.id)).toEqual([okra.id]);
+    // The curd also expires but wasn't chosen: it is still on the shelf to cook with.
+    expect(input.pantry.map((e) => e.id).sort()).toEqual(
+      [curd.id, fresh.id].sort(),
+    );
+    expect(r.ideas).toHaveLength(1);
+    const bad = await v.api.post('/food/vendor/kitchen/ai/specials', {
+      ingredientIds: ['nope'],
+    });
+    expect(bad.status).toBe(400);
+  });
 });

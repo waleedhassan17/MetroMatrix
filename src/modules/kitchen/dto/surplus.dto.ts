@@ -15,6 +15,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
 } from 'class-validator';
 import { Trim } from '../../../common/validation/transforms';
 
@@ -58,6 +59,11 @@ export class SurplusBoxDto {
   @ArrayMaxSize(5)
   @Matches(/^[a-z][a-z_]{1,19}$/, { each: true })
   tags?: string[];
+  @ApiPropertyOptional({ description: 'A `menu_item` upload of yours.' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  photoUrl?: string;
 }
 
 export class UpdateSurplusBoxDto {
@@ -74,6 +80,15 @@ export class UpdateSurplusBoxDto {
   quantity?: number;
 
   @IsOptional() @IsISO8601() pickupTo?: string;
+  @ApiPropertyOptional({
+    nullable: true,
+    description: 'A `menu_item` upload of yours; null removes it.',
+  })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  photoUrl?: string | null;
 }
 
 export class SurplusQueryDto {

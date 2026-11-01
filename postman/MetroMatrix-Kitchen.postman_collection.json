@@ -1117,6 +1117,38 @@
           ]
         },
         {
+          "name": "Ingredient: the dishes that use it",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/food/vendor/kitchen/ingredients/{{eggsId}}",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{vendorToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Ingredient: the dishes that use it → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('the dish this run made, per serving', () => pm.expect(d.usedIn.map((u) => u.itemId)).to.include(pm.collectionVariables.get('dishId')));"
+                ]
+              }
+            }
+          ]
+        },
+        {
           "name": "Stock take: no eggs left → the dish is sold out by stock",
           "request": {
             "method": "POST",
@@ -2669,6 +2701,47 @@
     {
       "name": "7 · Staff: PBS weekly prices (SPI)",
       "item": [
+        {
+          "name": "Staff: check the CSV first (dry run: nothing written)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/admin/kitchen/reference-prices/import",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{adminAccessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"csv\": \"week_ending,city,item,unit,price\\n2026-10-15,Lahore,Garlic,kg,620\\n2026-10-15,Karachi,Garlic,kg,650\\n2026-10-15,Lahore,Ginger,tin,700\", \"dryRun\": true}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Staff: check the CSV first (dry run: nothing written) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('a check, with the counts an import would give', () => { pm.expect(d.dryRun).to.eql(true); pm.expect(d.prices).to.be.a('number'); });"
+                ]
+              }
+            }
+          ]
+        },
         {
           "name": "SPI CSV import (two cities)",
           "request": {
@@ -5466,6 +5539,84 @@
                   "",
                   "const body = pm.response.json();",
                   "const d = body.data;"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: pantry reminders (on, 09:00, 2 days before until changed)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/my-kitchen/pantry/reminders",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: pantry reminders (on, 09:00, 2 days before until changed) → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('the settings', () => pm.expect(d).to.have.keys('enabled', 'time', 'daysBefore'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Customer: remind me a day before",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/my-kitchen/pantry/reminders",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{customerToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\"daysBefore\": 1}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Customer: remind me a day before → 200', () => pm.response.to.have.status(200));",
+                  "",
+                  "const d = pm.response.json().data;",
+                  "pm.test('a day before', () => pm.expect(d.daysBefore).to.eql(1));"
                 ]
               }
             }

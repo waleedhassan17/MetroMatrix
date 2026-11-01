@@ -48,6 +48,8 @@ export class AdminKitchenImportView {
   cities!: string[];
   @ApiProperty({ type: [String] })
   weeks!: string[];
+  @ApiProperty({ type: Boolean, description: 'A check: nothing was written.' })
+  dryRun!: boolean;
   @ApiProperty({ type: 'integer' })
   rejected!: number;
   @ApiProperty({ type: () => [AdminKitchenImportViewErrorsItem] })

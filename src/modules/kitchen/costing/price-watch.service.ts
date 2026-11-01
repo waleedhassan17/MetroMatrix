@@ -1,3 +1,4 @@
+import { pgDate } from '../../../common/db/parallel';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { ErrorCode } from '../../../common/errors/codes';
@@ -34,7 +35,11 @@ export class PriceWatchService {
     const rows = await this.dataSource.query(
       `SELECT ki.id, ki.name, ki.base_unit, ki.last_cost, ki.reference_item_id,
               ri.name AS ref_name, ri.unit AS ref_unit, ri.factor, ri.base_unit AS ref_base,
-              p1.price AS ref_price, p1.week_ending AS ref_week, p2.price AS prev_price, p2.week_ending AS prev_week
+              p1.price AS ref_price, p1.week_ending AS ref_week, p2.price AS prev_price, p2.week_ending AS prev_week,
+              (SELECT json_agg(json_build_object('weekEnding', to_char(h.week_ending, 'YYYY-MM-DD'), 'price', h.price::float)
+                        ORDER BY h.week_ending)
+                 FROM (SELECT week_ending, price FROM reference_prices WHERE item_id = ri.id AND city = $2
+                        ORDER BY week_ending DESC LIMIT 8) h) AS history
          FROM kitchen_ingredients ki
          JOIN reference_items ri ON ri.id = ki.reference_item_id
          LEFT JOIN LATERAL (SELECT price, week_ending FROM reference_prices
@@ -72,7 +77,12 @@ export class PriceWatchService {
           unit: r.ref_unit,
         },
         city,
-        weekEnding: r.ref_week,
+        weekEnding: pgDate(r.ref_week),
+        /** The city price over up to 8 weeks, oldest first. */
+        history: (r.history ?? []) as Array<{
+          weekEnding: string;
+          price: number;
+        }>,
         referencePrice: ref,
         yourPrice: yours,
         pctAbove,
@@ -118,7 +128,7 @@ export class PriceWatchService {
       baseUnit: r.base_unit,
       canonical: r.canonical,
       cities: r.cities,
-      latestWeek: r.latest_week,
+      latestWeek: pgDate(r.latest_week),
     }));
   }
 
@@ -153,7 +163,7 @@ export class PriceWatchService {
   }
 
   /** Staff: the weekly SPI CSV → reference items and prices (upsert). Audited. */
-  async import(csv: string) {
+  async import(csv: string, dryRun = false) {
     const { rows, errors } = readSpi(csv);
     if (!rows.length)
       throw new BadRequestException({
@@ -166,6 +176,28 @@ export class PriceWatchService {
           errors,
         },
       });
+    if (dryRun) {
+      // What an import would write: nothing is, but the check is a staff action like any other.
+      const check = {
+        items: new Set(rows.map((r) => r.item)).size,
+        prices: rows.length,
+        cities: [...new Set(rows.map((r) => r.city))],
+        weeks: [...new Set(rows.map((r) => r.weekEnding))].sort(),
+      };
+      await this.audit.record({
+        action: 'kitchen.reference_prices.check',
+        targetType: 'reference_prices',
+        details: { rejected: errors.length },
+        before: null,
+        after: check,
+      });
+      return {
+        ...check,
+        rejected: errors.length,
+        errors: errors.slice(0, 50),
+        dryRun: true,
+      };
+    }
     const result = await this.dataSource.transaction(async (m) => {
       const names = [...new Set(rows.map((r) => r.item))];
       const words = [
@@ -226,6 +258,11 @@ export class PriceWatchService {
       before: null,
       after: result,
     });
-    return { ...result, rejected: errors.length, errors: errors.slice(0, 50) };
+    return {
+      ...result,
+      rejected: errors.length,
+      errors: errors.slice(0, 50),
+      dryRun: false,
+    };
   }
 }

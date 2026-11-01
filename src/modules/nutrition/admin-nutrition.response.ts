@@ -151,6 +151,8 @@ export class AdminNutritionImportView {
   updated!: number;
   @ApiProperty({ type: 'integer' })
   rejected!: number;
+  @ApiProperty({ type: Boolean, description: 'A check: nothing was written.' })
+  dryRun!: boolean;
   @ApiProperty({ type: () => [AdminNutritionImportViewErrorsItem] })
   errors!: AdminNutritionImportViewErrorsItem[];
 }

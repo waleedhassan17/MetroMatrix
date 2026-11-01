@@ -7,6 +7,7 @@ import {
   CreateSpecialDto,
   DescribeDto,
   PhotoCheckDto,
+  SpecialsDto,
 } from '../dto/assistant.dto';
 import { MenuAssistantService } from './menu-assistant.service';
 import { ReviewInsightsService } from '../reviews/review-insights.service';
@@ -40,8 +41,8 @@ export class KitchenAssistantController {
     summary:
       'Ingredients expiring within 3 days → 1–3 special ideas: recipe lines on your own ingredients, cost, a price from your food cost target, and a create draft.',
   })
-  specials(@CurrentVendor() v: VendorRef) {
-    return this.assistant.specials(v);
+  specials(@CurrentVendor() v: VendorRef, @Body() dto: SpecialsDto) {
+    return this.assistant.specials(v, dto.ingredientIds);
   }
 
   @Post('ai/specials/create')

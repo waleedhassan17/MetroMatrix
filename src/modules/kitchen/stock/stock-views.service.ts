@@ -1,3 +1,4 @@
+import { pgDate } from '../../../common/db/parallel';
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DataSource } from 'typeorm';
@@ -205,7 +206,7 @@ export class StockViewsService {
       remainingDisplay: display(Number(b.qty_remaining), i.base_unit),
       unitCost: Number(b.unit_cost),
       receivedAt: b.received_at,
-      expiresOn: b.expires_on,
+      expiresOn: pgDate(b.expires_on),
     }));
   }
 }

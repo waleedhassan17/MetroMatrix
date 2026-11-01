@@ -209,4 +209,12 @@ export class ReferenceImportDto {
   @IsString()
   @Length(20, 524_288)
   csv!: string;
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Check every line and write nothing (what an import would do).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
 }

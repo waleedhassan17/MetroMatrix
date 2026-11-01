@@ -79,6 +79,7 @@ flows: `npm run postman:kitchen` (needs `seed:food` and `seed:kitchen`).
 | `POST /stock/count` | `{ lines: [{ ingredientId, qty, unit }], note? }` sets on-hand to what was counted (`count_adjust` movements) → `{ countId, adjusted: [{ before, counted, delta }] }`. |
 | `GET /stock/:ingredientId/movements` | The ledger, newest first: `{ delta, reason (purchase\|order\|order_cancel\|waste\|count_adjust\|manual), refType, refId, orderCode?, balanceAfter, unitCost, value, batchId, note, at }`. |
 | `GET /stock/:ingredientId/batches` | Batches on the shelf, oldest first — what FIFO uses next. |
+| `GET /ingredients/:id` | The row, plus `usedIn: [{ itemId, variantId, name, variantName, qtyPerServing, addOn, packaging }]` — the dishes and sizes whose cards use it, per serving in base units. |
 
 The ingredient body is:
 
@@ -97,8 +98,11 @@ An ingredient row is:
   "customUnits": [{ "name": "tray", "factor": 30 }], "units": ["piece", "dozen", "tray"],
   "onHand": 90, "onHandDisplay": { "qty": 90, "unit": "piece" }, "parLevel": 60, "belowPar": false,
   "negative": false, "avgCost": 30, "avgPrice": { "price": 30, "per": "piece" }, "lastCost": 30,
-  "value": 2700, "expiringSoon": 0, "isActive": true, "usedInRecipes": 2 }
+  "value": 2700, "expiringSoon": 0, "expiringOn": null, "isActive": true, "usedInRecipes": 2 }
 ```
+
+`expiringSoon` is what expires within 3 days (or has passed) and `expiringOn` the soonest of those
+dates. Dates are `YYYY-MM-DD` everywhere (batches, purchase lines, price-watch weeks).
 
 **How stock moves.** `KitchenStockService` is the only code that changes stock.
 
@@ -114,7 +118,7 @@ An ingredient row is:
 |---|---|
 | `GET /items/:itemId/recipe[?variantId]` | The card, or `null`. |
 | `PUT /items/:itemId/recipe[?variantId]` | Replaces the card; see the body below. Another kitchen's dish, size, ingredient or option is `404`. |
-| `DELETE /items/:itemId/recipe[?variantId]` | |
+| `DELETE /items/:itemId/recipe[?variantId]` | Without `variantId`, the dish's own card. `{ removed: true }`; no card is `404`. |
 | `GET /items/:itemId/servings` | `{ hasRecipe, servings, cards: [{ cardId, variantId, servings, limitedBy: { ingredientId, name } }] }` |
 
 The PUT body:
@@ -150,7 +154,7 @@ lines at today's average cost), `servings` and `limitedBy`.
 | Route | |
 |---|---|
 | `GET/POST /suppliers`, `PATCH/DELETE /suppliers/:id` | `{ name, phone?, notes? }`; the list adds `lastPurchaseAt`, `spent30d`. |
-| `GET /purchases?supplierId&ingredientId&from&to` | Paged; `{ purchasedAt, total, source, supplier, lines, hasReceipt }`. |
+| `GET /purchases?supplierId&ingredientId&from&to` | Paged; `{ purchasedAt, total, source, supplier, lines, lineNames (up to 4), hasReceipt }`, plus `weekTotal` and `weekCount` (the last 7 days, the branch's). |
 | `POST /purchases` | See the body below. Each line is a batch, a `purchase` movement and the new average cost. |
 | `GET /purchases/:id` | With lines (`unitCost`, `remaining` of its batch) and `receiptDownload` (a signed 10-minute link). |
 | `PATCH /purchases/:id` | Supplier, date or note only. |
@@ -213,8 +217,11 @@ weekly SPI** price in the branch's city, per the SPI unit:
 ```json
 { "ingredientId": "…", "name": "Tomato", "reference": { "id": "…", "name": "Tomatoes", "unit": "kg" }, "city": "Lahore",
   "weekEnding": "2026-10-15", "referencePrice": 180, "yourPrice": 240, "pctAbove": 33.3, "weekChangePct": 20,
-  "aboveReference": true, "referenceRising": true }
+  "aboveReference": true, "referenceRising": true,
+  "history": [{ "weekEnding": "2026-10-08", "price": 150 }, { "weekEnding": "2026-10-15", "price": 180 }] }
 ```
+
+`history` is the city price over up to 8 weeks, oldest first.
 
 - `aboveReference` when more than 15% over.
 - `referenceRising` when the city price rose more than 10% in a week.
@@ -377,8 +384,8 @@ summarised per local hour and order size (`1-2`, `3-5`, `6+` items), as p50 and 
 |---|---|
 | `GET /surplus-boxes?status` | Each box has `reserved` and `collected`. |
 | `GET /surplus-boxes/suggestion` | In the last two hours before closing: a draft from today's planned portions not yet sold (half the menu value). |
-| `POST /surplus-boxes` | `{ title, description?, contentsHint?, originalValue, price ≤ originalValue, quantity 1–200, pickupFrom, pickupTo, tags? }` — the window is **today** and ends in the future. |
-| `PATCH /surplus-boxes/:id` | The price is fixed once someone has reserved; the quantity can't drop below what's reserved. |
+| `POST /surplus-boxes` | `{ title, description?, contentsHint?, photoUrl? (a `menu_item` upload of yours), originalValue, price ≤ originalValue, quantity 1–200, pickupFrom, pickupTo, tags? }` — the window is **today** and ends in the future. |
+| `PATCH /surplus-boxes/:id` | The price is fixed once someone has reserved; the quantity can't drop below what's reserved (setting it to that ends the sale: `sold_out`). `photoUrl: null` takes the photo off. |
 | `POST /surplus-boxes/:id/cancel` | Reservations are cancelled and the customers told. |
 | `GET /surplus-reservations?boxId&status` | |
 | `POST /surplus-reservations/:id/collected` | `{ code? }` — checked when given. |
@@ -455,7 +462,7 @@ summarised per local hour and order size (`1-2`, `3-5`, `6+` items), as p50 and 
 
 | Route | |
 |---|---|
-| `POST /admin/kitchen/reference-prices/import` | `{ csv }` (≤ 512 KB), header `week_ending,city,item,unit,price`. See below. |
+| `POST /admin/kitchen/reference-prices/import` | `{ csv, dryRun? }` (≤ 512 KB), header `week_ending,city,item,unit,price`. See below. |
 | `GET /admin/kitchen/reference-items?q` | |
 
 **Why a CSV.** PBS publishes the weekly SPI as a **PDF** (city prices in Appendix-A); there is
@@ -467,8 +474,10 @@ no CSV or API. Staff transcribe the rows they need into this template, for examp
 - It upserts items (by name) and prices (item, city, week).
 - Units: `kg`, `g`, `250 grams`, `litre`, `ml`, `dozen`, `piece`/`each`. Anything else is
   rejected by line.
-- It returns `{ items, prices, cities, weeks, rejected, errors: [{ line, error }] }`.
+- It returns `{ items, prices, cities, weeks, rejected, errors: [{ line, error }], dryRun }`.
 - It is audited as `kitchen.reference_prices.import`.
+- **`dryRun: true`** checks every line and writes nothing: the same answer, for what an import would do
+  (audited as `kitchen.reference_prices.check`).
 
 ## 14. Error codes added in Chunk 5 (5A)
 
@@ -590,7 +599,8 @@ period, a catering advance and the balance are paid straight to the vendor.
   period: weekly|monthly, pricePerPeriod, deliveryMode: delivery|pickup|both,
   deliveryWindowFrom: "12:30", deliveryWindowTo: "13:30", capacity (1–1000),
   skipCutoffHour? (default 20 = 8 PM the evening before),
-  rotation: [{ weekday, menuItemIds: [uuid], note? }], isActive? }
+  rotation: [{ weekday, menuItemIds: [uuid], note? }], isActive?,
+  photoUrl? (a `menu_item` upload of yours; null removes it, left out of a PUT keeps it) }
 ```
 
 - Every served day needs a rotation entry; a dish of another kitchen is `404`.
@@ -918,7 +928,7 @@ body } }`.
   which now takes `descriptionUr` (also on the item sheet and the menu cards). Answers are
   cached 24 h for the same dish details.
 
-**Specials** — `POST /ai/specials`:
+**Specials** — `POST /ai/specials { ingredientIds? }` (with ids, only those count as expiring — each still within 3 days; the others stay usable as pantry):
 
 ```
 { days: 3, targetFoodCostPct, expiring: [{ ingredientId, name, expiresOn, expiringQty }],
@@ -1038,6 +1048,10 @@ carbohydrate, fat, fibre, sodium).
   - The response carries `formula` with the citation (Am J Clin Nutr 1990). Missing details →
     `400` listing them.
   - `{ goal, manualTargetKcal }` sets your own target instead.
+  - `{ goal }` with none of the details and no number is a profile **with no target**: the person only
+    tracks what they order (`targetKcal`, `targetMethod`, `formula` null).
+  - `showCalories` (default true): whether the app shows this person dishes' calories. The app reads it;
+    no kitchen does.
   - `PUT` is for customers (`403` otherwise). `GET` and `DELETE` are **404 for anyone without a
     profile — vendors included**. **`DELETE` removes the row.** No vendor route, order view or
     analytics reads it.
@@ -1059,8 +1073,11 @@ carbohydrate, fat, fibre, sodium).
 | `GET /stats?days` | `{ used, expired, discarded, usedShare, mostWasted }`. |
 | `GET /pantry/from-orders` · `POST /pantry/from-orders { lines: [{ storeOrderItemId, expiresOn? }] }` | Delivered Shopping **grocery** lines of the last 30 days not yet in the pantry. The quantity is pack × quantity; a suggested expiry comes from the aisle (meat 2 days, dairy and vegetables 5, bakery 3, rice and pulses 180). Each line is added once. |
 
-**Reminders** (09:00 PKT, once each): "Use soon" 2 days before and "Use today" on the day, one
-notification per person (`my_kitchen.expiring`). The day after, an item becomes `expired`.
+**Reminders**, once each: "Use soon" some days before and "Use today" on the day, one notification
+per person (`my_kitchen.expiring`), at or after the person's hour (Pakistan time). The day after, an
+item becomes `expired`. `GET/PUT /my-kitchen/pantry/reminders` `{ enabled, time ("09:00": on the
+hour, 06:00–22:00), daysBefore (0–3; 0: only on the day) }` — on, 09:00 and 2 days before until
+changed; off sends nothing.
 
 **Recipes** — `POST /recipes/suggest` → `{ source: ai|library, recipes: [{ title, titleUr, uses:
 [{ pantryItemId, name, expiresOn, expiring }], missing, steps, minutes, servings, why,
@@ -1097,7 +1114,7 @@ variants with `pack` / `pricePer` in their views (`docs/API_SHOPPING.md` §5.6).
 | Route | |
 |---|---|
 | `GET/POST /admin/nutrition/foods` · `PATCH /:id` · `DELETE /:id` (deactivate) · `POST /:id/activate` | Values per 100 g. An edited USDA row becomes `source: staff` (its USDA id is kept). `409 CONFLICT` on a taken key. |
-| `POST /admin/nutrition/foods/import { csv }` | Header `key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams`. Insert or update by key; bad rows are listed by line. |
+| `POST /admin/nutrition/foods/import { csv, dryRun? }` | Header `key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams`. Insert or update by key; bad rows are listed by line. A dry run writes nothing and answers what would be `inserted` and `updated` (audited as `nutrition.food.check`). |
 | `GET/POST /admin/kitchen/aliases` · `DELETE /:id` | `{ alias, canonical, lang: en\|roman\|ur }`; `409` when the alias already means something. Voice, receipts, nutrition and the pantry use it at once. |
 | `GET /admin/ai/usage?days` | Totals; per feature `{ calls, ok, cached, invalid, timeout, quota, error, p50Ms, p95Ms, tokens }`; top businesses; the 20 latest failures. |
 | `GET /admin/ai/prompts` | Every prompt `{ id, version, feature, title, length }` with its 30-day calls (and calls to older versions). |
@@ -1121,7 +1138,7 @@ Notifications: `kitchen.review_insights` (weekly) and `my_kitchen.expiring`.
 | Job | When | What |
 |---|---|---|
 | `kitchen-nightly` steps `review-insights`, `nutrition` | 02:30 PKT | Themes for kitchens with 5+ new reviews (one a day); every recipe-based dish recomputed. |
-| `my-kitchen-reminders` | 09:00 PKT | Pantry reminders (once each) and expiry. |
+| `my-kitchen-reminders` | hourly | Pantry reminders at each person's hour (once each) and expiry. |
 
 ## 38. Decisions in 5C, and demo data part 3
 

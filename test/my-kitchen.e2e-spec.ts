@@ -397,7 +397,12 @@ describe('My Kitchen: pantry, recipes, missing-to-bag, order drafts, reminders (
       day(-1),
     ]);
     const jobs = t.app.get(MyKitchenJobsService);
-    const first = await jobs.reminders();
+    // People are reminded at their hour (09:00 unless they change it).
+    const nineThirty = DateTime.now()
+      .setZone(TZ)
+      .set({ hour: 9, minute: 30, second: 0, millisecond: 0 })
+      .toJSDate();
+    const first = await jobs.reminders(nineThirty);
     expect(first).toMatchObject({
       expired: expect.any(Number),
       reminded: expect.any(Number),
@@ -409,7 +414,7 @@ describe('My Kitchen: pantry, recipes, missing-to-bag, order drafts, reminders (
     expect(mine).toHaveLength(1);
     expect(mine[0].title).toBe('Use today: Bread');
     expect(mine[0].body).toMatch(/In 2 days: Yogurt/);
-    await jobs.reminders();
+    await jobs.reminders(nineThirty);
     expect(
       await sql(
         `SELECT 1 FROM notifications WHERE user_id = $1 AND type = 'my_kitchen.expiring'`,
@@ -448,5 +453,77 @@ describe('My Kitchen: pantry, recipes, missing-to-bag, order drafts, reminders (
       canonical: 'milk',
       source: 'voice',
     });
+  });
+
+  it('reminder settings: on, 09:00 and 2 days before until changed; your own hour and days; off sends nothing', async () => {
+    const jobs = t.app.get(MyKitchenJobsService);
+    const at = (hour: number) =>
+      DateTime.now()
+        .setZone(TZ)
+        .set({ hour, minute: 5, second: 0, millisecond: 0 })
+        .toJSDate();
+    const c = await customer(t);
+    expect(
+      await expectStatus(await c.api.get('/my-kitchen/pantry/reminders'), 200),
+    ).toEqual({ enabled: true, time: '09:00', daysBefore: 2 });
+    expect(
+      await expectStatus(
+        await c.api.put('/my-kitchen/pantry/reminders', {
+          time: '18:00',
+          daysBefore: 1,
+        }),
+        200,
+      ),
+    ).toEqual({ enabled: true, time: '18:00', daysBefore: 1 });
+    expect(
+      (await c.api.put('/my-kitchen/pantry/reminders', { time: '18:30' }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await c.api.put('/my-kitchen/pantry/reminders', { daysBefore: 4 }))
+        .status,
+    ).toBe(400);
+    await expectStatus(
+      await c.api.post('/my-kitchen/pantry', {
+        name: 'Settings bread',
+        qty: 1,
+        unit: 'piece',
+        expiresOn: day(1),
+      }),
+      201,
+    );
+    const mine = () =>
+      sql(
+        `SELECT title, body FROM notifications WHERE user_id = $1 AND type = 'my_kitchen.expiring'`,
+        [c.userId],
+      );
+    await jobs.reminders(at(9));
+    expect(await mine()).toHaveLength(0);
+    await jobs.reminders(at(18));
+    const [n] = await mine();
+    expect(n.title).toBe('Use soon: Settings bread');
+    expect(n.body).toMatch(/In 1 day: Settings bread/);
+
+    const off = await customer(t);
+    await expectStatus(
+      await off.api.put('/my-kitchen/pantry/reminders', { enabled: false }),
+      200,
+    );
+    await expectStatus(
+      await off.api.post('/my-kitchen/pantry', {
+        name: 'Quiet milk',
+        qty: 1,
+        unit: 'l',
+        expiresOn: day(0),
+      }),
+      201,
+    );
+    await jobs.reminders(at(20));
+    expect(
+      await sql(
+        `SELECT 1 FROM notifications WHERE user_id = $1 AND type = 'my_kitchen.expiring'`,
+        [off.userId],
+      ),
+    ).toHaveLength(0);
   });
 });

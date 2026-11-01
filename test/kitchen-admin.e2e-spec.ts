@@ -345,4 +345,75 @@ describe('Staff: nutrition foods, aliases, AI usage and prompts, support lookup 
     );
     expect(audit.n).toBeGreaterThanOrEqual(2);
   });
+
+  it('CSV imports can be checked first: a dry run writes nothing and says what an import would do', async () => {
+    const csv = [
+      'key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams',
+      'dry-kulcha,Kulcha (dry run),,Baked Products,300,8,52,7,2,380,90',
+      'Bad Key,Oops,,x,1,0,0,0,0,0,',
+    ].join('\n');
+    const check = await expectStatus(
+      await admin.api.post('/admin/nutrition/foods/import', {
+        csv,
+        dryRun: true,
+      }),
+      200,
+    );
+    expect(check).toMatchObject({
+      inserted: 1,
+      updated: 0,
+      rejected: 1,
+      dryRun: true,
+    });
+    expect(
+      await sql(`SELECT 1 FROM nutrition_foods WHERE key = 'dry-kulcha'`),
+    ).toHaveLength(0);
+    expect(
+      await expectStatus(
+        await admin.api.post('/admin/nutrition/foods/import', { csv }),
+        200,
+      ),
+    ).toMatchObject({ inserted: 1, rejected: 1, dryRun: false });
+    expect(
+      await expectStatus(
+        await admin.api.post('/admin/nutrition/foods/import', {
+          csv,
+          dryRun: true,
+        }),
+        200,
+      ),
+    ).toMatchObject({ inserted: 0, updated: 1 });
+
+    const prices =
+      'week_ending,city,item,unit,price\n2026-10-15,Lahore,Dry Run Onions,kg,140\n2026-10-15,Lahore,Nothing,bushel,9';
+    const p = await expectStatus(
+      await admin.api.post('/admin/kitchen/reference-prices/import', {
+        csv: prices,
+        dryRun: true,
+      }),
+      200,
+    );
+    expect(p).toMatchObject({
+      items: 1,
+      prices: 1,
+      rejected: 1,
+      cities: ['Lahore'],
+      dryRun: true,
+    });
+    expect(
+      await sql(`SELECT 1 FROM reference_items WHERE name = 'Dry Run Onions'`),
+    ).toHaveLength(0);
+    const audits = (
+      await sql(
+        `SELECT action FROM operational_audit_events
+          WHERE action IN ('nutrition.food.check', 'kitchen.reference_prices.check') AND actor_user_id = $1`,
+        [admin.userId],
+      )
+    ).map((r: { action: string }) => r.action);
+    expect(audits.sort()).toEqual([
+      'kitchen.reference_prices.check',
+      'nutrition.food.check',
+      'nutrition.food.check',
+    ]);
+  });
 });

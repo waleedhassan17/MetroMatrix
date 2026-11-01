@@ -598,4 +598,38 @@ describe('Tiffin: plans, subscriptions, skips, daily orders (Chunk 5 P5)', () =>
     ]);
     expect((await anon.get(`/food/tiffin/plans/${p.id}`)).status).toBe(404);
   });
+
+  it('a plan can show a photo of the kitchen’s own; left out of a change it stays; null takes it off', async () => {
+    const v = await kitchen('Tiffin Photo Kitchen');
+    const photo = asset(v.userId, 'menu_item');
+    const p = await plan(v, { photoUrl: photo.url });
+    expect(p.photoUrl).toBe(photo.url);
+    const body = {
+      name: 'Office lunch',
+      meal: 'lunch',
+      days: ALL,
+      period: 'weekly',
+      pricePerPeriod: 2100,
+      deliveryMode: 'both',
+      deliveryWindowFrom: '12:30',
+      deliveryWindowTo: '13:30',
+      capacity: 5,
+      rotation: p.rotation.map(
+        (r: { weekday: number; menuItemIds: string[] }) => ({
+          weekday: r.weekday,
+          menuItemIds: r.menuItemIds,
+        }),
+      ),
+    };
+    const put = (extra: Record<string, unknown>) =>
+      v.api.put(`/food/vendor/tiffin/plans/${p.id}`, { ...body, ...extra });
+    expect((await expectStatus(await put({}), 200)).photoUrl).toBe(photo.url);
+    const c = await foodCustomer(t, RWP);
+    expect(
+      (await put({ photoUrl: asset(c.userId, 'menu_item').url })).status,
+    ).toBe(400);
+    expect(
+      (await expectStatus(await put({ photoUrl: null }), 200)).photoUrl,
+    ).toBeNull();
+  });
 });

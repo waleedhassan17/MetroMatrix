@@ -58,11 +58,12 @@ export class AdminNutritionController {
   @Post('import')
   @HttpCode(200)
   @ApiOperation({
-    summary: '{ csv } — insert or update by key; bad rows by line.',
+    summary:
+      '{ csv, dryRun? } — insert or update by key; bad rows by line. A dry run checks every line and writes nothing.',
   })
   @ApiEnvelopeOk(AdminNutritionImportView)
   import(@Body() dto: FoodsCsvDto) {
-    return this.foods.import(dto.csv);
+    return this.foods.import(dto.csv, dto.dryRun ?? false);
   }
 
   @Patch(':id')

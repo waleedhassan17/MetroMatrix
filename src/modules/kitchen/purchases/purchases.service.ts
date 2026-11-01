@@ -1,3 +1,9 @@
+import {
+  addDays,
+  localDayBounds,
+  todayIn,
+} from '../../../common/time/time.util';
+import { pgDate } from '../../../common/db/parallel';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { DataSource, EntityManager } from 'typeorm';
 import { ErrorCode } from '../../../common/errors/codes';
@@ -255,13 +261,15 @@ export class PurchasesService {
     );
     const rows = await this.dataSource.query(
       `SELECT p.id, p.purchased_at, p.total, p.source, p.note, p.receipt_url, s.name AS supplier,
-              (SELECT count(*)::int FROM purchase_lines pl WHERE pl.purchase_id = p.id) AS lines
+              (SELECT count(*)::int FROM purchase_lines pl WHERE pl.purchase_id = p.id) AS lines,
+              (SELECT array_agg(x.name::text ORDER BY x.name) FROM (SELECT DISTINCT ki.name FROM purchase_lines pl
+                 JOIN kitchen_ingredients ki ON ki.id = pl.ingredient_id WHERE pl.purchase_id = p.id LIMIT 4) x) AS line_names
          FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplier_id
         WHERE ${where.join(' AND ')} ORDER BY p.purchased_at DESC, p.id
         LIMIT ${q.pageSize} OFFSET ${(q.page - 1) * q.pageSize}`,
       params,
     );
-    return paged(
+    const page = paged(
       rows.map((r: any) => ({
         id: r.id,
         purchasedAt: r.purchased_at,
@@ -271,10 +279,27 @@ export class PurchasesService {
         hasReceipt: !!r.receipt_url,
         supplier: r.supplier,
         lines: r.lines,
+        /** Up to 4 of what was bought, for the list. */
+        lineNames: r.line_names ?? [],
       })),
       n,
       q,
     );
+    // This week (the last 7 days, the branch's own) for the list's header.
+    const [b] = await this.dataSource.query(
+      `SELECT timezone FROM branches WHERE id = $1`,
+      [v.branchId],
+    );
+    const since = localDayBounds(
+      addDays(todayIn(b.timezone), -6),
+      b.timezone,
+    ).start;
+    const [w] = await this.dataSource.query(
+      `SELECT coalesce(sum(total), 0)::int AS total, count(*)::int AS n FROM purchases
+        WHERE branch_id = $1 AND purchased_at >= $2`,
+      [v.branchId, since],
+    );
+    return { ...page, weekTotal: w.total as number, weekCount: w.n as number };
   }
 
   async get(v: VendorRef, id: string) {
@@ -315,7 +340,7 @@ export class PurchasesService {
         display: display(Number(l.qty_base), l.base_unit),
         totalPrice: l.total_price,
         unitCost: Number(l.unit_cost),
-        expiresOn: l.expires_on,
+        expiresOn: pgDate(l.expires_on),
         remaining: l.qty_remaining === null ? null : Number(l.qty_remaining),
       })),
     };

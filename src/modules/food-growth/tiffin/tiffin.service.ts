@@ -136,8 +136,25 @@ export class TiffinService implements OnModuleInit {
     return rows.map((r: any) => this.planView(r));
   }
 
+  /** A plan's photo is one of the kitchen's own uploads. */
+  private checkPhoto(
+    v: VendorRef,
+    url: string | null | undefined,
+    current: string | null = null,
+  ) {
+    if (url && url !== current)
+      this.media.assertOwnedAsset(
+        v.ownerUserId,
+        'menu_item',
+        url,
+        undefined,
+        'photoUrl',
+      );
+  }
+
   async createPlan(v: VendorRef, dto: TiffinPlanDto) {
     await this.checkPlan(v, dto);
+    this.checkPhoto(v, dto.photoUrl);
     const p = await this.dataSource.manager.save(
       this.dataSource.manager.create(TiffinPlan, {
         brandId: v.brandId,
@@ -159,6 +176,7 @@ export class TiffinService implements OnModuleInit {
           note: r.note ?? null,
         })),
         isActive: dto.isActive ?? true,
+        photoUrl: dto.photoUrl ?? null,
       }),
     );
     return this.plan(v, p.id);
@@ -167,6 +185,7 @@ export class TiffinService implements OnModuleInit {
   async updatePlan(v: VendorRef, id: string, dto: TiffinPlanDto) {
     const p = await this.ownPlan(this.dataSource.manager, v, id);
     await this.checkPlan(v, dto);
+    this.checkPhoto(v, dto.photoUrl, p.photoUrl);
     const [{ seated }] = await this.dataSource.query(
       `SELECT count(*)::int AS seated FROM tiffin_subscriptions WHERE plan_id = $1 AND status IN ${SEATED}`,
       [id],
@@ -194,6 +213,7 @@ export class TiffinService implements OnModuleInit {
           note: r.note ?? null,
         })),
         isActive: dto.isActive ?? p.isActive,
+        photoUrl: dto.photoUrl === undefined ? p.photoUrl : dto.photoUrl,
       },
     );
     return this.plan(v, id);
@@ -263,6 +283,7 @@ export class TiffinService implements OnModuleInit {
       skipCutoffHour: r.skip_cutoff_hour,
       rotation: r.rotation,
       isActive: r.is_active,
+      photoUrl: r.photo_url ?? null,
     };
   }
 

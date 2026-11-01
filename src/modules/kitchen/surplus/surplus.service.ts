@@ -128,12 +128,21 @@ export class SurplusService implements OnModuleInit {
         'price',
         'The box price can’t be more than its menu value.',
       );
+    if (dto.photoUrl)
+      this.media.assertOwnedAsset(
+        v.ownerUserId,
+        'menu_item',
+        dto.photoUrl,
+        undefined,
+        'photoUrl',
+      );
     const box = await this.dataSource.manager.save(
       this.dataSource.manager.create(SurplusBox, {
         branchId: v.branchId,
         title: dto.title,
         description: dto.description ?? null,
         contentsHint: dto.contentsHint ?? null,
+        photoUrl: dto.photoUrl ?? null,
         originalValue: dto.originalValue,
         price: dto.price,
         quantity: dto.quantity,
@@ -181,10 +190,18 @@ export class SurplusService implements OnModuleInit {
       const to = dto.pickupTo ? new Date(dto.pickupTo) : b.pickup_to;
       if (dto.pickupTo)
         this.window(b.pickup_from, to, await this.tz(m, v.branchId), now);
+      if (dto.photoUrl && dto.photoUrl !== b.photo_url)
+        this.media.assertOwnedAsset(
+          v.ownerUserId,
+          'menu_item',
+          dto.photoUrl,
+          undefined,
+          'photoUrl',
+        );
       const remaining = quantity - reserved;
       await m.query(
         `UPDATE surplus_boxes SET title = $2, description = $3, contents_hint = $4, price = $5, quantity = $6,
-                remaining = $7, pickup_to = $8, status = $9, updated_at = now() WHERE id = $1`,
+                remaining = $7, pickup_to = $8, status = $9, photo_url = $10, updated_at = now() WHERE id = $1`,
         [
           id,
           dto.title ?? b.title,
@@ -195,6 +212,7 @@ export class SurplusService implements OnModuleInit {
           remaining,
           to,
           remaining > 0 ? 'live' : 'sold_out',
+          dto.photoUrl === undefined ? b.photo_url : dto.photoUrl,
         ],
       );
     });
@@ -868,6 +886,7 @@ export class SurplusService implements OnModuleInit {
       title: b.title,
       description: b.description,
       contentsHint: b.contents_hint,
+      photoUrl: b.photo_url,
       originalValue: b.original_value,
       price: b.price,
       discountPct: b.original_value

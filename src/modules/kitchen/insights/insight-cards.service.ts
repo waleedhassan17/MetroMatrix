@@ -118,7 +118,7 @@ export class InsightCardsService {
 
   private async expiring(v: VendorRef, today: string): Promise<InsightCard[]> {
     const rows = await this.dataSource.query(
-      `SELECT ki.id, ki.name, ki.base_unit, sum(sb.qty_remaining) AS qty, min(sb.expires_on) AS first,
+      `SELECT ki.id, ki.name, ki.base_unit, sum(sb.qty_remaining) AS qty, to_char(min(sb.expires_on), 'YYYY-MM-DD') AS first,
               round(sum(sb.qty_remaining * sb.unit_cost))::int AS value
          FROM stock_batches sb JOIN kitchen_ingredients ki ON ki.id = sb.ingredient_id
         WHERE ki.branch_id = $1 AND sb.qty_remaining > 0 AND sb.expires_on IS NOT NULL AND sb.expires_on <= $2::date + 3

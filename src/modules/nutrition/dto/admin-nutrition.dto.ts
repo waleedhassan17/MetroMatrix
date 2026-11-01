@@ -12,6 +12,7 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  IsBoolean,
 } from 'class-validator';
 import { Trim } from '../../../common/validation/transforms';
 import { PaginationQueryDto } from '../../../common/pagination/pagination';
@@ -98,4 +99,12 @@ export class FoodsCsvDto {
   @IsString()
   @MaxLength(512 * 1024)
   csv!: string;
+  @ApiPropertyOptional({
+    default: false,
+    description:
+      'Check every line and write nothing (what an import would do).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  dryRun?: boolean;
 }

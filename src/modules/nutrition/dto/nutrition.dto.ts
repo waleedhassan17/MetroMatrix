@@ -93,6 +93,14 @@ export class NutritionProfileDto {
   @Min(800)
   @Max(6000)
   manualTargetKcal?: number;
+
+  @ApiPropertyOptional({
+    default: true,
+    description: 'Show dishes’ calories to you in the app.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  showCalories?: boolean;
 }
 
 export class SummaryQueryDto {

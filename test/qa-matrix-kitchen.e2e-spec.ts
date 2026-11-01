@@ -1803,4 +1803,81 @@ describe('QA matrix — Kitchen Intelligence (Chunk 5)', () => {
     );
     expect(await day()).toMatchObject({ state: 'upcoming', canSkip: true });
   });
+
+  it('QA #45 deleting a dish’s own recipe card → gone (the shared card, no size)', async () => {
+    const v = await kitchen('QA Card Delete');
+    const oil = await ingredient(v, {
+      name: 'QA card oil',
+      baseUnit: 'ml',
+      openingStock: { qty: 1, unit: 'l', totalCost: 600 },
+    });
+    const fry = await dish(v, 'QA card pakora', 200);
+    await recipe(v, fry.id, [{ ingredientId: oil.id, qty: 30, unit: 'ml' }]);
+    await expectStatus(
+      await v.api.delete(`/food/vendor/kitchen/items/${fry.id}/recipe`),
+      200,
+    );
+    expect(
+      await expectStatus(
+        await v.api.get(`/food/vendor/kitchen/items/${fry.id}/recipe`),
+        200,
+      ),
+    ).toBeNull();
+  });
+
+  it('QA #46 pantry reminders → at the person’s own hour, never when off', async () => {
+    const { customer } = await import('./utils/shopping');
+    const { MyKitchenJobsService } =
+      await import('../src/modules/my-kitchen/my-kitchen-jobs.service');
+    const jobs = t.app.get(MyKitchenJobsService);
+    const c = await customer(t);
+    await expectStatus(
+      await c.api.put('/my-kitchen/pantry/reminders', {
+        time: '19:00',
+        daysBefore: 0,
+      }),
+      200,
+    );
+    await expectStatus(
+      await c.api.post('/my-kitchen/pantry', {
+        name: 'QA naan',
+        qty: 2,
+        unit: 'piece',
+        expiresOn: pkDay(0),
+      }),
+      201,
+    );
+    const at = (hour: number) =>
+      DateTime.now()
+        .setZone(TZ)
+        .set({ hour, minute: 1, second: 0, millisecond: 0 })
+        .toJSDate();
+    const sent = () =>
+      sql(
+        `SELECT title FROM notifications WHERE user_id = $1 AND type = 'my_kitchen.expiring'`,
+        [c.userId],
+      );
+    await jobs.reminders(at(10));
+    expect(await sent()).toHaveLength(0);
+    await jobs.reminders(at(19));
+    expect((await sent()).map((n: { title: string }) => n.title)).toEqual([
+      'Use today: QA naan',
+    ]);
+  });
+
+  it('QA #47 a CSV dry run → nothing written, the same answer an import would give', async () => {
+    const csv =
+      'week_ending,city,item,unit,price\n2026-10-15,Abbottabad,QA Dry Garlic,kg,600';
+    const r = await expectStatus(
+      await admin.api.post('/admin/kitchen/reference-prices/import', {
+        csv,
+        dryRun: true,
+      }),
+      200,
+    );
+    expect(r).toMatchObject({ items: 1, prices: 1, rejected: 0, dryRun: true });
+    expect(
+      await sql(`SELECT 1 FROM reference_items WHERE name = 'QA Dry Garlic'`),
+    ).toHaveLength(0);
+  });
 });

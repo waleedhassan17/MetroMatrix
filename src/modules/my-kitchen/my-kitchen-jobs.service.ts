@@ -4,7 +4,7 @@ import { Cron } from '@nestjs/schedule';
 import { DataSource } from 'typeorm';
 import { PantryService } from './pantry.service';
 
-/** My Kitchen's daily reminder run: advisory-locked and idempotent; tests call `reminders(now)`. */
+/** My Kitchen's hourly reminder run (each person at their hour): advisory-locked and idempotent; tests call `reminders(now)`. */
 @Injectable()
 export class MyKitchenJobsService {
   private readonly logger = new Logger(MyKitchenJobsService.name);
@@ -15,7 +15,7 @@ export class MyKitchenJobsService {
     private readonly config: ConfigService,
   ) {}
 
-  @Cron('0 9 * * *', { name: 'my-kitchen-reminders', timeZone: 'Asia/Karachi' })
+  @Cron('0 * * * *', { name: 'my-kitchen-reminders', timeZone: 'Asia/Karachi' })
   async cron() {
     if (this.config.get<boolean>('jobs.enabled') ?? true)
       await this.reminders();

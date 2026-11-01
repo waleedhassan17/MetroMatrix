@@ -70,11 +70,11 @@ export class AdminKitchenController {
   @HttpCode(200)
   @ApiOperation({
     summary:
-      '{ csv } with header week_ending,city,item,unit,price — the weekly PBS SPI rows transcribed from the PDF. Upserts items and prices; bad rows are listed by line. Audited.',
+      '{ csv, dryRun? } with header week_ending,city,item,unit,price — the weekly PBS SPI rows transcribed from the PDF. Upserts items and prices; bad rows are listed by line. A dry run checks every line and writes nothing. Audited.',
   })
   @ApiEnvelopeOk(AdminKitchenImportView)
   import(@Body() dto: ReferenceImportDto) {
-    return this.priceWatch.import(dto.csv);
+    return this.priceWatch.import(dto.csv, dto.dryRun ?? false);
   }
 
   @Get('reference-items')

@@ -8,10 +8,12 @@ import { DEFAULT_TZ, addDays } from '../../common/time/time.util';
 import { kitchenNotFound } from '../kitchen/common/errors';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PantryItem } from './entities/pantry-item.entity';
+import { PantryReminderSettings } from './entities/pantry-reminder-settings.entity';
 import {
   FromOrdersDto,
   PantryItemDto,
   PantryQueryDto,
+  PantryRemindersDto,
   UpdatePantryItemDto,
 } from './dto/my-kitchen.dto';
 import { EXPIRING_DAYS } from './recipe-library';
@@ -28,6 +30,11 @@ export interface PantryDraft {
 
 const today = (now = new Date()) =>
   DateTime.fromJSDate(now, { zone: DEFAULT_TZ }).toISODate()!;
+
+/** Reminders when a person has set nothing. */
+export const REMINDER_DEFAULTS = { enabled: true, hour: 9, daysBefore: 2 };
+
+const hhmm = (hour: number) => `${String(hour).padStart(2, '0')}:00`;
 
 /** Shelf life a grocery category suggests for "add to pantry" (days). */
 const SHELF_DAYS: Record<string, number> = {
@@ -312,13 +319,39 @@ export class PantryService {
     return { added: rows.map((r) => this.view(r, now)) };
   }
 
+  async reminderSettings(user: AuthenticatedUser) {
+    const s = await this.dataSource
+      .getRepository(PantryReminderSettings)
+      .findOne({ where: { userId: user.id } });
+    const v = s ?? REMINDER_DEFAULTS;
+    return { enabled: v.enabled, time: hhmm(v.hour), daysBefore: v.daysBefore };
+  }
+
+  async saveReminderSettings(user: AuthenticatedUser, dto: PantryRemindersDto) {
+    const repo = this.dataSource.getRepository(PantryReminderSettings);
+    const s = (await repo.findOne({ where: { userId: user.id } })) ?? {
+      userId: user.id,
+      ...REMINDER_DEFAULTS,
+    };
+    await repo.save({
+      ...s,
+      ...(dto.enabled !== undefined ? { enabled: dto.enabled } : {}),
+      ...(dto.time ? { hour: Number(dto.time.slice(0, 2)) } : {}),
+      ...(dto.daysBefore !== undefined ? { daysBefore: dto.daysBefore } : {}),
+    });
+    return this.reminderSettings(user);
+  }
+
   /**
-   * The daily reminder run (idempotent: `reminded` bits): "use soon" 2 days
-   * before, "expires today" on the day, one notification per person; items
-   * past their date become `expired`.
+   * The hourly reminder run (idempotent: `reminded` bits). Each person is
+   * reminded at or after their hour (Pakistan time; 09:00 by default), once
+   * per item: "use soon" their days before (2 by default; 0: never), "expires
+   * today" on the day, one notification per person. Someone who turned
+   * reminders off gets none. Items past their date become `expired`.
    */
   async remind(m: EntityManager, now = new Date()) {
     const t = today(now);
+    const hour = DateTime.fromJSDate(now, { zone: DEFAULT_TZ }).hour;
     const expired = returned(
       await m.query(
         `UPDATE pantry_items SET status = 'expired', closed_at = $2, updated_at = now()
@@ -331,13 +364,17 @@ export class PantryService {
       user_id: string;
       name: string;
       bit: number;
+      days_before: number;
     }> = await m.query(
-      `SELECT id, user_id, name, CASE WHEN expires_on = $1::date THEN 2 ELSE 1 END AS bit
-         FROM pantry_items
-        WHERE status = 'active' AND (
-              (expires_on = $1::date AND reminded & 2 = 0) OR (expires_on = $2::date AND reminded & 1 = 0))
-        ORDER BY user_id, expires_on, name FOR UPDATE SKIP LOCKED`,
-      [t, addDays(t, 2)],
+      `SELECT pi.id, pi.user_id, pi.name, CASE WHEN pi.expires_on = $1::date THEN 2 ELSE 1 END AS bit,
+              coalesce(s.days_before, $3) AS days_before
+         FROM pantry_items pi LEFT JOIN pantry_reminder_settings s ON s.user_id = pi.user_id
+        WHERE pi.status = 'active' AND coalesce(s.enabled, true) AND coalesce(s.hour, $4) <= $2
+          AND ((pi.expires_on = $1::date AND pi.reminded & 2 = 0)
+            OR (coalesce(s.days_before, $3) > 0 AND pi.expires_on = $1::date + coalesce(s.days_before, $3)
+                AND pi.reminded & 1 = 0))
+        ORDER BY pi.user_id, pi.expires_on, pi.name FOR UPDATE OF pi SKIP LOCKED`,
+      [t, hour, REMINDER_DEFAULTS.daysBefore, REMINDER_DEFAULTS.hour],
     );
     const byUser = new Map<string, typeof due>();
     for (const d of due)
@@ -357,7 +394,9 @@ export class PantryService {
           : `Use soon: ${soon.slice(0, 3).join(', ')}`,
         body: [
           todayItems.length ? `Expires today: ${todayItems.join(', ')}.` : '',
-          soon.length ? `In 2 days: ${soon.join(', ')}.` : '',
+          soon.length
+            ? `In ${items[0].days_before} day${items[0].days_before === 1 ? '' : 's'}: ${soon.join(', ')}.`
+            : '',
           'See recipes that use them in My Kitchen.',
         ]
           .filter(Boolean)

@@ -526,4 +526,103 @@ describe('Kitchen stock — ingredients, recipes, FIFO, automatic sold-out (Chun
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('WRONG_SERVICE');
   });
+
+  it('a dish’s own recipe card can be deleted; an ingredient lists the dishes that use it', async () => {
+    const v = await kitchen('Stock Card Kitchen');
+    const ghee = await ingredient(v, {
+      name: 'Card ghee',
+      category: 'oil',
+      openingStock: { qty: 1, unit: 'kg', totalCost: 1800 },
+    });
+    const halwa = await dish(v, 'Card halwa', 300);
+    await recipe(v, halwa.id, [{ ingredientId: ghee.id, qty: 50, unit: 'g' }], {
+      yieldServings: 2,
+    });
+    const detail = await expectStatus(
+      await v.api.get(`/food/vendor/kitchen/ingredients/${ghee.id}`),
+      200,
+    );
+    expect(detail.usedIn).toEqual([
+      {
+        itemId: halwa.id,
+        variantId: null,
+        name: 'Card halwa',
+        variantName: null,
+        qtyPerServing: 25,
+        addOn: false,
+        packaging: false,
+      },
+    ]);
+    expect(
+      await expectStatus(
+        await v.api.delete(`/food/vendor/kitchen/items/${halwa.id}/recipe`),
+        200,
+      ),
+    ).toEqual({ removed: true });
+    expect(
+      await expectStatus(
+        await v.api.get(`/food/vendor/kitchen/items/${halwa.id}/recipe`),
+        200,
+      ),
+    ).toBeNull();
+    expect(
+      (await v.api.delete(`/food/vendor/kitchen/items/${halwa.id}/recipe`))
+        .status,
+    ).toBe(404);
+    expect(
+      (
+        await expectStatus(
+          await v.api.get(`/food/vendor/kitchen/ingredients/${ghee.id}`),
+          200,
+        )
+      ).usedIn,
+    ).toEqual([]);
+  });
+
+  it('expiring stock: the row names the soonest date, batches give dates, and a batch past its date reads as past', async () => {
+    const { addDays, todayIn } = await import('../src/common/time/time.util');
+    const today = todayIn('Asia/Karachi');
+    const v = await kitchen('Stock Dates Kitchen');
+    const milk = await ingredient(v, {
+      name: 'Dates milk',
+      category: 'dairy',
+      baseUnit: 'ml',
+      openingStock: {
+        qty: 2,
+        unit: 'l',
+        totalCost: 400,
+        expiresOn: addDays(today, 1),
+      },
+    });
+    const list = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/stock?filter=expiring'),
+      200,
+    );
+    expect(
+      list.items.find((i: { id: string }) => i.id === milk.id),
+    ).toMatchObject({
+      expiringSoon: 2000,
+      expiringOn: addDays(today, 1),
+    });
+    const [batch] = await expectStatus(
+      await v.api.get(`/food/vendor/kitchen/stock/${milk.id}/batches`),
+      200,
+    );
+    expect(batch.expiresOn).toBe(addDays(today, 1));
+    await sql(
+      `UPDATE stock_batches SET expires_on = $2::date WHERE ingredient_id = $1`,
+      [milk.id, addDays(today, -2)],
+    );
+    const cards = await expectStatus(
+      await v.api.get('/food/vendor/kitchen/insights/cards'),
+      200,
+    );
+    expect(
+      cards.find((c: { key: string }) => c.key === `expiring_stock:${milk.id}`),
+    ).toMatchObject({
+      title: 'Dates milk is past its date',
+      priority: 5,
+      data: { expiresOn: addDays(today, -2) },
+    });
+  });
 });

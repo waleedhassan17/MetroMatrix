@@ -111,6 +111,13 @@ describe('Kitchen purchases, costing, price watch, waste, insight cards (Chunk 5
       200,
     );
     expect(list.total).toBe(3);
+    // The list names what was bought and carries the week's spend.
+    expect(list.items[0].lineNames).toEqual(['Rice']);
+    expect(list).toMatchObject({
+      weekTotal: expect.any(Number),
+      weekCount: expect.any(Number),
+    });
+    expect(list.weekCount).toBeGreaterThanOrEqual(3);
   });
 
   it('food cost % per size, and a price rise above target alerts the vendor and makes an insight card', async () => {
@@ -498,6 +505,12 @@ describe('Kitchen purchases, costing, price watch, waste, insight cards (Chunk 5
       aboveReference: true,
       referenceRising: true,
     });
+    // The city's price over the weeks imported, oldest first, as dates.
+    expect(
+      watch.items[0].history.map((h: { price: number }) => h.price).slice(-2),
+    ).toEqual([150, 180]);
+    expect(watch.items[0].weekEnding).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(watch.items[0].history[0].weekEnding).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const cards = await expectStatus(
       await v.api.get('/food/vendor/kitchen/insights/cards'),
       200,

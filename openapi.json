@@ -4984,6 +4984,10 @@
             },
             "type": "array"
           },
+          "dryRun": {
+            "description": "A check: nothing was written.",
+            "type": "boolean"
+          },
           "errors": {
             "items": {
               "$ref": "#/components/schemas/AdminKitchenImportViewErrorsItem"
@@ -5011,6 +5015,7 @@
           "prices",
           "cities",
           "weeks",
+          "dryRun",
           "rejected",
           "errors"
         ],
@@ -5246,6 +5251,10 @@
       },
       "AdminNutritionImportView": {
         "properties": {
+          "dryRun": {
+            "description": "A check: nothing was written.",
+            "type": "boolean"
+          },
           "errors": {
             "items": {
               "$ref": "#/components/schemas/AdminNutritionImportViewErrorsItem"
@@ -5266,6 +5275,7 @@
           "inserted",
           "updated",
           "rejected",
+          "dryRun",
           "errors"
         ],
         "type": "object"
@@ -10409,6 +10419,11 @@
           "csv": {
             "description": "key,name,name_ur,food_group,kcal,protein_g,carbs_g,fat_g,fibre_g,sodium_mg,piece_grams (≤ 512 KB)",
             "type": "string"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Check every line and write nothing (what an import would do).",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11042,6 +11057,11 @@
               "female"
             ],
             "type": "string"
+          },
+          "showCalories": {
+            "default": true,
+            "description": "Show dishes’ calories to you in the app.",
+            "type": "boolean"
           }
         },
         "required": [
@@ -11252,6 +11272,22 @@
           "qty",
           "unit"
         ],
+        "type": "object"
+      },
+      "PantryRemindersDto": {
+        "properties": {
+          "daysBefore": {
+            "description": "0: only on the day.",
+            "maximum": 3,
+            "minimum": 0,
+            "type": "number"
+          },
+          "time": {
+            "description": "Pakistan time, on the hour, 06:00–22:00.",
+            "example": "09:00",
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "PatchCartDto": {
@@ -11940,6 +11976,11 @@
             "description": "CSV, header week_ending,city,item,unit,price — one row per item, city and week (≤ 512 KB).",
             "example": "week_ending,city,item,unit,price\n2026-10-15,Lahore,Tomatoes,kg,180",
             "type": "string"
+          },
+          "dryRun": {
+            "default": false,
+            "description": "Check every line and write nothing (what an import would do).",
+            "type": "boolean"
           }
         },
         "required": [
@@ -12640,6 +12681,18 @@
         ],
         "type": "object"
       },
+      "SpecialsDto": {
+        "properties": {
+          "ingredientIds": {
+            "description": "Ideas must use one of these (each still expiring within 3 days).",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
       "SpecialtyDto": {
         "properties": {
           "keywords": {
@@ -12756,6 +12809,10 @@
             "description": "What it would cost on the menu (rupees).",
             "example": 1200,
             "type": "number"
+          },
+          "photoUrl": {
+            "description": "A `menu_item` upload of yours.",
+            "type": "string"
           },
           "pickupFrom": {
             "type": "string"
@@ -12905,6 +12962,11 @@
               "monthly"
             ],
             "type": "string"
+          },
+          "photoUrl": {
+            "description": "A `menu_item` upload of yours; null removes it, left out keeps it.",
+            "nullable": true,
+            "type": "object"
           },
           "pricePerPeriod": {
             "description": "Rupees per week or month.",
@@ -14080,6 +14142,11 @@
       },
       "UpdateSurplusBoxDto": {
         "properties": {
+          "photoUrl": {
+            "description": "A `menu_item` upload of yours; null removes it.",
+            "nullable": true,
+            "type": "object"
+          },
           "quantity": {
             "description": "At least what is already reserved.",
             "type": "number"
@@ -20231,7 +20298,7 @@
             "bearer": []
           }
         ],
-        "summary": "{ csv } with header week_ending,city,item,unit,price — the weekly PBS SPI rows transcribed from the PDF. Upserts items and prices; bad rows are listed by line. Audited.",
+        "summary": "{ csv, dryRun? } with header week_ending,city,item,unit,price — the weekly PBS SPI rows transcribed from the PDF. Upserts items and prices; bad rows are listed by line. A dry run checks every line and writes nothing. Audited.",
         "tags": [
           "admin · kitchen"
         ]
@@ -20663,7 +20730,7 @@
             "bearer": []
           }
         ],
-        "summary": "{ csv } — insert or update by key; bad rows by line.",
+        "summary": "{ csv, dryRun? } — insert or update by key; bad rows by line. A dry run checks every line and writes nothing.",
         "tags": [
           "admin · nutrition"
         ]
@@ -26353,6 +26420,16 @@
       "post": {
         "operationId": "KitchenAssistant_specials",
         "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SpecialsDto"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": ""
@@ -34607,6 +34684,54 @@
           }
         ],
         "summary": "{ lines: [{ storeOrderItemId, expiresOn? }] } — once per order line.",
+        "tags": [
+          "my kitchen"
+        ]
+      }
+    },
+    "/api/v1/my-kitchen/pantry/reminders": {
+      "get": {
+        "operationId": "MyKitchen_reminders",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ enabled, time (\"09:00\", Pakistan time), daysBefore (0–3; 0: only on the day) } — the defaults until you change them.",
+        "tags": [
+          "my kitchen"
+        ]
+      },
+      "put": {
+        "operationId": "MyKitchen_saveReminders",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PantryRemindersDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ enabled?, time? (on the hour, 06:00–22:00), daysBefore? (0–3) } — what is sent changes.",
         "tags": [
           "my kitchen"
         ]

@@ -72,3 +72,17 @@ export class PhotoCheckDto {
   @IsUUID()
   itemId?: string;
 }
+
+/** POST /ai/specials — optionally only these expiring ingredients (from a card or the stock list). */
+export class SpecialsDto {
+  @ApiPropertyOptional({
+    type: [String],
+    description:
+      'Ideas must use one of these (each still expiring within 3 days).',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsUUID('all', { each: true })
+  ingredientIds?: string[];
+}

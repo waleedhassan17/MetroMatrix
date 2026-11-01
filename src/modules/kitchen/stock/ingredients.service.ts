@@ -42,6 +42,7 @@ export interface IngredientRow {
   last_cost: string | null;
   is_active: boolean;
   expiring_qty?: string | null;
+  expiring_on?: string | null;
   used_in?: number;
 }
 
@@ -69,6 +70,8 @@ export function ingredientView(r: IngredientRow) {
     /** Rupees of stock on the shelf at average cost. */
     value: Math.round(Math.max(onHand, 0) * avg),
     expiringSoon: r.expiring_qty ? Number(r.expiring_qty) : 0,
+    /** The soonest of those batches' dates (or one already past). */
+    expiringOn: r.expiring_on ?? null,
     isActive: r.is_active,
     ...(r.used_in !== undefined ? { usedInRecipes: r.used_in } : {}),
   };
@@ -77,12 +80,15 @@ export function ingredientView(r: IngredientRow) {
 export const INGREDIENT_COLUMNS = `ki.id, ki.name, ki.name_ur, ki.category, ki.base_unit, ki.custom_units, ki.par_level,
   ki.on_hand, ki.avg_cost, ki.last_cost, ki.is_active`;
 
-/** Batches expiring within 3 days of the branch's today (qty still on the shelf). */
+/** Batches expiring within 3 days of the branch's today (qty still on the shelf), and the soonest date. */
 export const EXPIRING_SQL = (
   dateParam: string,
 ) => `(SELECT sum(sb.qty_remaining) FROM stock_batches sb
   WHERE sb.ingredient_id = ki.id AND sb.qty_remaining > 0 AND sb.expires_on IS NOT NULL
-    AND sb.expires_on <= ${dateParam}::date + 3) AS expiring_qty`;
+    AND sb.expires_on <= ${dateParam}::date + 3) AS expiring_qty,
+  (SELECT to_char(min(sb.expires_on), 'YYYY-MM-DD') FROM stock_batches sb
+  WHERE sb.ingredient_id = ki.id AND sb.qty_remaining > 0 AND sb.expires_on IS NOT NULL
+    AND sb.expires_on <= ${dateParam}::date + 3) AS expiring_on`;
 
 /**
  * A kitchen's ingredients. Names are unique per kitchen regardless of case
@@ -150,7 +156,17 @@ export class IngredientsService {
       [id, v.branchId, today],
     );
     if (!r) throw kitchenNotFound('Ingredient');
-    return ingredientView(r);
+    // The dishes (and sizes) whose cards use it, per serving.
+    const usedIn = await m.query(
+      `SELECT rc.menu_item_id AS "itemId", rc.variant_id AS "variantId", mi.name, iv.name AS "variantName",
+              round(rl.qty_base / rc.yield_servings, 3)::float AS "qtyPerServing",
+              rl.option_id IS NOT NULL AS "addOn", rl.is_packaging AS "packaging"
+         FROM recipe_lines rl JOIN recipe_cards rc ON rc.id = rl.recipe_card_id
+         JOIN menu_items mi ON mi.id = rc.menu_item_id LEFT JOIN item_variants iv ON iv.id = rc.variant_id
+        WHERE rl.ingredient_id = $1 ORDER BY mi.name, iv.name NULLS FIRST`,
+      [id],
+    );
+    return { ...ingredientView(r), usedIn };
   }
 
   /** The locked entity, scoped to the kitchen. */

@@ -67,16 +67,22 @@ export class NutritionProfile {
   })
   activity!: (typeof ACTIVITIES)[number] | null;
 
-  @Column({ type: 'int', name: 'target_kcal' })
-  targetKcal!: number;
+  /** null: no target, the person only tracks what they order. */
+  @Column({ type: 'int', name: 'target_kcal', nullable: true })
+  targetKcal!: number | null;
 
   @Column({
     type: 'enum',
     enum: TARGET_METHODS,
     enumName: 'nutrition_target_method',
     name: 'target_method',
+    nullable: true,
   })
-  targetMethod!: (typeof TARGET_METHODS)[number];
+  targetMethod!: (typeof TARGET_METHODS)[number] | null;
+
+  /** Whether the app shows dishes' calories to this person (it reads it; no kitchen does). */
+  @Column({ type: 'boolean', name: 'show_calories', default: true })
+  showCalories!: boolean;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   createdAt!: Date;

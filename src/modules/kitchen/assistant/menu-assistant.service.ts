@@ -289,7 +289,7 @@ export class MenuAssistantService {
 
   // ── Specials ──
 
-  async specials(v: VendorRef, now = new Date()) {
+  async specials(v: VendorRef, ingredientIds?: string[], now = new Date()) {
     const [b] = await this.dataSource.query(
       `SELECT timezone, target_food_cost_pct FROM branches WHERE id = $1`,
       [v.branchId],
@@ -316,7 +316,11 @@ export class MenuAssistantService {
         GROUP BY ki.id ORDER BY ki.name`,
       [v.branchId, today, until],
     );
-    const expiring = ings.filter((i) => i.expires_on);
+    // Only the chosen ones, when the cook picked some (still expiring within the window).
+    const chosen = ingredientIds?.length ? new Set(ingredientIds) : null;
+    const expiring = ings.filter(
+      (i) => i.expires_on && (!chosen || chosen.has(i.id)),
+    );
     const base = {
       days: SPECIALS_EXPIRY_DAYS,
       targetFoodCostPct: b.target_food_cost_pct,
@@ -332,7 +336,9 @@ export class MenuAssistantService {
         ...base,
         ideas: [],
         dropped: 0,
-        message: `Nothing expires in the next ${SPECIALS_EXPIRY_DAYS} days.`,
+        message: chosen
+          ? `None of these expire in the next ${SPECIALS_EXPIRY_DAYS} days.`
+          : `Nothing expires in the next ${SPECIALS_EXPIRY_DAYS} days.`,
       };
     if (!this.ai.usable('specials'))
       throw aiUnavailable(SPECIALS_MANUAL, 'disabled');
@@ -353,8 +359,12 @@ export class MenuAssistantService {
           onHand: display(Number(i.expiring_qty), i.base_unit),
           expiresOn: i.expires_on,
         })),
+        // Everything else on the shelf (an expiring one the cook didn't choose too).
         pantry: ings
-          .filter((i) => !i.expires_on && Number(i.on_hand) > 0)
+          .filter(
+            (i) =>
+              !expiring.some((e) => e.id === i.id) && Number(i.on_hand) > 0,
+          )
           .slice(0, 80)
           .map((i) => ({ id: i.id, name: i.name })),
         cuisines,

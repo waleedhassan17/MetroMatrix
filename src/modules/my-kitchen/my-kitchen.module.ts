@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PantryItem } from './entities/pantry-item.entity';
+import { PantryReminderSettings } from './entities/pantry-reminder-settings.entity';
 import { PantryService } from './pantry.service';
 import { MyKitchenRecipesService } from './my-kitchen-recipes.service';
 import { MyKitchenVoiceContexts } from './my-kitchen-voice.contexts';
@@ -15,7 +16,10 @@ import { MyKitchenController } from './my-kitchen.controller';
  * delivered grocery orders, and the pantry voice screen.
  */
 @Module({
-  imports: [TypeOrmModule.forFeature([PantryItem]), NotificationsModule],
+  imports: [
+    TypeOrmModule.forFeature([PantryItem, PantryReminderSettings]),
+    NotificationsModule,
+  ],
   controllers: [MyKitchenController],
   providers: [
     PantryService,

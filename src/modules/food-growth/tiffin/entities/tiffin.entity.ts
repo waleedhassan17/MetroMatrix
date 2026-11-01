@@ -92,6 +92,10 @@ export class TiffinPlan extends BaseEntity {
 
   @Column({ type: 'boolean', name: 'is_active', default: true })
   isActive!: boolean;
+
+  /** A `menu_item` upload of the kitchen's. */
+  @Column({ type: 'varchar', length: 500, name: 'photo_url', nullable: true })
+  photoUrl!: string | null;
 }
 
 export const TIFFIN_STATUSES = [

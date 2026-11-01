@@ -17,6 +17,8 @@ import {
   Min,
   ValidateIf,
   ValidateNested,
+  IsBoolean,
+  Matches,
 } from 'class-validator';
 import { Trim } from '../../../common/validation/transforms';
 import { PaginationQueryDto } from '../../../common/pagination/pagination';
@@ -136,4 +138,28 @@ export class MissingToBagDto {
   @IsString()
   @MaxLength(80)
   city?: string;
+}
+
+/** PUT /my-kitchen/pantry/reminders — what is sent changes. */
+export class PantryRemindersDto {
+  @IsOptional() @IsBoolean() enabled?: boolean;
+  @ApiPropertyOptional({
+    example: '09:00',
+    description: 'Pakistan time, on the hour, 06:00–22:00.',
+  })
+  @IsOptional()
+  @Matches(/^(0[6-9]|1\d|2[0-2]):00$/, {
+    message: 'time: on the hour, 06:00–22:00',
+  })
+  time?: string;
+  @ApiPropertyOptional({
+    minimum: 0,
+    maximum: 3,
+    description: '0: only on the day.',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(3)
+  daysBefore?: number;
 }

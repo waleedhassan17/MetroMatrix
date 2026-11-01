@@ -683,4 +683,39 @@ describe('Bachat Box, donations, packing proof, expiry alerts (Chunk 5 P4)', () 
         .status,
     ).toBe(404);
   });
+
+  it('a box can show a photo of the kitchen’s own; someone else’s is refused; null takes it off', async () => {
+    const v = await kitchen('Surplus Photo Kitchen');
+    const photo = asset(v.userId, 'menu_item');
+    const b = await box(v, { photoUrl: photo.url });
+    expect(b.photoUrl).toBe(photo.url);
+    const c = await foodCustomer(t, SUK);
+    const bad = await v.api.post('/food/vendor/kitchen/surplus-boxes', {
+      title: 'Bachat Box — not ours',
+      originalValue: 500,
+      price: 200,
+      quantity: 1,
+      ...window(),
+      photoUrl: asset(c.userId, 'menu_item').url,
+    });
+    expect(bad.status).toBe(400);
+    expect(
+      (
+        await expectStatus(
+          await new ApiClient(t.http).get(`/food/surplus/${b.id}`),
+          200,
+        )
+      ).photoUrl,
+    ).toBe(photo.url);
+    expect(
+      (
+        await expectStatus(
+          await v.api.patch(`/food/vendor/kitchen/surplus-boxes/${b.id}`, {
+            photoUrl: null,
+          }),
+          200,
+        )
+      ).photoUrl,
+    ).toBeNull();
+  });
 });

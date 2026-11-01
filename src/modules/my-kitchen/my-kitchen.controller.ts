@@ -8,6 +8,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
@@ -22,6 +23,7 @@ import {
   PantryBatchDto,
   PantryItemDto,
   PantryQueryDto,
+  PantryRemindersDto,
   StatsQueryDto,
   UpdatePantryItemDto,
 } from './dto/my-kitchen.dto';
@@ -88,6 +90,27 @@ export class MyKitchenController {
   })
   fromOrders(@CurrentUser() u: AuthenticatedUser, @Body() dto: FromOrdersDto) {
     return this.pantry.addFromOrders(u, dto);
+  }
+
+  @Get('pantry/reminders')
+  @ApiOperation({
+    summary:
+      '{ enabled, time ("09:00", Pakistan time), daysBefore (0–3; 0: only on the day) } — the defaults until you change them.',
+  })
+  reminders(@CurrentUser() u: AuthenticatedUser) {
+    return this.pantry.reminderSettings(u);
+  }
+
+  @Put('pantry/reminders')
+  @ApiOperation({
+    summary:
+      '{ enabled?, time? (on the hour, 06:00–22:00), daysBefore? (0–3) } — what is sent changes.',
+  })
+  saveReminders(
+    @CurrentUser() u: AuthenticatedUser,
+    @Body() dto: PantryRemindersDto,
+  ) {
+    return this.pantry.saveReminderSettings(u, dto);
   }
 
   @Patch('pantry/:id')

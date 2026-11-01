@@ -181,7 +181,7 @@ export class AdminNutritionService {
   }
 
   /** `{ csv }` with FOODS_CSV_HEADER: insert or update by key; bad rows listed by line. */
-  async import(csv: string) {
+  async import(csv: string, dryRun = false) {
     const rows = parseCsv(csv);
     const head = (rows.shift() ?? []).map((h) => h.trim().toLowerCase());
     if (head.join(',') !== FOODS_CSV_HEADER.join(','))
@@ -193,6 +193,7 @@ export class AdminNutritionService {
     const errors: Array<{ line: number; error: string }> = [];
     let inserted = 0;
     let updated = 0;
+    const good: Array<{ key: string; values: unknown[] }> = [];
     for (const [i, r] of rows.entries()) {
       const line = i + 2;
       if (!r.some((c) => c.trim())) continue;
@@ -219,15 +220,9 @@ export class AdminNutritionService {
         errors.push({ line, error: bad });
         continue;
       }
-      const res = await this.dataSource.query(
-        `INSERT INTO nutrition_foods (key, name, name_ur, food_group, source, kcal, protein_g, carbs_g, fat_g, fibre_g, sodium_mg, piece_grams)
-         VALUES ($1, $2, $3, $4, 'staff', $5, $6, $7, $8, $9, $10, $11)
-         ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, name_ur = EXCLUDED.name_ur, food_group = EXCLUDED.food_group,
-                source = 'staff', kcal = EXCLUDED.kcal, protein_g = EXCLUDED.protein_g, carbs_g = EXCLUDED.carbs_g,
-                fat_g = EXCLUDED.fat_g, fibre_g = EXCLUDED.fibre_g, sodium_mg = EXCLUDED.sodium_mg,
-                piece_grams = EXCLUDED.piece_grams, updated_at = now()
-         RETURNING (xmax = 0) AS inserted`,
-        [
+      good.push({
+        key,
+        values: [
           key,
           name.slice(0, 200),
           nameUr || null,
@@ -240,6 +235,38 @@ export class AdminNutritionService {
           sodium,
           piece,
         ],
+      });
+    }
+    if (dryRun) {
+      // What an import would do: keys already there would be updated.
+      const [{ n }] = await this.dataSource.query(
+        `SELECT count(*)::int AS n FROM nutrition_foods WHERE key = ANY($1::text[])`,
+        [[...new Set(good.map((g) => g.key))]],
+      );
+      const check = {
+        inserted: new Set(good.map((g) => g.key)).size - n,
+        updated: n,
+      };
+      await this.audit.record({
+        action: 'nutrition.food.check',
+        targetType: 'nutrition_food',
+        targetId: null,
+        details: { rejected: errors.length },
+        before: null,
+        after: check,
+      });
+      return { ...check, rejected: errors.length, errors, dryRun: true };
+    }
+    for (const g of good) {
+      const res = await this.dataSource.query(
+        `INSERT INTO nutrition_foods (key, name, name_ur, food_group, source, kcal, protein_g, carbs_g, fat_g, fibre_g, sodium_mg, piece_grams)
+         VALUES ($1, $2, $3, $4, 'staff', $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (key) DO UPDATE SET name = EXCLUDED.name, name_ur = EXCLUDED.name_ur, food_group = EXCLUDED.food_group,
+                source = 'staff', kcal = EXCLUDED.kcal, protein_g = EXCLUDED.protein_g, carbs_g = EXCLUDED.carbs_g,
+                fat_g = EXCLUDED.fat_g, fibre_g = EXCLUDED.fibre_g, sodium_mg = EXCLUDED.sodium_mg,
+                piece_grams = EXCLUDED.piece_grams, updated_at = now()
+         RETURNING (xmax = 0) AS inserted`,
+        g.values,
       );
       if (res[0]?.inserted) inserted++;
       else updated++;
@@ -253,6 +280,12 @@ export class AdminNutritionService {
       before: null,
       after: { inserted, updated },
     });
-    return { inserted, updated, rejected: errors.length, errors };
+    return {
+      inserted,
+      updated,
+      rejected: errors.length,
+      errors,
+      dryRun: false,
+    };
   }
 }
