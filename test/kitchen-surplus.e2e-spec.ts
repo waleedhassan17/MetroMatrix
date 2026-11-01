@@ -484,6 +484,19 @@ describe('Bachat Box, donations, packing proof, expiry alerts (Chunk 5 P4)', () 
       rejectedReason: null,
     });
     expect(r.payTo).toHaveLength(1);
+    // The box's page offers a transfer; the reservation keeps the account while it is owed.
+    expect(
+      (await expectStatus(await c.api.get(`/food/surplus/${b.id}`), 200))
+        .paymentMethods,
+    ).toEqual(['pay_at_pickup', 'transfer']);
+    const reopened = (
+      await expectStatus(await c.api.get('/food/surplus/reservations'), 200)
+    ).find((x: { id: string }) => x.id === r.id);
+    expect(reopened.payTo).toEqual(r.payTo);
+    expect(reopened.vendor).toMatchObject({
+      lat: expect.any(Number),
+      lng: expect.any(Number),
+    });
     const minutes = (new Date(r.payment.payBy).getTime() - Date.now()) / 60_000;
     expect(minutes).toBeGreaterThan(14);
     expect(minutes).toBeLessThanOrEqual(15);
@@ -658,10 +671,19 @@ describe('Bachat Box, donations, packing proof, expiry alerts (Chunk 5 P4)', () 
     expect(page).toMatchObject({
       id: b.id,
       status: 'live',
-      vendor: { name: 'Surplus Page Kitchen' },
+      vendor: {
+        name: 'Surplus Page Kitchen',
+        isHomeKitchen: expect.any(Boolean),
+        lat: expect.any(Number),
+        lng: expect.any(Number),
+      },
       distanceKm: null,
       pickupLabel: expect.stringMatching(/^Pick up /),
+      // No account to pay into: pickup only.
+      paymentMethods: ['pay_at_pickup'],
+      maxPerReservation: 10,
     });
+    expect(page.vendor).toHaveProperty('phone');
     const near = await expectStatus(
       await anon.get(`/food/surplus/${b.id}?lat=${SUK.lat}&lng=${SUK.lng}`),
       200,

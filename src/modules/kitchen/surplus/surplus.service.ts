@@ -43,6 +43,8 @@ export const NO_SHOW_LIMIT = 3;
 export const BLOCK_DAYS = 14;
 /** A transfer is sent within this long (again after a rejected receipt), never past the pickup window. */
 export const PAY_WINDOW_MS = 15 * 60_000;
+/** Boxes one reservation may take (ReserveDto), so more people get one. */
+export const MAX_PER_RESERVATION = 10;
 
 /** Where a cancel or a no-show leaves the payment: a paid cancel is what the kitchen sends back. */
 const SETTLE_CANCEL = `CASE WHEN payment_status = 'paid' THEN 'refund_due'::surplus_payment_status ELSE 'void'::surplus_payment_status END`;
@@ -535,7 +537,7 @@ export class SurplusService implements OnModuleInit {
   async nearby(q: SurplusQueryDto, now = new Date()) {
     const radius = (q.radiusKm ?? 8) * 1000;
     const rows = await this.dataSource.query(
-      `SELECT sb.*, fb.name AS vendor_name, fb.slug, fb.logo_url, br.address_line, br.area, br.city, br.timezone,
+      `SELECT sb.*, fb.name AS vendor_name, fb.slug, fb.logo_url, fb.is_home_kitchen, br.address_line, br.area, br.city, br.timezone,
               ST_Distance(br.geo, ST_SetSRID(ST_MakePoint($2::float8, $1::float8), 4326)::geography) AS distance_m
          FROM surplus_boxes sb JOIN branches br ON br.id = sb.branch_id
          JOIN food_brands fb ON fb.id = br.brand_id JOIN businesses b ON b.id = br.business_id
@@ -551,6 +553,7 @@ export class SurplusService implements OnModuleInit {
         slug: r.slug,
         logoUrl: r.logo_url,
         address: [r.address_line, r.area, r.city].filter(Boolean).join(', '),
+        isHomeKitchen: r.is_home_kitchen,
       },
       distanceKm: Math.round(r.distance_m / 100) / 10,
       pickupLabel: `Pick up ${formatTime12(r.pickup_from, r.timezone)} – ${formatTime12(r.pickup_to, r.timezone)}`,
@@ -662,11 +665,35 @@ export class SurplusService implements OnModuleInit {
       `SELECT r.id, r.code, r.quantity, r.status, r.payment_method, r.total, r.created_at, r.collected_at,
               r.payment_status, r.pay_by, r.payment_ref, r.payment_proof_url, r.payment_rejected_reason,
               sb.id AS box_id, sb.title, sb.pickup_from, sb.pickup_to, fb.name AS vendor_name, fb.slug,
-              br.address_line, br.area, br.city, br.timezone, br.phone
+              br.address_line, br.area, br.city, br.timezone, br.phone, br.business_id,
+              ST_Y(br.geo::geometry) AS lat, ST_X(br.geo::geometry) AS lng
          FROM surplus_reservations r JOIN surplus_boxes sb ON sb.id = r.box_id
          JOIN branches br ON br.id = sb.branch_id JOIN food_brands fb ON fb.id = br.brand_id
         WHERE r.user_id = $1 ORDER BY r.created_at DESC LIMIT 50`,
       [user.id],
+    );
+    // Where to send a transfer that is still owed (the reservation page can be opened again).
+    const owed = [
+      ...new Set<string>(
+        rows
+          .filter(
+            (r: any) =>
+              r.status === 'reserved' &&
+              r.payment_status === 'awaiting_transfer',
+          )
+          .map((r: any) => r.business_id),
+      ),
+    ];
+    const accounts = new Map(
+      await Promise.all(
+        owed.map(
+          async (id) =>
+            [
+              id,
+              await this.settings.activeAccounts(this.dataSource.manager, id),
+            ] as const,
+        ),
+      ),
     );
     return rows.map((r: any) => ({
       id: r.id,
@@ -675,6 +702,10 @@ export class SurplusService implements OnModuleInit {
       status: r.status,
       paymentMethod: r.payment_method,
       payment: paymentView(r),
+      payTo:
+        r.status === 'reserved' && r.payment_status === 'awaiting_transfer'
+          ? (accounts.get(r.business_id) ?? [])
+          : [],
       total: r.total,
       reservedAt: r.created_at,
       collectedAt: r.collected_at,
@@ -689,6 +720,8 @@ export class SurplusService implements OnModuleInit {
         slug: r.slug,
         phone: r.phone,
         address: [r.address_line, r.area, r.city].filter(Boolean).join(', '),
+        lat: r.lat === null ? null : Number(r.lat),
+        lng: r.lng === null ? null : Number(r.lng),
       },
       pickupLabel: `${formatTime12(r.pickup_from, r.timezone)} – ${formatTime12(r.pickup_to, r.timezone)}, ${localDate(r.pickup_from, r.timezone)}`,
       canCancel: r.status === 'reserved' && new Date(r.pickup_to) > new Date(),
@@ -699,7 +732,8 @@ export class SurplusService implements OnModuleInit {
   async publicBox(boxId: string, q: SurplusBoxQueryDto) {
     const near = q.lat !== undefined && q.lng !== undefined;
     const [r] = await this.dataSource.query(
-      `SELECT sb.*, fb.name AS vendor_name, fb.slug, fb.logo_url, br.address_line, br.area, br.city, br.timezone,
+      `SELECT sb.*, fb.name AS vendor_name, fb.slug, fb.logo_url, fb.is_home_kitchen, br.address_line, br.area, br.city, br.timezone,
+              br.phone, br.business_id, ST_Y(br.geo::geometry) AS lat, ST_X(br.geo::geometry) AS lng,
               ${near ? 'ST_Distance(br.geo, ST_SetSRID(ST_MakePoint($3::float8, $2::float8), 4326)::geography)' : 'NULL'} AS distance_m
          FROM surplus_boxes sb JOIN branches br ON br.id = sb.branch_id
          JOIN food_brands fb ON fb.id = br.brand_id JOIN businesses b ON b.id = br.business_id
@@ -707,6 +741,10 @@ export class SurplusService implements OnModuleInit {
       near ? [boxId, q.lat, q.lng] : [boxId],
     );
     if (!r) throw kitchenNotFound('Bachat Box');
+    const accounts = await this.settings.activeAccounts(
+      this.dataSource.manager,
+      r.business_id,
+    );
     return {
       ...this.boxView(r),
       vendor: {
@@ -714,10 +752,19 @@ export class SurplusService implements OnModuleInit {
         slug: r.slug,
         logoUrl: r.logo_url,
         address: [r.address_line, r.area, r.city].filter(Boolean).join(', '),
+        isHomeKitchen: r.is_home_kitchen,
+        phone: r.phone,
+        lat: r.lat === null ? null : Number(r.lat),
+        lng: r.lng === null ? null : Number(r.lng),
       },
       distanceKm:
         r.distance_m === null ? null : Math.round(r.distance_m / 100) / 10,
       pickupLabel: `Pick up ${formatTime12(r.pickup_from, r.timezone)} – ${formatTime12(r.pickup_to, r.timezone)}`,
+      // A transfer is offered only when the kitchen has an account to pay into.
+      paymentMethods: accounts.length
+        ? ['pay_at_pickup', 'transfer']
+        : ['pay_at_pickup'],
+      maxPerReservation: MAX_PER_RESERVATION,
     };
   }
 

@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 import { ApiClient, createTestApp, TestApp } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
-import { Admin, asset } from './utils/shopping';
+import { Admin, asset, testIban } from './utils/shopping';
 import {
   Vendor,
   expectStatus,
@@ -352,6 +352,27 @@ describe('Tiffin: plans, subscriptions, skips, daily orders (Chunk 5 P5)', () =>
       fulfilment: 'pickup',
       addressId: undefined,
     });
+    // A transfer still owed shows where to send it; cash never does.
+    await expectStatus(
+      await v.api.post('/food/vendor/payment-accounts', {
+        kind: 'bank',
+        accountTitle: 'Tiffin Ops Kitchen',
+        accountNumber: testIban(),
+        bankName: 'HBL',
+      }),
+      201,
+    );
+    const owed = (
+      await expectStatus(await b.c.api.get('/food/tiffin/subscriptions'), 200)
+    ).find((x: { id: string }) => x.id === b.s.id);
+    expect(owed.payTo).toEqual([
+      expect.objectContaining({ kind: 'bank', bankName: 'HBL' }),
+    ]);
+    expect(
+      (
+        await expectStatus(await a.c.api.get('/food/tiffin/subscriptions'), 200)
+      ).find((x: { id: string }) => x.id === a.s.id).payTo,
+    ).toEqual([]);
     const d1 = day(1);
     const tm = await expectStatus(
       await v.api.get(`/food/vendor/tiffin/tomorrow?date=${d1}`),

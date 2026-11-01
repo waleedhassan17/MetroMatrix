@@ -396,12 +396,12 @@ summarised per local hour and order size (`1-2`, `3-5`, `6+` items), as p50 and 
 
 | Route | |
 |---|---|
-| `GET /food/surplus?lat&lng&radiusKm (default 8)` | Live boxes from open kitchens, nearest first, with `pickupLabel` and `discountPct`. Public. |
+| `GET /food/surplus?lat&lng&radiusKm (default 8)` | Live boxes from open kitchens, nearest first, with `pickupLabel`, `discountPct` and `vendor.isHomeKitchen`. Public. |
 | `POST /food/surplus/:boxId/reserve` | `{ quantity 1–10, paymentMethod?: pay_at_pickup\|transfer }` + **`Idempotency-Key`** → `{ code: "BB-7KQ2PX", total, payTo (transfer: the vendor's accounts), … }` |
-| `GET /food/surplus/reservations` | Mine. |
+| `GET /food/surplus/reservations` | Mine, with the kitchen's `phone`, `lat` and `lng`, and `payTo` (the kitchen's accounts) while a transfer is still owed (`awaiting_transfer`; otherwise `[]`). |
 | `POST /food/surplus/reservations/:id/cancel` | Before the window closes. The box goes back on the shelf. |
 | `POST /food/surplus/reservations/:id/payment-proof` | `{ proofUrl, publicId?, ref? }` (a `payment_proof` upload of yours): `awaiting_transfer → proof_submitted`. The kitchen is told. |
-| `GET /food/surplus/:boxId?lat&lng` | One box's page, in any state (so an old link says it has gone), with its kitchen; `distanceKm` when a point is given. Public; a hidden kitchen is `404`. |
+| `GET /food/surplus/:boxId?lat&lng` | One box's page, in any state (so an old link says it has gone), with its kitchen (`phone`, `lat`, `lng`, `isHomeKitchen`); `distanceKm` when a point is given; `paymentMethods` (`transfer` only when the kitchen has an active account) and `maxPerReservation` (10). Public; a hidden kitchen is `404`. |
 
 **Payments.** Every reservation view carries
 `payment: { method, status, payBy, ref, hasProof, rejectedReason }` (the kitchen's also has
@@ -616,7 +616,7 @@ period, a catering advance and the balance are paid straight to the vendor.
 | Customer | `GET /food/vendors/:idOrSlug/tiffin-plans` | Active plans with `seatsLeft` and `full`; each rotation day names its `dishes: [{ itemId, name }]`. |
 | Public | `GET /food/tiffin/plans/:id` | One active plan (from a home rail or a link) with its `vendor: { id, name, slug, logoUrl }`; `404` when it or its kitchen is hidden. |
 | Customer | `POST /food/tiffin/subscribe` + `Idempotency-Key` | `{ planId, startsOn, paymentMethod: cash_weekly\|transfer_per_period, fulfilment: delivery\|pickup, addressId? }` → `requested`. `409 TIFFIN_FULL` when no seat is left. |
-| Customer | `GET /food/tiffin/subscriptions` | An array. Each carries `plan` (name, meal, days, period, price, `mealValue`, delivery mode and window, cut-off hour), `vendor` (with its phone), `address`, `nextMeal`, `nextCutoffAt`, `nextDishes` and `can: { pause, resume, cancel, sendProof }`. |
+| Customer | `GET /food/tiffin/subscriptions` | An array. Each carries `plan` (name, meal, days, period, price, `mealValue`, delivery mode and window, cut-off hour), `vendor` (with its phone), `address`, `nextMeal`, `nextCutoffAt`, `nextDishes`, `payTo` (the kitchen's accounts while a transfer period is `due`; otherwise `[]`) and `can: { pause, resume, cancel, sendProof }`. |
 | Customer | `GET …/:id/calendar?month=YYYY-MM` | Every day of the month: `state` (`off` not a served day, `before_start`, `pending`, `upcoming`, `skipped`, `paused` a skip inside the pause, `ordered`, `delivered`, `missed`, `none`), `dishes`, `cutoffAt`, `canSkip`, `canUnskip` and the day's `orderCode`. |
 | Customer | `POST …/:id/skip` · `…/unskip` `{ date }` | Before the date's cut-off only, else `409 TIFFIN_SKIP_CUTOFF_PASSED` (`details.date`). |
 | Customer | `POST …/:id/pause` `{ until }` | Every served day up to `until` whose cut-off is still open becomes a skip; days already closed are cooked as planned. |
@@ -651,7 +651,7 @@ and resumes pauses that have ended.
 | Who | Route | |
 |---|---|---|
 | Customer | `POST /food/catering` | `{ vendorId, eventDate, eventTime, guests, eventType: dawat\|wedding\|office\|birthday\|milad\|other, requestedItems: [{ menuItemId?, name, qty? }], budget?, fulfilment: delivery\|pickup\|on_site, addressId?, notes? }` → a `CT-XXXXXX` code. |
-| Customer | `GET /food/catering` (an array) · `GET /:id` | |
+| Customer | `GET /food/catering` (an array) · `GET /:id` | Each with `payTo`: the kitchen's accounts while the advance is owed (`accepted`), otherwise `[]`. |
 | Customer | `GET /food/catering/vendors/:idOrSlug` | A kitchen's catering page: `open`, `minGuests`, `leadDays`, `earliestDate`, `fulfilments` (delivery and pickup as the kitchen offers them, and `on_site`) and its `menu: [{ itemId, name, price, photoUrl }]`. |
 | Customer | `POST /:id/accept` `{ version }` | Only the **newest** version and only before `validUntil`. An older one is `409 INVALID_TRANSITION` with `details: { version, latestVersion }`; an expired one `409 CATERING_QUOTE_EXPIRED`. With `advancePct: 0` it is `confirmed` straight away. |
 | Customer | `POST /:id/advance-proof` `{ proofUrl, ref? }` | A `payment_proof` upload: `accepted → advance_proof`. |

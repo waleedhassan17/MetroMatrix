@@ -23,6 +23,7 @@ import {
   SYSTEM,
 } from '../../food/orders/food-order-transitions.service';
 import { FoodNotifier } from '../../food/orders/food-notifier.service';
+import { VendorSettingsService } from '../../food/vendor/vendor-settings.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { MediaService } from '../../media/media.service';
 import { ForecastService } from '../../kitchen/forecast/forecast.service';
@@ -99,6 +100,7 @@ export class TiffinService implements OnModuleInit {
     private readonly notifications: NotificationsService,
     private readonly media: MediaService,
     private readonly forecast: ForecastService,
+    private readonly settings: VendorSettingsService,
   ) {}
 
   onModuleInit(): void {
@@ -685,13 +687,33 @@ export class TiffinService implements OnModuleInit {
     const rows = await this.dataSource.query(
       `SELECT s.*, p.name AS plan_name, p.skip_cutoff_hour, p.days_mask, p.meal, p.period, p.price_per_period,
               p.delivery_mode, p.delivery_window_from, p.delivery_window_to, p.rotation, p.brand_id,
-              fb.name AS vendor_name, fb.slug, fb.logo_url, br.phone AS vendor_phone, br.timezone
+              fb.name AS vendor_name, fb.slug, fb.logo_url, fb.business_id, br.phone AS vendor_phone, br.timezone
          FROM tiffin_subscriptions s JOIN tiffin_plans p ON p.id = s.plan_id JOIN food_brands fb ON fb.id = p.brand_id
          JOIN branches br ON br.id = p.branch_id
         WHERE s.user_id = $1 ORDER BY s.created_at DESC LIMIT 50`,
       [user.id],
     );
     const names = await this.dishNames(rows);
+    // Where to send a period's transfer while it is owed (the kitchen's own accounts).
+    const owes = (r: any) =>
+      ['active', 'paused'].includes(r.status) &&
+      r.payment_method === 'transfer_per_period' &&
+      r.period_payment_status === 'due';
+    const accounts = new Map(
+      await Promise.all(
+        [
+          ...new Set<string>(
+            rows.filter(owes).map((r: any) => r.business_id as string),
+          ),
+        ].map(
+          async (b) =>
+            [
+              b,
+              await this.settings.activeAccounts(this.dataSource.manager, b),
+            ] as const,
+        ),
+      ),
+    );
     return rows.map((r: any) => {
       const next = this.nextServed(
         r.days_mask,
@@ -748,6 +770,7 @@ export class TiffinService implements OnModuleInit {
           itemId: id,
           name: names.get(id) ?? null,
         })),
+        payTo: owes(r) ? (accounts.get(r.business_id) ?? []) : [],
         can: {
           pause: r.status === 'active',
           resume: r.status === 'paused',

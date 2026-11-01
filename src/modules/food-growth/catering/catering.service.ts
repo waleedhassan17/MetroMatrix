@@ -23,6 +23,7 @@ import {
   SYSTEM,
 } from '../../food/orders/food-order-transitions.service';
 import { FoodNotifier } from '../../food/orders/food-notifier.service';
+import { VendorSettingsService } from '../../food/vendor/vendor-settings.service';
 import { NotificationsService } from '../../notifications/notifications.service';
 import { MediaService } from '../../media/media.service';
 import { ForecastService } from '../../kitchen/forecast/forecast.service';
@@ -79,6 +80,7 @@ export class CateringService implements OnModuleInit {
     private readonly notifications: NotificationsService,
     private readonly media: MediaService,
     private readonly forecast: ForecastService,
+    private readonly vendorSettings: VendorSettingsService,
   ) {}
 
   onModuleInit(): void {
@@ -286,7 +288,7 @@ export class CateringService implements OnModuleInit {
 
   async customerView(user: AuthenticatedUser, id: string) {
     const [r] = await this.dataSource.query(
-      `SELECT cr.*, fb.name AS vendor_name, fb.slug FROM catering_requests cr JOIN food_brands fb ON fb.id = cr.brand_id
+      `SELECT cr.*, fb.name AS vendor_name, fb.slug, fb.business_id FROM catering_requests cr JOIN food_brands fb ON fb.id = cr.brand_id
         WHERE cr.id = $1 AND cr.user_id = $2`,
       [id, user.id],
     );
@@ -294,6 +296,14 @@ export class CateringService implements OnModuleInit {
     return {
       ...(await this.view(this.dataSource.manager, r)),
       vendor: { name: r.vendor_name, slug: r.slug },
+      // Where to send the advance while it is owed (the kitchen's own accounts).
+      payTo:
+        r.status === 'accepted'
+          ? await this.vendorSettings.activeAccounts(
+              this.dataSource.manager,
+              r.business_id,
+            )
+          : [],
     };
   }
 

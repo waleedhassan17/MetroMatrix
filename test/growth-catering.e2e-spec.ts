@@ -1,7 +1,7 @@
 import { DateTime } from 'luxon';
 import { createTestApp, TestApp } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
-import { Admin, asset } from './utils/shopping';
+import { Admin, asset, testIban } from './utils/shopping';
 import {
   Vendor,
   expectStatus,
@@ -118,6 +118,15 @@ describe('Catering: requests, versioned quotes, advance, the event-day order (Ch
       code: 'INVALID_TRANSITION',
       details: { version: 1, latestVersion: 2 },
     });
+    await expectStatus(
+      await v.api.post('/food/vendor/payment-accounts', {
+        kind: 'bank',
+        accountTitle: 'Catering Kitchen',
+        accountNumber: testIban(),
+        bankName: 'HBL',
+      }),
+      201,
+    );
     const accepted = await expectStatus(
       await c.api.post(`/food/catering/${r.id}/accept`, { version: 2 }),
       200,
@@ -127,6 +136,10 @@ describe('Catering: requests, versioned quotes, advance, the event-day order (Ch
       acceptedVersion: 2,
       advance: 14400,
     });
+    // While the advance is owed, the customer sees where to send it.
+    expect(accepted.payTo).toEqual([
+      expect.objectContaining({ kind: 'bank', bankName: 'HBL' }),
+    ]);
     // No more quotes once accepted.
     expect((await quote(v, r.id, lines)).status).toBe(409);
 
