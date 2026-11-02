@@ -6,8 +6,7 @@
     "deleteOutDir": true,
     "assets": [
       {
-        "include": "modules/ai/prompts/**/*.md",
-        "watchAssets": true
+        "include": "modules/ai/prompts/**/*.md"
       }
     ]
   }
