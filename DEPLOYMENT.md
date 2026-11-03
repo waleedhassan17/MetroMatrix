@@ -113,9 +113,9 @@ Rules:
   heroku config:set -a metromatrix-api ADMIN_REFRESH_TTL=12h ADMIN_IDLE_MINUTES=30 ADMIN_ACCESS_EXPIRES_IN=10m
   ```
   The console must reach the API **same-site** (its refresh cookie is `SameSite=Strict`):
-  deploy it on Vercel with the rewrite `/api/:path*` → `https://<this app>.herokuapp.com/api/:path*`
-  (the console's `vercel.json`), so every API call, and the cookie, is first-party to
-  `ADMIN_WEB_ORIGIN`.
+  on the console's Vercel project set `API_ORIGIN=https://<this app>.herokuapp.com` and
+  redeploy. Vercel then proxies the console's `/api/*` here, so every API call, and the
+  cookie, is first-party to `ADMIN_WEB_ORIGIN` (the console's README, "Deploy").
 
   | Variable | Default | Meaning |
   |---|---|---|
