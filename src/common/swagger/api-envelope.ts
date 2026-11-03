@@ -129,4 +129,5 @@ export class FlagView {
   @ApiPropertyOptional() signedOut?: boolean;
   @ApiPropertyOptional() deleted?: boolean;
   @ApiPropertyOptional() delivered?: boolean;
+  @ApiPropertyOptional() reset?: boolean;
 }

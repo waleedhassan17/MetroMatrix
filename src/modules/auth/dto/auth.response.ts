@@ -88,6 +88,14 @@ export class SigninResultView extends AuthResultView {
   challengeToken?: string;
 }
 
+export class ResetTokenView {
+  @ApiProperty({
+    description:
+      'Single-use: spend it at POST /auth/reset-password within 15 minutes.',
+  })
+  resetToken!: string;
+}
+
 export class TotpEnrolmentView {
   @ApiProperty() otpauthUri!: string;
   @ApiProperty({ description: 'PNG data URL of the otpauth URI.' })

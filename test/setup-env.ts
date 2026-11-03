@@ -23,6 +23,8 @@ export function applyTestEnv(): void {
   env.JWT_SECRET ??= 'test-only-jwt-secret-0123456789abcdefghijklmnop';
   // The web console's origin (cookie endpoints check it exactly).
   env.ADMIN_WEB_ORIGIN ??= 'https://admin.metromatrix.test';
+  // First-run registration of the super admin (test/admin-setup.e2e-spec.ts).
+  env.ADMIN_SETUP_CODE ??= 'test-only-setup-code-0123456789';
   env.OTP_PEPPER ??= 'test-only-otp-pepper-0123456789abcdefghijklmnop';
   env.TOTP_ENC_KEY ??= Buffer.alloc(32, 7).toString('base64');
   env.BCRYPT_ROUNDS ??= '4';

@@ -26,8 +26,10 @@ file; the console hiding a button is a courtesy, never the protection.
 
 - **Super admin.** Holds every key implicitly, plus **admin management**
   (`/admin/admins/*`), which is not a key and can never be granted. Super admins
-  are made only by `npm run seed:superadmin`; the API never creates or promotes
-  one.
+  are made only by `npm run seed:superadmin`, or once, on a fresh deployment, by
+  the console's first-run registration (`POST /auth/admin/setup`, public, needs
+  `ADMIN_SETUP_CODE`, closed for good once a super admin exists; ADMIN_API.md
+  §1.0). The API never promotes an existing account.
 - **Enforcement.** `PermissionsGuard` (global, after `RolesGuard`) reads the
   admin's grants from `req.user`, which `AccessTokenValidator` builds from the
   `users` row on every request — never from the token. It **fails closed**: an

@@ -13,4 +13,9 @@ export default registerAs('adminWeb', () => ({
   idleMinutes: parseInt(process.env.ADMIN_IDLE_MINUTES ?? '30', 10),
   /** Access tokens of admin and super_admin accounts (app and console). */
   accessExpiresIn: process.env.ADMIN_ACCESS_EXPIRES_IN || '10m',
+  /**
+   * First run only: the code that unlocks registering the first super admin
+   * from the console (POST /auth/admin/setup). Unset it once that is done.
+   */
+  setupCode: process.env.ADMIN_SETUP_CODE ?? '',
 }));

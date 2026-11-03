@@ -6360,6 +6360,52 @@
         ],
         "type": "object"
       },
+      "AdminSetupDto": {
+        "properties": {
+          "displayName": {
+            "example": "Ayesha Khan",
+            "maxLength": 80,
+            "minLength": 2,
+            "type": "string"
+          },
+          "email": {
+            "example": "owner@example.com",
+            "type": "string"
+          },
+          "password": {
+            "description": "8–72 characters with a lower-case letter, an upper-case letter and a digit.",
+            "type": "string"
+          },
+          "setupCode": {
+            "description": "ADMIN_SETUP_CODE, as set on the server.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "setupCode",
+          "email",
+          "displayName",
+          "password"
+        ],
+        "type": "object"
+      },
+      "AdminSetupStatusView": {
+        "properties": {
+          "setupCodeConfigured": {
+            "description": "ADMIN_SETUP_CODE is set on the server (registration can run).",
+            "type": "boolean"
+          },
+          "setupRequired": {
+            "description": "True until the first super admin exists.",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "setupRequired",
+          "setupCodeConfigured"
+        ],
+        "type": "object"
+      },
       "AdminShopCategoriesView": {
         "properties": {
           "children": {
@@ -10172,6 +10218,9 @@
           "delivered": {
             "type": "boolean"
           },
+          "reset": {
+            "type": "boolean"
+          },
           "signedOut": {
             "type": "boolean"
           }
@@ -12223,6 +12272,18 @@
         "required": [
           "resetToken",
           "password"
+        ],
+        "type": "object"
+      },
+      "ResetTokenView": {
+        "properties": {
+          "resetToken": {
+            "description": "Single-use: spend it at POST /auth/reset-password within 15 minutes.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resetToken"
         ],
         "type": "object"
       },
@@ -22903,6 +22964,94 @@
         ]
       }
     },
+    "/api/v1/auth/admin/setup": {
+      "get": {
+        "operationId": "AdminSetup_status",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdminSetupStatusView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Is the console set up? { setupRequired, setupCodeConfigured } — the landing page shows registration or sign-in.",
+        "tags": [
+          "auth: admin setup"
+        ]
+      },
+      "post": {
+        "operationId": "AdminSetup_register",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminSetupDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/SigninResultView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "summary": "Register the first super admin with ADMIN_SETUP_CODE → { totpRequired, enrolmentRequired: true, challengeToken }; then enrol at /admin/me/totp/*. 409 SETUP_COMPLETE once one exists.",
+        "tags": [
+          "auth: admin setup"
+        ]
+      }
+    },
     "/api/v1/auth/admin/totp": {
       "post": {
         "operationId": "Auth_adminTotp",
@@ -23034,7 +23183,32 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FlagView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
           }
         },
         "summary": "Email a password-reset code. Always 200 { delivered: true } — no account enumeration.",
@@ -23253,7 +23427,32 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/FlagView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
           }
         },
         "summary": "Set a new password with the reset token. Signs the account out everywhere.",
@@ -23457,7 +23656,32 @@
         },
         "responses": {
           "200": {
-            "description": ""
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ResetTokenView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
           }
         },
         "summary": "Exchange the reset code for a single-use { resetToken }.",

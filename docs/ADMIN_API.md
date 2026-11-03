@@ -11,6 +11,30 @@ Envelope, as everywhere: `{ success: true, data }` or
 
 ## 1. Sessions
 
+### 1.0 First run: registering the super admin
+
+A fresh deployment has no super admin. The console asks first:
+
+- `GET /auth/admin/setup` (public) → `{ setupRequired, setupCodeConfigured }`.
+  `setupRequired` is true while no super admin exists (deleted ones don't count).
+  The console shows registration while it is true, and sign-in only after that.
+  There is no public sign-up for admins, ever.
+- `POST /auth/admin/setup { setupCode, email, displayName, password }` (public,
+  5 per minute per address) → the same answer as sign-in step 1:
+  `{ totpRequired: true, enrolmentRequired: true, challengeToken }`. The new
+  account then enrols exactly as in §1.1 step 2 (QR code, recovery codes once).
+  - `setupCode` must equal `ADMIN_SETUP_CODE` on the server (compared in
+    constant time). Unset: `403 SETUP_DISABLED`. Wrong: `403 SETUP_CODE_INVALID`.
+  - A super admin already exists: `409 SETUP_COMPLETE` (sign in instead).
+    The check runs under a database lock, so two registrations at once make one.
+  - The email belongs to any account: `409 EMAIL_EXISTS` (it is never promoted).
+  - `password`: 8–72 characters with a lower-case letter, an upper-case letter
+    and a digit (`VALIDATION_FAILED` otherwise).
+  - Audited once as `admin.setup` (`after: { email, displayName, role }`).
+
+Both stay reachable in maintenance mode. Unset `ADMIN_SETUP_CODE` once the
+account exists; `npm run seed:superadmin` remains the operator's way back in.
+
 ### 1.1 Signing in
 
 1. `POST /auth/signin { email, password, portal: 'admin' }` →
@@ -65,6 +89,15 @@ Vercel with a rewrite `/api/:path*` → `https://<api-host>/api/:path*`, so the
 API (and its cookie) is first-party to the console's origin, and set
 `ADMIN_WEB_ORIGIN` to the console's origin (e.g. `https://admin.example.com`).
 The API is not deployed yet: fill in `<api-host>` when it is.
+
+### 1.2a Forgot password
+
+The console reuses the app's reset flow (docs/API_AUTH.md), which works for
+admins too: `POST /auth/forgot-password { email }` (always `{ delivered: true }`)
+→ `POST /auth/verify-otp { email, otp }` → `{ resetToken }` →
+`POST /auth/reset-password { resetToken, password }`. The reset signs out every
+session and clears a sign-in lockout. The authenticator is still required at the
+next sign-in: a reset changes the password, never the second step. Needs `MAIL_*`.
 
 ### 1.3 Sessions that are not set up
 
@@ -192,7 +225,8 @@ service). `deepLink` is `metromatrix://…` or `https://…`.
 
 `PASSWORD_CHANGE_REQUIRED`, `STEP_UP_REQUIRED`, `SELF_ACTION_FORBIDDEN`,
 `LAST_SUPER_ADMIN`, `SIGNUPS_PAUSED`, `SERVICE_PAUSED`, `MAINTENANCE`,
-`PUSH_DISABLED`, `CSRF_REJECTED`, `SESSION_IDLE`. Existing codes the console
+`PUSH_DISABLED`, `CSRF_REJECTED`, `SESSION_IDLE`, `SETUP_DISABLED`,
+`SETUP_CODE_INVALID`, `SETUP_COMPLETE`. Existing codes the console
 handles: `TOKEN_REVOKED` (access changed: sign in again), `REFRESH_INVALID`,
 `REFRESH_REUSED`, `TOTP_INVALID`, `TOTP_REQUIRED`, `FORBIDDEN`,
 `VALIDATION_FAILED`, `RATE_LIMITED`.
@@ -205,4 +239,5 @@ handles: `TOKEN_REVOKED` (access changed: sign in again), `REFRESH_INVALID`,
 | `ADMIN_REFRESH_TTL` | `12h` | Longest a console session lives |
 | `ADMIN_IDLE_MINUTES` | `30` | No refresh for this long ends the console session |
 | `ADMIN_ACCESS_EXPIRES_IN` | `10m` | Access-token lifetime for admin accounts (app and console) |
+| `ADMIN_SETUP_CODE` | (unset) | At least 16 characters. Lets the console register the first super admin (§1.0); unset it afterwards |
 | `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` | — | One-time, for `npm run seed:superadmin`; remove them afterwards |

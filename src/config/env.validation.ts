@@ -136,6 +136,8 @@ export const envValidationSchema = Joi.object({
     .pattern(/^\d+[smhd]$/)
     .empty('')
     .default('10m'),
+  // First run: unlocks registering the first super admin from the console.
+  ADMIN_SETUP_CODE: Joi.string().min(16).optional().allow(''),
   OTP_PEPPER: Joi.string().min(32).required(),
   TOTP_ENC_KEY: base64Key32.required(),
   BCRYPT_ROUNDS: Joi.number()

@@ -123,6 +123,7 @@ Rules:
   | `ADMIN_REFRESH_TTL` | `12h` | Longest a console session lives, refreshes included |
   | `ADMIN_IDLE_MINUTES` | `30` | No refresh for this long ends a console session |
   | `ADMIN_ACCESS_EXPIRES_IN` | `10m` | Access-token lifetime of admin accounts (app and console) |
+  | `ADMIN_SETUP_CODE` | (unset) | One-time code to register the first super admin in the console (§5); unset it after |
   | `SUPER_ADMIN_EMAIL`, `SUPER_ADMIN_PASSWORD` | — | One command only (§5); never stored as config vars |
 
 ## 4. Deploy
@@ -137,18 +138,35 @@ What runs:
   release, and the previous version keeps serving.
 - `web`: `node dist/main`, listening on Heroku's `$PORT`, with `trust proxy` set for the router.
 
-## 5. Seed the super admin (once)
+## 5. Create the super admin (once)
 
-The credentials go in for one command only and never live in config:
+**From the web console (recommended).** Before the first visit, set a one-time setup code;
+without it, whoever opened a fresh console first could claim it:
+```bash
+heroku config:set -a metromatrix-api ADMIN_SETUP_CODE="$(openssl rand -base64 24)"
+heroku config:get -a metromatrix-api ADMIN_SETUP_CODE     # copy it; never commit or paste it in chat
+```
+Open the console. With no super admin yet, it shows **Create the super admin account**: enter
+the setup code, your name, email and a password, scan the QR code with an authenticator app
+and **store the 10 recovery codes**. From then on the console shows sign-in only, and the
+setup endpoint answers `409 SETUP_COMPLETE`. Remove the code:
+```bash
+heroku config:unset -a metromatrix-api ADMIN_SETUP_CODE
+```
+"Forgot password?" on the console emails a reset code, so set `MAIL_*` (§3) too.
+
+**Or from the command line.** The credentials go in for one command only and never live in
+config:
 ```bash
 heroku run -a metromatrix-api \
   --env "SUPER_ADMIN_EMAIL=you@metromatrix.pk;SUPER_ADMIN_PASSWORD=<strong password>" \
   npm run seed:superadmin:prod
 ```
 Then sign in on the admin portal. Its first answer is `enrolmentRequired: true`: scan the QR
-code and **store the 10 recovery codes**. The seed never prints the password, and it is the
-only way a super admin is ever made: the console creates `admin` accounts only, with a
-temporary password their owner must change (docs/ADMIN_PERMISSIONS.md).
+code and **store the 10 recovery codes**. The seed never prints the password. Apart from the
+console's one-time registration, it is the only way a super admin is ever made: the console
+creates `admin` accounts only, with a temporary password their owner must change
+(docs/ADMIN_PERMISSIONS.md).
 
 Lost the authenticator?
 ```bash

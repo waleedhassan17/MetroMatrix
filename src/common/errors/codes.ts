@@ -197,6 +197,12 @@ export const ErrorCode = {
   CSRF_REJECTED: 'CSRF_REJECTED',
   /** The console session was idle too long: sign in again. */
   SESSION_IDLE: 'SESSION_IDLE',
+  /** First-run registration is off: ADMIN_SETUP_CODE is not set on the server. */
+  SETUP_DISABLED: 'SETUP_DISABLED',
+  /** The setup code doesn't match ADMIN_SETUP_CODE. */
+  SETUP_CODE_INVALID: 'SETUP_CODE_INVALID',
+  /** A super admin already exists: the console only signs in now. */
+  SETUP_COMPLETE: 'SETUP_COMPLETE',
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

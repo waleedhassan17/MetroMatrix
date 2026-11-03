@@ -43,6 +43,7 @@ import { ApiEnvelopeOk, FlagView } from '../../common/swagger/api-envelope';
 import {
   AccountViewDto,
   AuthResultView,
+  ResetTokenView,
   SigninResultView,
   TokenPairView,
 } from './dto/auth.response';
@@ -222,6 +223,7 @@ export class AuthController {
     summary:
       'Email a password-reset code. Always 200 { delivered: true } — no account enumeration.',
   })
+  @ApiEnvelopeOk(FlagView)
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.passwordReset.forgot(dto.email);
   }
@@ -233,6 +235,7 @@ export class AuthController {
   @ApiOperation({
     summary: 'Exchange the reset code for a single-use { resetToken }.',
   })
+  @ApiEnvelopeOk(ResetTokenView)
   verifyOtp(@Body() dto: VerifyResetOtpDto) {
     return this.passwordReset.verifyOtp(dto.email, dto.otp);
   }
@@ -245,6 +248,7 @@ export class AuthController {
     summary:
       'Set a new password with the reset token. Signs the account out everywhere.',
   })
+  @ApiEnvelopeOk(FlagView)
   resetPassword(@Body() dto: ResetPasswordDto) {
     return this.passwordReset.reset(dto.resetToken, dto.password);
   }

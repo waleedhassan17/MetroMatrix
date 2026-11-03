@@ -419,6 +419,10 @@ write and every auth event worth investigating gets one. Actions are dotted verb
   `GoogleAuthService.signupGate`, `AiSettings.platformAllows`).
 - **Console sessions:** `X-Client: admin-web` → refresh token only in the `mm_admin_rt` cookie
   (`src/modules/auth/web/`); `refresh_tokens.client` keeps app and console tokens apart.
+- **First run** (`src/modules/auth/setup/`): `GET/POST /auth/admin/setup` registers the first
+  super admin with `ADMIN_SETUP_CODE`, under an advisory lock, and only while none exists
+  (`SETUP_COMPLETE` after). `test/admin-setup.e2e-spec.ts` parks the other suites' super
+  admins for its run.
 - Tests: `freshTotp(t, admin)` clears the spent step (a fresh code); `limitedAdmin(t, root, keys)`
   makes an admin the way the console does; `ApiClient.headers` for Origin/X-Client.
 

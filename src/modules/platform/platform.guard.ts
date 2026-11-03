@@ -45,6 +45,7 @@ export function maintenanceExempt(
   if (under(path, '/admin')) return true;
   // Admins can always sign in, refresh and sign out — to switch it off.
   if (path === '/auth/admin/totp' || under(path, '/auth/web')) return true;
+  if (path === '/auth/admin/setup') return true;
   if (['/auth/logout', '/auth/signout'].includes(path)) return true;
   if (
     path === '/auth/signin' &&

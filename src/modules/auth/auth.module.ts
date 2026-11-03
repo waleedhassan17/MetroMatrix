@@ -28,6 +28,8 @@ import { UsersModule } from '../users/users.module';
 import { JwtStrategy } from './strategies/jwt.strategy';
 
 import { AdminWebController } from './web/admin-web.controller';
+import { AdminSetupController } from './setup/admin-setup.controller';
+import { AdminSetupService } from './setup/admin-setup.service';
 import { AdminWebSession } from './web/admin-web-session';
 
 @Module({
@@ -52,7 +54,7 @@ import { AdminWebSession } from './web/admin-web-session';
       }),
     }),
   ],
-  controllers: [AuthController, AdminWebController],
+  controllers: [AuthController, AdminWebController, AdminSetupController],
   providers: [
     AuthService,
     TokenService,
@@ -69,6 +71,7 @@ import { AdminWebSession } from './web/admin-web-session';
     JwtStrategy,
     AccessTokenValidator,
     AdminWebSession,
+    AdminSetupService,
   ],
   exports: [
     AuthService,
