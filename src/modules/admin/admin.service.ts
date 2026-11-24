@@ -463,13 +463,18 @@ export class AdminService {
     return user;
   }
 
+  /**
+   * Emails the owner in the background: the decision is committed and audited
+   * by now, so the staff member's request answers at once whatever the SMTP
+   * relay does (MailService never throws; it logs a failed send).
+   */
   private async notifyOwner(
     business: Business,
     send: (to: string, name: string | null) => Promise<void>,
   ): Promise<void> {
     const owner = business.owner;
     if (owner && owner.status !== 'deleted') {
-      await send(owner.email, owner.displayName);
+      void send(owner.email, owner.displayName).catch(() => undefined);
     }
   }
 }

@@ -18,6 +18,15 @@ export default registerAs('mail', () => {
     pass: process.env.MAIL_PASS ?? '',
     from: process.env.MAIL_FROM || 'MetroMatrix <no-reply@metromatrix.pk>',
 
+    /**
+     * SMTP timeouts. Nodemailer's own defaults (2 min to connect, 30 s for the
+     * greeting, 10 min idle) let a slow or blocked relay hold a send for
+     * minutes; with these a dead relay fails in seconds and is logged.
+     */
+    connectionTimeoutMs: 10_000,
+    greetingTimeoutMs: 10_000,
+    socketTimeoutMs: 20_000,
+
     /** The app's deep-link scheme (app.json `scheme`): metromatrix://verify-email?… */
     appScheme: process.env.APP_SCHEME || 'metromatrix',
     /** Optional: named in the business-suspended email. Empty → "contact MetroMatrix support". */

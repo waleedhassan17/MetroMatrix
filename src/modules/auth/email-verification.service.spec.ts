@@ -120,6 +120,29 @@ describe('EmailVerificationService', () => {
     );
   });
 
+  it('issue answers without waiting for the email: a slow SMTP relay never holds sign-up or resend', async () => {
+    const { svc, rows, mail, sentToken } = setup();
+    // The relay never answers.
+    mail.sendVerificationLink.mockImplementationOnce(
+      () => new Promise<undefined>(() => undefined),
+    );
+    await expect(
+      svc.issue({ id: 'u1', email: 'a@x.pk', displayName: 'A' } as never),
+    ).resolves.toBeUndefined();
+    // The link is stored and the send was started with it.
+    expect(rows).toHaveLength(1);
+    expect(rows[0].tokenHash).toBe(sha256Hex(sentToken()));
+  });
+
+  it('issue survives a send that throws before it starts', async () => {
+    const { svc, rows, mail } = setup();
+    mail.sendVerificationLink.mockImplementationOnce(() =>
+      Promise.reject(new Error('template exploded')),
+    );
+    await expect(svc.issue({ id: 'u1' } as never)).resolves.toBeUndefined();
+    expect(rows).toHaveLength(1);
+  });
+
   it('a new link retires the outstanding one', async () => {
     const { svc, rows } = setup();
     await svc.issue({ id: 'u1' } as never);

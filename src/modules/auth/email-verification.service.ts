@@ -65,8 +65,13 @@ export class EmailVerificationService {
         usedAt: null,
       }),
     );
-    // MailService never throws: a mail failure leaves the link resendable.
-    await this.mail.sendVerificationLink(user.email, user.displayName, token);
+    // Sent in the background: sign-up and resend answer as soon as the link
+    // is stored, whatever the SMTP relay does. MailService never throws (a
+    // failure is logged and the link stays resendable); the catch only guards
+    // a synchronous throw while building the email.
+    void this.mail
+      .sendVerificationLink(user.email, user.displayName, token)
+      .catch(() => undefined);
   }
 
   async resend(

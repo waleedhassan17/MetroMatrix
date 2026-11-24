@@ -3,7 +3,7 @@ import { AuthenticatedUser } from '../decorators/current-user.decorator';
 import { ErrorCode } from '../errors/codes';
 
 export const EMAIL_NOT_VERIFIED_MESSAGE =
-  'Please verify your email address first. Enter the 6-digit code we emailed you.';
+  'Please verify your email address first: open the link we emailed you.';
 
 /**
  * Refuses a session whose owner has not confirmed their email address.

@@ -39,16 +39,41 @@ export class MailService implements OnModuleInit {
       return;
     }
     const user = this.config.get<string>('mail.user');
+    const port = this.config.get<number>('mail.port');
     this.transport = createTransport({
       host,
-      port: this.config.get<number>('mail.port'),
+      port,
       secure: this.config.get<boolean>('mail.secure'),
+      connectionTimeout: this.config.get<number>(
+        'mail.connectionTimeoutMs',
+        10_000,
+      ),
+      greetingTimeout: this.config.get<number>(
+        'mail.greetingTimeoutMs',
+        10_000,
+      ),
+      socketTimeout: this.config.get<number>('mail.socketTimeoutMs', 20_000),
       ...(user
         ? { auth: { user, pass: this.config.get<string>('mail.pass') } }
         : {}),
     });
-    this.logger.log(
-      `SMTP transport ready (${host}:${this.config.get<number>('mail.port')})`,
+    this.logger.log(`SMTP transport ready (${host}:${port})`);
+    this.checkRelay(`${host}:${port}`);
+  }
+
+  /**
+   * Logs once, in the background, whether the relay answers and accepts the
+   * login, so a dead relay shows in the server log at boot rather than as
+   * verification emails that never arrive. Never blocks start-up.
+   */
+  private checkRelay(where: string): void {
+    if (!this.transport || this.config.get<string>('app.nodeEnv') === 'test') {
+      return;
+    }
+    this.transport.verify().then(
+      () => this.logger.log(`SMTP reachable (${where})`),
+      (err: Error) =>
+        this.logger.error(`SMTP not reachable (${where}): ${err.message}`),
     );
   }
 
