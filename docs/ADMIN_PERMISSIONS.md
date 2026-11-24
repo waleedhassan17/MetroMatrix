@@ -58,7 +58,7 @@ super-admin routes refuse an admin holding all 11 keys, customers, partners and
 riders get 403 everywhere, and no admin route lacks a mapping.
 
 ## Route map
-<!-- generated from the controllers: 121 routes -->
+<!-- generated from the controllers: 122 routes -->
 
 ### `approvePartners`
 
@@ -66,6 +66,7 @@ riders get 403 everywhere, and no admin route lacks a mapping.
 |---|---|
 | GET | `/admin/businesses` |
 | GET | `/admin/businesses/:id` |
+| POST | `/admin/businesses/:id/documents/:documentId/review` |
 | POST | `/admin/businesses/:id/approve` |
 | POST | `/admin/businesses/:id/reject` |
 | POST | `/admin/businesses/:id/suspend` |

@@ -1250,6 +1250,10 @@
           "addressLine": {
             "type": "string"
           },
+          "canReviewDocuments": {
+            "description": "Staff may accept single documents now (POST /admin/businesses/{id}/documents/{documentId}/review): true while the business waits for review.",
+            "type": "boolean"
+          },
           "city": {
             "type": "string"
           },
@@ -1394,6 +1398,7 @@
           "requiredDocuments",
           "missingDocuments",
           "owner",
+          "canReviewDocuments",
           "history"
         ],
         "type": "object"
@@ -12322,6 +12327,23 @@
         ],
         "type": "object"
       },
+      "ReviewDocumentDto": {
+        "properties": {
+          "status": {
+            "description": "`accepted` marks the document checked; `pending` undoes that. A document is rejected only by rejecting the business with a note on it, because the partner can replace it only then.",
+            "enum": [
+              "accepted",
+              "pending"
+            ],
+            "example": "accepted",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "type": "object"
+      },
       "RiderStatusDto": {
         "properties": {
           "status": {
@@ -15946,6 +15968,78 @@
           }
         ],
         "summary": "pending_approval → approved; emails the partner.",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/v1/admin/businesses/{id}/documents/{documentId}/review": {
+      "post": {
+        "operationId": "AdminBusinesses_reviewDocument",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "documentId",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewDocumentDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/AdminBusinessDetailView"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "success": {
+                      "enum": [
+                        true
+                      ],
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "success",
+                    "data"
+                  ],
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Accept one document (or undo it) while the business waits for review → the business detail.",
         "tags": [
           "admin"
         ]

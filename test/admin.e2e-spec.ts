@@ -221,6 +221,81 @@ describe('Admin: TOTP and approvals (e2e)', () => {
       expect(twice.body.error.code).toBe('INVALID_TRANSITION');
     });
 
+    it('documents are accepted one at a time while the business waits, undone, and the rest accepted on approval', async () => {
+      const admin = await enrolledAdmin(t);
+      const { partner, businessId } = await submittedDoctor(t);
+      const review = (documentId: string, status: string) =>
+        admin.api.post(
+          `/admin/businesses/${businessId}/documents/${documentId}/review`,
+          { status },
+        );
+      const statusOf = (body: any, id: string) =>
+        body.data.documents.find((d: any) => d.id === id).status;
+
+      const one = await admin.api
+        .get(`/admin/businesses/${businessId}`)
+        .expect(200);
+      expect(one.body.data.canReviewDocuments).toBe(true);
+      const [first, second] = one.body.data.documents;
+
+      const accepted = await review(first.id, 'accepted').expect(200);
+      expect(statusOf(accepted.body, first.id)).toBe('accepted');
+      expect(statusOf(accepted.body, second.id)).toBe('pending');
+      expect(accepted.body.data.history.map((h: any) => h.action)).toContain(
+        'business.document.review',
+      );
+      const mine = await partner.api.get('/businesses/me').expect(200);
+      expect(statusOf(mine.body, first.id)).toBe('accepted');
+
+      // Undo; the same answer again changes nothing (but is still audited).
+      const undone = await review(first.id, 'pending').expect(200);
+      expect(statusOf(undone.body, first.id)).toBe('pending');
+      await review(first.id, 'pending').expect(200);
+      const rows = await t.ds.query(
+        `SELECT 1 FROM operational_audit_events
+          WHERE target_type = 'business' AND target_id = $1 AND action = 'business.document.review'`,
+        [businessId],
+      );
+      expect(rows).toHaveLength(3);
+      const again = await admin.api
+        .get(`/admin/businesses/${businessId}`)
+        .expect(200);
+      expect(statusOf(again.body, first.id)).toBe('pending');
+
+      // Rejection is the business's reject with a note, never this route.
+      const bad = await review(first.id, 'rejected').expect(400);
+      expect(bad.body.error.code).toBe('VALIDATION_FAILED');
+
+      // Another business's document is not this one's.
+      const other = await submittedDoctor(t);
+      const otherDetail = await admin.api
+        .get(`/admin/businesses/${other.businessId}`)
+        .expect(200);
+      const notHers = await review(
+        otherDetail.body.data.documents[0].id,
+        'accepted',
+      ).expect(404);
+      expect(notHers.body.error.code).toBe('NOT_FOUND');
+
+      // Approving accepts what nobody marked.
+      await review(second.id, 'accepted').expect(200);
+      await verifyDoctorPmdc(admin, businessId);
+      const approved = await admin.api
+        .post(`/admin/businesses/${businessId}/approve`)
+        .expect(200);
+      expect(
+        approved.body.data.documents.every((d: any) => d.status === 'accepted'),
+      ).toBe(true);
+
+      // Decided: nothing more to review.
+      const late = await review(first.id, 'pending').expect(409);
+      expect(late.body.error.code).toBe('INVALID_TRANSITION');
+      const after = await admin.api
+        .get(`/admin/businesses/${businessId}`)
+        .expect(200);
+      expect(after.body.data.canReviewDocuments).toBe(false);
+    });
+
     it('reject with reason + document note → partner sees both, fixes, resubmits → pending again, reason cleared', async () => {
       const admin = await enrolledAdmin(t);
       const { partner, businessId } = await submittedDoctor(t);

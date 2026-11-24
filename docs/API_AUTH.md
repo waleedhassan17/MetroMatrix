@@ -572,7 +572,8 @@ very next request.
 | Method | Path | Body | 200 data |
 |---|---|---|---|
 | GET | `/admin/businesses?status&serviceType&q&page&pageSize` | — | `{ items: [BusinessView + owner], total, page, pageSize }` |
-| GET | `/admin/businesses/:id` | — | `BusinessDetail` + `owner` + `history` (audit) |
+| GET | `/admin/businesses/:id` | — | `BusinessDetail` + `owner` + `history` (audit) + `canReviewDocuments` (true while `pending_approval`) |
+| POST | `/admin/businesses/:id/documents/:documentId/review` | `{ status: 'accepted' \| 'pending' }` | The admin detail above. Staff accept one document (or undo it) while the business waits for review; every call is audited (`business.document.review`). Not pending → `409 INVALID_TRANSITION`; another business's document → `404 NOT_FOUND`. A document is rejected only by rejecting the business with a note on it, since the partner can replace it only then. |
 | POST | `/admin/businesses/:id/approve` | — | `BusinessDetail` (pending documents → accepted). A doctor whose PMDC number isn't verified yet → `422 PMDC_NOT_VERIFIED` (`details.doctorId`); verify it with `POST /admin/health/doctors/:doctorId/pmdc-verify` (see `docs/API_HEALTH.md`). |
 | POST | `/admin/businesses/:id/reject` | `{ reason, documentNotes?: [{ documentId, note }] }` | `BusinessDetail` |
 | POST | `/admin/businesses/:id/suspend` | `{ reason }` | `BusinessDetail` |

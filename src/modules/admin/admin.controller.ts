@@ -26,6 +26,7 @@ import {
   DisableUserDto,
   ReasonDto,
   RejectBusinessDto,
+  ReviewDocumentDto,
 } from './dto/admin.dto';
 import { Roles } from '../../common/decorators/roles.decorator';
 import {
@@ -109,6 +110,21 @@ export class AdminBusinessesController {
     @Body() dto: RejectBusinessDto,
   ) {
     return this.admin.reject(me, id, dto);
+  }
+
+  @Post(':id/documents/:documentId/review')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Accept one document (or undo it) while the business waits for review → the business detail.',
+  })
+  @ApiEnvelopeOk(AdminBusinessDetailView)
+  reviewDocument(
+    @Param('id', uuid) id: string,
+    @Param('documentId', uuid) documentId: string,
+    @Body() dto: ReviewDocumentDto,
+  ) {
+    return this.admin.reviewDocument(id, documentId, dto.status);
   }
 
   @Post(':id/suspend')

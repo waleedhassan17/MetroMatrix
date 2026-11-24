@@ -91,6 +91,11 @@ export class BusinessHistoryItemView {
 export class AdminBusinessDetailView extends BusinessDetailView {
   @ApiProperty({ type: BusinessOwnerView, nullable: true })
   owner!: BusinessOwnerView | null;
+  @ApiProperty({
+    description:
+      'Staff may accept single documents now (POST /admin/businesses/{id}/documents/{documentId}/review): true while the business waits for review.',
+  })
+  canReviewDocuments!: boolean;
   @ApiProperty({ type: [BusinessHistoryItemView] })
   history!: BusinessHistoryItemView[];
 }

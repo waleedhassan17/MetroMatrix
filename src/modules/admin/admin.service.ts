@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -27,6 +28,7 @@ import { assertSuperAdminRemains } from './admins/super-admin-invariant';
 import {
   AdminBusinessQueryDto,
   AdminUserQueryDto,
+  DocumentReviewStatus,
   RejectBusinessDto,
 } from './dto/admin.dto';
 
@@ -107,6 +109,7 @@ export class AdminService {
     return {
       ...detail,
       owner: ownerView(business.owner),
+      canReviewDocuments: business.status === 'pending_approval',
       history: history.map((h) => ({
         action: h.action,
         actorUserId: h.actorUserId,
@@ -114,6 +117,53 @@ export class AdminService {
         createdAt: h.createdAt,
       })),
     };
+  }
+
+  /**
+   * One document checked (or un-checked) while its business waits for
+   * review, so staff can go through them one by one. Rejection still happens
+   * only by rejecting the business with a note on the document: the partner
+   * can replace a document only once the business is back with them.
+   */
+  async reviewDocument(
+    id: string,
+    documentId: string,
+    status: DocumentReviewStatus,
+  ) {
+    const business = await this.findBusiness(id);
+    if (business.status !== 'pending_approval') {
+      throw new ConflictException({
+        code: ErrorCode.INVALID_TRANSITION,
+        message: 'Documents are reviewed while the business waits for review.',
+        details: { status: business.status },
+      });
+    }
+    const doc = await this.documents.findOne({
+      where: { id: documentId, businessId: business.id },
+    });
+    if (!doc) {
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: 'This business has no such document.',
+      });
+    }
+    const from = doc.status;
+    if (from !== status) {
+      await this.documents.update(
+        { id: doc.id },
+        status === 'accepted' ? { status, reviewNote: null } : { status },
+      );
+    }
+    // Every staff write leaves its own audit row, a repeat included.
+    await this.audit.record({
+      action: 'business.document.review',
+      targetType: 'business',
+      targetId: business.id,
+      details: { documentId: doc.id, kind: doc.kind },
+      before: { status: from },
+      after: { status },
+    });
+    return this.getBusiness(id);
   }
 
   /** pending_approval → approved. Documents still pending are accepted. */

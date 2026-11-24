@@ -131,6 +131,21 @@ export class DocumentNoteDto {
   note!: string;
 }
 
+/** Staff review of one document while its business waits for review. */
+export const DOCUMENT_REVIEW_STATUSES = ['accepted', 'pending'] as const;
+export type DocumentReviewStatus = (typeof DOCUMENT_REVIEW_STATUSES)[number];
+
+export class ReviewDocumentDto {
+  @ApiProperty({
+    enum: DOCUMENT_REVIEW_STATUSES,
+    example: 'accepted',
+    description:
+      '`accepted` marks the document checked; `pending` undoes that. A document is rejected only by rejecting the business with a note on it, because the partner can replace it only then.',
+  })
+  @IsIn(DOCUMENT_REVIEW_STATUSES)
+  status!: DocumentReviewStatus;
+}
+
 export class RejectBusinessDto extends ReasonDto {
   @ApiPropertyOptional({
     type: [DocumentNoteDto],
