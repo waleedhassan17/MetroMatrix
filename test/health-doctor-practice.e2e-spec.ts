@@ -655,7 +655,11 @@ describe('Healthcare: doctor practice rules (e2e)', () => {
     expect(notes.text).toBe('Bring the old reports.');
     const [told] = await notices(p.userId, 'health.appointment.moved');
     expect(told.body).toMatch(/surgery/);
-    // The patient may still move it once themselves.
+    // The patient may still move it once themselves (and their app says so).
+    const theirs = await expectOk(
+      await p.api.get(`/health/appointments/${moved.code}`),
+    );
+    expect(theirs.can.reschedule).toBe(true);
     const later = tomorrowFrom9(await slotsOf(d, clinic.id))[5];
     await expectOk(
       await p.api

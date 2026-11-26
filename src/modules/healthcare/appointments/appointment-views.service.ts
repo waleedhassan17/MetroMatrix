@@ -228,6 +228,20 @@ export class AppointmentViewsService {
         this.prescriptionIds(rows.map((r) => r.id)),
       ],
     );
+    // A visit the doctor moved can still be rescheduled once by the patient.
+    const fromIds = rows
+      .map((r) => r.rescheduledFromId)
+      .filter((x): x is string => !!x);
+    const movedByDoctor = new Set<string>(
+      fromIds.length
+        ? (
+            await this.dataSource.query(
+              `SELECT id FROM appointments WHERE id = ANY($1::uuid[]) AND cancelled_by = 'doctor'`,
+              [fromIds],
+            )
+          ).map((r: { id: string }) => r.id)
+        : [],
+    );
     return rows.map((a) => {
       const loc = b.location.get(a.locationId)!;
       const doc = b.doctor.get(a.doctorId)!;
@@ -262,7 +276,9 @@ export class AppointmentViewsService {
         can: {
           cancel: a.status === 'booked' && t < a.startsAt.getTime(),
           reschedule:
-            a.status === 'booked' && !a.rescheduledFromId && t < cutoff,
+            a.status === 'booked' &&
+            (!a.rescheduledFromId || movedByDoctor.has(a.rescheduledFromId)) &&
+            t < cutoff,
           joinVideo: videoJoinState(a, now) === 'ok',
           shareRecords: (ACTIVE_STATUSES as readonly string[]).includes(
             a.status,
