@@ -98,6 +98,13 @@ describe('Healthcare P5: records, attachments, reviews, aggregates (e2e)', () =>
 
   /** Run a visit to completion through the API (clinic: check-in first). */
   async function completeVisit(d: Doctor, code: string, kind = 'clinic') {
+    // Check-in (or a video's start) opens 2 hours before the visit: bring it close.
+    await t.ds.query(
+      `UPDATE appointments SET starts_at = now() + interval '10 minutes',
+              ends_at = now() + interval '10 minutes' + (ends_at - starts_at)
+        WHERE code = $1 AND starts_at > now() + interval '2 hours'`,
+      [code],
+    );
     if (kind === 'clinic')
       await expectOk(
         await d.api.post(`/health/doctor/appointments/${code}/check-in`),

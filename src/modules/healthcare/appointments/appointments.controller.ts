@@ -145,6 +145,16 @@ export class DoctorAppointmentPaymentsController {
     return this.appointments.confirmPayment(d.id, d.ownerUserId, code);
   }
 
+  @Post(':code/payment/mark-paid')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Pay at clinic: the fee was collected (checked in, in consultation or completed; unpaid → paid).',
+  })
+  markPaid(@CurrentDoctor() d: CurrentDoctorRef, @Param('code') code: string) {
+    return this.appointments.markPaid(d.id, d.ownerUserId, code);
+  }
+
   @Post(':code/payment/reject')
   @HttpCode(200)
   @ApiOperation({

@@ -41,6 +41,8 @@ export interface BusinessSummary {
   submittedAt: Date | null;
   /** Doctors only (API_HEALTH.md A1): patients can find them; staff checked the PMDC number. */
   isListed?: boolean;
+  /** Doctors only: listed at least once (the app opens on the practice, even while unlisted). */
+  wasListed?: boolean;
   pmdcVerified?: boolean;
   /** Food vendors only (API_FOOD.md): their brand and whether they are live. */
   food?: {

@@ -767,6 +767,33 @@ export class AppointmentsService implements OnModuleInit {
     });
   }
 
+  /** A clinic fee collected at the desk or after the visit (pay at clinic, unpaid → paid). */
+  async markPaid(doctorId: string, doctorUserId: string, code: string) {
+    return this.doctorPayment(doctorId, code, async (m, a) => {
+      if (
+        a.paymentMethod !== 'pay_at_clinic' ||
+        !['checked_in', 'in_consultation', 'completed'].includes(a.status)
+      ) {
+        throw invalidTransition(
+          a.paymentStatus,
+          'paid',
+          [],
+          a.paymentMethod === 'transfer'
+            ? 'Confirm a transfer when you find it in your account.'
+            : 'Mark the fee paid once the patient is at the clinic.',
+        );
+      }
+      await this.transitions.movePayment(
+        m,
+        a,
+        'paid',
+        { role: 'doctor', userId: doctorUserId },
+        { note: 'Collected at the clinic' },
+      );
+      return [];
+    });
+  }
+
   async rejectPayment(
     doctorId: string,
     doctorUserId: string,

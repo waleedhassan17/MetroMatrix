@@ -20,10 +20,32 @@ import {
   DEFAULT_TZ,
   formatMinutes,
   isValidZone,
+  localDate,
+  localMinutes,
   parseTime,
   toZonedIso,
   weekdayLabel,
+  weekdayOf,
 } from '../common/time.util';
+import { slotsPerWeek } from '../availability/slot-engine';
+import { BookingRef } from '../common/health-events';
+
+interface WantedRange {
+  weekday: number;
+  start: number;
+  end: number;
+}
+
+/** A window of these hours that another location of the other kind also offers (booking one closes the other). */
+export interface SharedHours {
+  locationId: string;
+  locationName: string;
+  kind: string;
+  weekday: number;
+  weekdayLabel: string;
+  start: string;
+  end: string;
+}
 import { ErrorCode } from '../../../common/errors/codes';
 
 const notFound = (what = 'Location') =>
@@ -56,6 +78,7 @@ export const locationView = (l: PracticeLocation) => ({
   timezone: l.timezone,
   fee: l.fee,
   slotMinutes: l.slotMinutes,
+  bufferMinutes: l.bufferMinutes,
   instructions: l.instructions,
   isActive: l.isActive,
   nextAvailableAt: l.nextAvailableAt
@@ -125,6 +148,7 @@ export class PracticeService {
       timezone: tz,
       fee: dto.fee,
       slotMinutes: dto.slotMinutes ?? 15,
+      bufferMinutes: dto.bufferMinutes ?? 0,
       instructions: dto.instructions ?? null,
     });
     try {
@@ -141,7 +165,14 @@ export class PracticeService {
     }
   }
 
+  /**
+   * Change a location. Switching one back on, or moving its zone, re-checks
+   * its hours against the doctor's other locations; the answer lists the
+   * booked visits its hours no longer cover (`outsideHours`: they stay booked).
+   */
   async updateLocation(doctorId: string, id: string, dto: UpdateLocationDto) {
+    let outsideHours: ReturnType<typeof bookingList> = [];
+    let notifyListing: () => Promise<void> = async () => undefined;
     await this.dataSource.transaction(async (m) => {
       const loc = await m.findOne(PracticeLocation, {
         where: { id, doctorId },
@@ -162,6 +193,7 @@ export class PracticeService {
         'timezone',
         'fee',
         'slotMinutes',
+        'bufferMinutes',
         'instructions',
         'isActive',
       ] as const) {
@@ -171,6 +203,14 @@ export class PracticeService {
       if (loc.kind === 'clinic') {
         for (const k of ['addressLine', 'area', 'city'] as const)
           if (dto[k] !== undefined) changes[k] = dto[k];
+      }
+      const reactivated = dto.isActive === true && !loc.isActive;
+      const rezoned =
+        dto.timezone !== undefined && dto.timezone !== loc.timezone;
+      if (reactivated || rezoned) {
+        await this.lockSchedules(m, doctorId);
+        const after = { ...loc, ...changes } as PracticeLocation;
+        await this.sharedHours(m, doctorId, after, await this.rangesOf(m, id));
       }
       try {
         await m.update(PracticeLocation, { id }, changes);
@@ -183,18 +223,119 @@ export class PracticeService {
         }
         throw err;
       }
-      await this.doctors.enforceListing(m, doctorId);
+      if (rezoned) {
+        const after = { ...loc, ...changes } as PracticeLocation;
+        outsideHours = bookingList(
+          await this.visitsOutside(m, after, await this.rangesOf(m, id)),
+          after.timezone,
+        );
+      }
+      notifyListing = await this.doctors.enforceListing(m, doctorId);
     });
+    await notifyListing();
     await this.events.availabilityChanged(doctorId);
     const loc = await this.dataSource.manager.findOneByOrFail(
       PracticeLocation,
       { id },
     );
-    return locationView(loc);
+    return { ...locationView(loc), outsideHours };
+  }
+
+  /** Serialise schedule edits per doctor so two locations can't race past the overlap check. */
+  private async lockSchedules(m: EntityManager, doctorId: string) {
+    await m.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `doctor-schedule:${doctorId}`,
+    ]);
+  }
+
+  private async rangesOf(m: EntityManager, locationId: string) {
+    const rows = await m.find(WeeklySchedule, { where: { locationId } });
+    return rows.map((w) => ({
+      weekday: w.weekday,
+      start: parseTime(w.startTime),
+      end: parseTime(w.endTime),
+    }));
+  }
+
+  /**
+   * The doctor's other active locations against these hours. Two of the same
+   * kind (two clinics) can't overlap: a doctor can't be in two places at once.
+   * A clinic and the video consultation may share hours in the same zone —
+   * either can be booked, and booking one closes the other (appointments at
+   * any location block the doctor). Different zones can't share.
+   */
+  private async sharedHours(
+    m: EntityManager,
+    doctorId: string,
+    loc: PracticeLocation,
+    wanted: WantedRange[],
+  ): Promise<SharedHours[]> {
+    const others: Array<{
+      location_id: string;
+      name: string;
+      kind: string;
+      timezone: string;
+      weekday: number;
+      start_time: string;
+      end_time: string;
+    }> = await m.query(
+      `SELECT w.location_id, l.name, l.kind, l.timezone, w.weekday, w.start_time::text, w.end_time::text
+           FROM weekly_schedules w JOIN practice_locations l ON l.id = w.location_id
+          WHERE l.doctor_id = $1 AND l.is_active AND l.id <> $2
+          ORDER BY w.weekday, w.start_time`,
+      [doctorId, loc.id],
+    );
+    const shared: SharedHours[] = [];
+    for (const r of wanted) {
+      for (const o of others) {
+        const oStart = parseTime(o.start_time);
+        const oEnd = parseTime(o.end_time);
+        if (o.weekday !== r.weekday || !(r.start < oEnd && oStart < r.end))
+          continue;
+        const conflict = {
+          locationId: o.location_id,
+          locationName: o.name,
+          weekday: o.weekday,
+          start: oStart,
+          end: oEnd,
+        };
+        if (o.kind === loc.kind) throw this.overlap(loc, r, conflict);
+        if (o.timezone !== loc.timezone)
+          throw this.overlap(loc, r, conflict, 'timezone');
+        shared.push({
+          locationId: o.location_id,
+          locationName: o.name,
+          kind: o.kind,
+          weekday: r.weekday,
+          weekdayLabel: weekdayLabel(r.weekday),
+          start: formatMinutes(Math.max(r.start, oStart)),
+          end: formatMinutes(Math.min(r.end, oEnd)),
+        });
+      }
+    }
+    return shared;
+  }
+
+  /** Booked visits at a location from now on that these hours (in its zone) no longer cover. */
+  private async visitsOutside(
+    m: EntityManager,
+    loc: PracticeLocation,
+    wanted: WantedRange[],
+  ): Promise<BookingRef[]> {
+    const booked = await this.events.futureBookingsAtLocation(m, loc.id);
+    return booked.filter((b) => {
+      const weekday = weekdayOf(localDate(b.startsAt, loc.timezone));
+      const start = localMinutes(b.startsAt, loc.timezone);
+      const end = start + (b.endsAt.getTime() - b.startsAt.getTime()) / 60_000;
+      return !wanted.some(
+        (r) => r.weekday === weekday && r.start <= start && end <= r.end,
+      );
+    });
   }
 
   /** Delete a location (and its hours). Refused while patients are booked there. */
   async removeLocation(doctorId: string, id: string) {
+    let notifyListing: () => Promise<void> = async () => undefined;
     await this.dataSource.transaction(async (m) => {
       const loc = await m.findOne(PracticeLocation, {
         where: { id, doctorId },
@@ -206,8 +347,9 @@ export class PracticeService {
       // A location past appointments point at is kept, inactive, for their history.
       if (used) await m.update(PracticeLocation, { id }, { isActive: false });
       else await m.delete(PracticeLocation, { id });
-      await this.doctors.enforceListing(m, doctorId);
+      notifyListing = await this.doctors.enforceListing(m, doctorId);
     });
+    await notifyListing();
     await this.events.availabilityChanged(doctorId);
     return { removed: true };
   }
@@ -241,25 +383,35 @@ export class PracticeService {
   }
 
   /**
-   * Replace a location's week. Ranges may not overlap each other, nor any
-   * range at the doctor's other active locations on the same weekday — a
-   * doctor can't be in two places at once.
+   * Replace a location's week. Ranges may not overlap each other, nor a range
+   * at another active location of the same kind (a doctor can't be in two
+   * clinics at once); a clinic and the video consultation may share hours
+   * (`sharedWith`). The answer also counts the week's slots and lists booked
+   * visits the new hours leave out (`outsideHours`: they stay booked, never
+   * cancelled). `dryRun` checks and reports without saving.
    */
   async replaceSchedule(
     doctorId: string,
     locationId: string,
     ranges: ScheduleRangeDto[],
+    opts: { dryRun?: boolean } = {},
   ) {
+    let report: {
+      sharedWith: SharedHours[];
+      outsideHours: ReturnType<typeof bookingList>;
+      slotsPerWeek: number;
+    } = { sharedWith: [], outsideHours: [], slotsPerWeek: 0 };
+    let preview: ReturnType<typeof rangeView>[] = [];
+    let timezone = DEFAULT_TZ;
+    let notifyListing: () => Promise<void> = async () => undefined;
     await this.dataSource.transaction(async (m) => {
       const loc = await m.findOne(PracticeLocation, {
         where: { id: locationId, doctorId },
         lock: { mode: 'pessimistic_write' },
       });
       if (!loc) throw notFound();
-      // Serialise schedule edits per doctor so two locations can't race past the overlap check.
-      await m.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
-        `doctor-schedule:${doctorId}`,
-      ]);
+      timezone = loc.timezone;
+      await this.lockSchedules(m, doctorId);
 
       const wanted = ranges.map((r) => ({
         weekday: r.weekday,
@@ -287,32 +439,25 @@ export class PracticeService {
           });
         }
       }
-      const others: Array<{
-        location_id: string;
-        name: string;
-        weekday: number;
-        start_time: string;
-        end_time: string;
-      }> = await m.query(
-        `SELECT w.location_id, l.name, w.weekday, w.start_time::text, w.end_time::text
-             FROM weekly_schedules w JOIN practice_locations l ON l.id = w.location_id
-            WHERE l.doctor_id = $1 AND l.is_active AND l.id <> $2`,
-        [doctorId, locationId],
-      );
-      for (const r of wanted) {
-        for (const o of others) {
-          const oStart = parseTime(o.start_time);
-          const oEnd = parseTime(o.end_time);
-          if (o.weekday === r.weekday && r.start < oEnd && oStart < r.end) {
-            throw this.overlap(loc, r, {
-              locationId: o.location_id,
-              locationName: o.name,
-              weekday: o.weekday,
-              start: oStart,
-              end: oEnd,
-            });
-          }
-        }
+      const sharedWith = loc.isActive
+        ? await this.sharedHours(m, doctorId, loc, wanted)
+        : [];
+      report = {
+        sharedWith,
+        outsideHours: bookingList(
+          await this.visitsOutside(m, loc, wanted),
+          loc.timezone,
+        ),
+        slotsPerWeek: slotsPerWeek(wanted, loc.slotMinutes, loc.bufferMinutes),
+      };
+      if (opts.dryRun) {
+        preview = sorted.map((r) => ({
+          weekday: r.weekday,
+          weekdayLabel: weekdayLabel(r.weekday),
+          start: formatMinutes(r.start),
+          end: r.end === 1440 ? '24:00' : formatMinutes(r.end),
+        }));
+        return;
       }
       await m.delete(WeeklySchedule, { locationId });
       if (wanted.length) {
@@ -326,10 +471,23 @@ export class PracticeService {
           })),
         );
       }
-      await this.doctors.enforceListing(m, doctorId);
+      notifyListing = await this.doctors.enforceListing(m, doctorId);
     });
+    if (opts.dryRun)
+      return {
+        locationId,
+        timezone,
+        ranges: preview,
+        dryRun: true,
+        ...report,
+      };
+    await notifyListing();
     await this.events.availabilityChanged(doctorId);
-    return this.schedule(doctorId, locationId);
+    return {
+      ...(await this.schedule(doctorId, locationId)),
+      dryRun: false,
+      ...report,
+    };
   }
 
   private overlap(
@@ -342,11 +500,17 @@ export class PracticeService {
       start: number;
       end: number;
     },
+    reason: 'same_kind' | 'timezone' = 'same_kind',
   ) {
+    const clash = `${weekdayLabel(r.weekday)} ${formatMinutes(r.start)}–${formatMinutes(r.end)} overlaps ${conflict.locationName} ${formatMinutes(conflict.start)}–${formatMinutes(conflict.end)}`;
     return new ConflictException({
       code: ErrorCode.SCHEDULE_OVERLAP,
-      message: `${weekdayLabel(r.weekday)} ${formatMinutes(r.start)}–${formatMinutes(r.end)} overlaps ${conflict.locationName} ${formatMinutes(conflict.start)}–${formatMinutes(conflict.end)}.`,
+      message:
+        reason === 'timezone'
+          ? `${clash}, which is in another time zone. Use one zone to share hours.`
+          : `${clash}.`,
       details: {
+        reason,
         range: {
           locationId: loc.id,
           weekday: r.weekday,

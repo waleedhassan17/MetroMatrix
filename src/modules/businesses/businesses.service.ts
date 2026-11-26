@@ -77,6 +77,8 @@ export interface DocumentView {
 export interface BusinessDetail extends BusinessView {
   /** Doctors only (Healthcare): published on the patient side, and PMDC checked by staff. */
   isListed?: boolean;
+  /** Doctors only: listed at least once. */
+  wasListed?: boolean;
   pmdcVerified?: boolean;
   documents: DocumentView[];
   requiredDocuments: RequirementStatus[];

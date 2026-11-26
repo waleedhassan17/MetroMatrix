@@ -503,6 +503,8 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
     const { d, loc } = await doctor();
     const p = await shopper(t);
     const a = await book(p, d, loc.id);
+    // Check-in opens 2 hours before the visit: it starts in 10 minutes.
+    await moveTo(a.code, 10);
     const step = (s: string, body?: object) =>
       d.api.post(`/health/doctor/appointments/${a.code}/${s}`, body);
     expect((await expectOk(await step('check-in'))).status).toBe('checked_in');
@@ -577,6 +579,7 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
     const { d, loc } = await doctor();
     const p = await shopper(t);
     const a = await book(p, d, loc.id);
+    await moveTo(a.code, 10);
     for (const s of ['check-in', 'start'])
       await expectOk(
         await d.api.post(`/health/doctor/appointments/${a.code}/${s}`),
@@ -624,6 +627,7 @@ describe('QA matrix — Healthcare (Chunk 3)', () => {
       403,
       'REVIEW_NOT_ALLOWED',
     ]);
+    await moveTo(a.code, 10);
     for (const s of ['check-in', 'start', 'complete'])
       await expectOk(
         await d.api.post(`/health/doctor/appointments/${a.code}/${s}`),

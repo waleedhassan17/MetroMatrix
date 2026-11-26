@@ -98,6 +98,19 @@ export class CreateLocationDto {
   @Max(60)
   slotMinutes?: number;
 
+  @ApiPropertyOptional({
+    default: 0,
+    minimum: 0,
+    maximum: 60,
+    description:
+      'A break after each patient, in minutes (the next slot starts after it).',
+  })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(60)
+  bufferMinutes?: number;
+
   @ApiPropertyOptional({ example: 'Ask for a token at reception.' })
   @ValidateIf((_, v) => v !== null)
   @IsOptional()
@@ -105,6 +118,17 @@ export class CreateLocationDto {
   @IsString()
   @MaxLength(500)
   instructions?: string | null;
+}
+
+export class ScheduleQueryDto {
+  @ApiPropertyOptional({
+    enum: ['true', 'false'],
+    description:
+      'true: check and report (shared hours, visits outside them) without saving.',
+  })
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  dryRun?: 'true' | 'false';
 }
 
 export class UpdateLocationDto {
@@ -126,6 +150,7 @@ export class UpdateLocationDto {
   @IsOptional() @IsString() @MaxLength(60) timezone?: string;
   @IsOptional() @IsInt() @Min(0) @Max(1_000_000) fee?: number;
   @IsOptional() @IsInt() @Min(10) @Max(60) slotMinutes?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(60) bufferMinutes?: number;
   @ValidateIf((_, v) => v !== null)
   @IsOptional()
   @Trim()

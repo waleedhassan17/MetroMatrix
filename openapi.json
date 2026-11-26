@@ -9555,6 +9555,13 @@
             "example": "Gulberg III",
             "type": "string"
           },
+          "bufferMinutes": {
+            "default": 0,
+            "description": "A break after each patient, in minutes (the next slot starts after it).",
+            "maximum": 60,
+            "minimum": 0,
+            "type": "number"
+          },
           "city": {
             "description": "Clinic: required.",
             "example": "Lahore",
@@ -32833,6 +32840,35 @@
         ]
       }
     },
+    "/api/v1/health/doctor/appointments/{code}/payment/mark-paid": {
+      "post": {
+        "operationId": "DoctorAppointmentPayments_markPaid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Pay at clinic: the fee was collected (checked in, in consultation or completed; unpaid → paid).",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
     "/api/v1/health/doctor/appointments/{code}/payment/reject": {
       "post": {
         "operationId": "DoctorAppointmentPayments_reject",
@@ -33087,12 +33123,13 @@
             }
           },
           {
+            "description": "Up to the longest booking window (30 days).",
             "in": "query",
             "name": "days",
             "required": false,
             "schema": {
               "default": 7,
-              "maximum": 14,
+              "maximum": 30,
               "minimum": 1,
               "type": "number"
             }
@@ -33108,7 +33145,7 @@
             "bearer": []
           }
         ],
-        "summary": "?from&days=7 — the slots patients will see, per active location (check before publishing).",
+        "summary": "?from&days=7 — the slots patients will see, per active location (check before publishing). paused: patients see none while bookings are off.",
         "tags": [
           "health · doctor"
         ]
@@ -33314,7 +33351,7 @@
             "bearer": []
           }
         ],
-        "summary": "isActive: false is refused while patients are booked there (LOCATION_HAS_BOOKINGS).",
+        "summary": "isActive: false is refused while patients are booked there (LOCATION_HAS_BOOKINGS). Switching back on or changing the zone re-checks the hours (SCHEDULE_OVERLAP); outsideHours lists booked visits its hours no longer cover.",
         "tags": [
           "health · doctor"
         ]
@@ -33357,6 +33394,19 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "description": "true: check and report (shared hours, visits outside them) without saving.",
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -33382,7 +33432,7 @@
             "bearer": []
           }
         ],
-        "summary": "Replace the week: [{ weekday 0–6 (Sun–Sat), start \"HH:mm\", end \"HH:mm\" }] in the location’s zone. Overlaps across locations → SCHEDULE_OVERLAP.",
+        "summary": "Replace the week: [{ weekday 0–6 (Sun–Sat), start \"HH:mm\", end \"HH:mm\" }] in the location’s zone. Overlapping another location of the same kind → SCHEDULE_OVERLAP; a clinic and the video consultation may share hours in one zone (sharedWith: booking either closes the other). Answers outsideHours (booked visits the new hours leave out — they stay booked) and slotsPerWeek; ?dryRun=true reports without saving.",
         "tags": [
           "health · doctor"
         ]
@@ -34137,12 +34187,13 @@
             }
           },
           {
+            "description": "Up to the longest booking window (30 days).",
             "in": "query",
             "name": "days",
             "required": false,
             "schema": {
               "default": 7,
-              "maximum": 14,
+              "maximum": 30,
               "minimum": 1,
               "type": "number"
             }

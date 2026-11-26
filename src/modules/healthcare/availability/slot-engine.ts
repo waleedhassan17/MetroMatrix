@@ -29,12 +29,31 @@ export interface Slot {
   period: Period;
 }
 
+/**
+ * Why a day has the slots it has: `open` (free slots), `full` (every slot
+ * booked or past), `closed` (no hours that day, or today's are over),
+ * `time_off` (time off covers every slot), `paused` (not taking new bookings),
+ * `beyond_window` (past the doctor's booking window).
+ */
+export const DAY_STATUSES = [
+  'open',
+  'full',
+  'closed',
+  'time_off',
+  'paused',
+  'beyond_window',
+] as const;
+export type DayStatus = (typeof DAY_STATUSES)[number];
+
 export interface DaySlots {
   date: string;
   weekday: number;
   weekdayLabel: string;
   dateLabel: string;
   isAvailable: boolean;
+  status: DayStatus;
+  /** Slots the hours make that day, inside notice and window (booked or not). */
+  totalSlots: number;
   slots: Slot[];
 }
 
@@ -48,9 +67,15 @@ export interface EngineInput {
   /** Bookable dates are today … today + window − 1 (local). */
   bookingWindowDays: number;
   slotMinutes: number;
+  /** A break after each slot at this location (0 = back to back). */
+  bufferMinutes?: number;
   ranges: WeeklyRange[];
-  /** Time off and the doctor's active appointments at ANY location. */
+  /** The doctor's active appointments at ANY location (callers may add time off here too). */
   blocked: Interval[];
+  /** Time off, kept apart so a day it covers reads `time_off`. */
+  timeOff?: Interval[];
+  /** Not taking new bookings: no slots, every day `paused`. */
+  paused?: boolean;
 }
 
 const overlaps = (a: Interval, b: Interval) =>
@@ -72,30 +97,60 @@ export function bookingBounds(
   };
 }
 
+/** Slots a week of hours makes at this length and break (what the doctor's form counts). */
+export function slotsPerWeek(
+  ranges: WeeklyRange[],
+  slotMinutes: number,
+  bufferMinutes = 0,
+): number {
+  const step = slotMinutes + Math.max(0, bufferMinutes);
+  return ranges.reduce(
+    (n, r) =>
+      n +
+      (r.end - r.start >= slotMinutes
+        ? Math.floor((r.end - r.start - slotMinutes) / step) + 1
+        : 0),
+    0,
+  );
+}
+
 /**
  * Availability, computed — never stored:
- *   weekly ranges → slots of `slotMinutes` per local date
+ *   weekly ranges → slots of `slotMinutes` (+ the break) per local date
  *   − slots starting inside the notice period or beyond the booking window
- *   − slots overlapping time off or any active appointment of the doctor.
+ *   − slots overlapping time off or any active appointment of the doctor;
+ * every day says why it has what it has (`status`).
  */
 export function buildDays(input: EngineInput): DaySlots[] {
   const { today, earliest, windowEnd } = bookingBounds(input);
   const first = input.fromDate < today ? today : input.fromDate;
+  const step = input.slotMinutes + Math.max(0, input.bufferMinutes ?? 0);
+  const timeOff = input.timeOff ?? [];
   const out: DaySlots[] = [];
   for (let i = 0; i < input.days; i++) {
     const date = addDays(first, i);
     const weekday = weekdayOf(date);
+    const beyond = localDayBounds(date, input.tz).start >= windowEnd;
+    const dayRanges = input.ranges.filter((x) => x.weekday === weekday);
     const slots: Slot[] = [];
-    for (const r of input.ranges.filter((x) => x.weekday === weekday)) {
+    let total = 0;
+    let off = 0;
+    for (const r of beyond ? [] : dayRanges) {
       for (const s of expandRange(
         date,
         r.start,
         r.end,
         input.slotMinutes,
         input.tz,
+        step,
       )) {
         if (s.startsAt < earliest || s.startsAt >= windowEnd) continue;
+        total++;
         const iv = { start: s.startsAt, end: s.endsAt };
+        if (timeOff.some((b) => overlaps(iv, b))) {
+          off++;
+          continue;
+        }
         if (input.blocked.some((b) => overlaps(iv, b))) continue;
         slots.push({
           startsAt: s.startsAt,
@@ -105,13 +160,27 @@ export function buildDays(input: EngineInput): DaySlots[] {
       }
     }
     slots.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+    const status: DayStatus = input.paused
+      ? 'paused'
+      : beyond
+        ? 'beyond_window'
+        : total === 0
+          ? 'closed'
+          : slots.length
+            ? 'open'
+            : off === total
+              ? 'time_off'
+              : 'full';
+    const shown = input.paused ? [] : slots;
     out.push({
       date,
       weekday,
       weekdayLabel: weekdayLabel(weekday),
       dateLabel: shortDateLabel(date),
-      isAvailable: slots.length > 0,
-      slots,
+      isAvailable: shown.length > 0,
+      status,
+      totalSlots: total,
+      slots: shown,
     });
   }
   return out;
@@ -136,6 +205,8 @@ export const dayView = (d: DaySlots, tz: string) => ({
   weekdayLabel: d.weekdayLabel,
   dateLabel: d.dateLabel,
   isAvailable: d.isAvailable,
+  status: d.status,
+  totalSlots: d.totalSlots,
   slots: d.slots.map((s) => ({
     startsAt: toZonedIso(s.startsAt, tz),
     endsAt: toZonedIso(s.endsAt, tz),

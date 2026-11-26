@@ -113,8 +113,9 @@ export function localDayBounds(
 
 /**
  * Cut a wall-clock range on a local date into slots of `slotMinutes`, stepping
- * in wall time (what the doctor authored). Slots whose start falls in a DST
- * gap are skipped.
+ * in wall time (what the doctor authored) by `stepMinutes` — the slot plus any
+ * break after it (default: back to back). Slots whose start falls in a DST gap
+ * are skipped.
  */
 export function expandRange(
   date: string,
@@ -122,7 +123,9 @@ export function expandRange(
   endMinutes: number,
   slotMinutes: number,
   tz: string,
+  stepMinutes: number = slotMinutes,
 ): Array<{ startsAt: Date; endsAt: Date; wallMinutes: number }> {
+  const step = Math.max(slotMinutes, stepMinutes);
   const out: Array<{ startsAt: Date; endsAt: Date; wallMinutes: number }> = [];
   const [y, mo, d] = date.split('-').map(Number);
   const midnight = DateTime.fromObject(
@@ -138,11 +141,7 @@ export function expandRange(
     midnight.offset === next.offset
   ) {
     const base = Date.UTC(y, mo - 1, d) - midnight.offset * 60_000;
-    for (
-      let m = startMinutes;
-      m + slotMinutes <= endMinutes;
-      m += slotMinutes
-    ) {
+    for (let m = startMinutes; m + slotMinutes <= endMinutes; m += step) {
       out.push({
         startsAt: new Date(base + m * 60_000),
         endsAt: new Date(base + (m + slotMinutes) * 60_000),
@@ -152,7 +151,7 @@ export function expandRange(
     return out;
   }
   // A DST-change day: resolve each wall time through the zone rules.
-  for (let m = startMinutes; m + slotMinutes <= endMinutes; m += slotMinutes) {
+  for (let m = startMinutes; m + slotMinutes <= endMinutes; m += step) {
     const startsAt = wallTimeToInstant(date, m, tz);
     const endsAt =
       wallTimeToInstant(date, m + slotMinutes, tz) ??

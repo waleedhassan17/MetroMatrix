@@ -28,6 +28,10 @@ import { MediaService } from '../../media/media.service';
 const MIN = 60_000;
 /** A doctor may mark a no-show only this long after the start. */
 export const NO_SHOW_AFTER_MS = 15 * MIN;
+/** A patient can be checked in (or a video started) from 2 hours before the start. */
+export const CHECK_IN_FROM_MS = 120 * MIN;
+const tooEarly = (a: { startsAt: Date }, now: Date) =>
+  now.getTime() < a.startsAt.getTime() - CHECK_IN_FROM_MS;
 const STATUS_RANK = `CASE a.status WHEN 'in_consultation' THEN 0 WHEN 'checked_in' THEN 1 WHEN 'booked' THEN 2 WHEN 'completed' THEN 3 ELSE 4 END`;
 
 /** The person an appointment is for: the family member, else the booking account. */
@@ -154,8 +158,10 @@ export class ConsultationService {
         waitingMinutes,
         flags: { firstVisit, lateCancels: f.lateCancels, noShows: f.noShows },
         can: {
-          checkIn: moves.includes('checked_in'),
-          start: moves.includes('in_consultation'),
+          checkIn: moves.includes('checked_in') && !tooEarly(a, now),
+          start:
+            moves.includes('in_consultation') &&
+            !(a.status === 'booked' && tooEarly(a, now)),
           complete: moves.includes('completed'),
           noShow:
             moves.includes('no_show') &&
@@ -171,6 +177,10 @@ export class ConsultationService {
             a.paymentMethod === 'transfer' && payMoves.includes('paid'),
           rejectPayment: a.paymentStatus === 'proof_submitted',
           refund: payMoves.includes('refunded'),
+          markPaid:
+            a.paymentMethod === 'pay_at_clinic' &&
+            a.paymentStatus === 'unpaid' &&
+            ['checked_in', 'in_consultation', 'completed'].includes(a.status),
         },
       };
     });
@@ -335,9 +345,22 @@ export class ConsultationService {
     return (await this.doctorViews(doctorId, [a]))[0];
   }
 
-  checkIn(doctorId: string, doctorUserId: string, code: string) {
-    return this.act(doctorId, doctorUserId, code, (m, a) =>
-      this.transitions.moveStatus(
+  checkIn(
+    doctorId: string,
+    doctorUserId: string,
+    code: string,
+    now = new Date(),
+  ) {
+    return this.act(doctorId, doctorUserId, code, (m, a) => {
+      if (a.kind === 'clinic' && a.status === 'booked' && tooEarly(a, now)) {
+        throw invalidTransition(
+          a.status,
+          'checked_in',
+          [],
+          'Check a patient in from 2 hours before their time.',
+        );
+      }
+      return this.transitions.moveStatus(
         m,
         a,
         'checked_in',
@@ -348,13 +371,26 @@ export class ConsultationService {
               ? 'Video consultations have no check-in — start the call.'
               : undefined,
         },
-      ),
-    );
+      );
+    });
   }
 
-  start(doctorId: string, doctorUserId: string, code: string) {
-    return this.act(doctorId, doctorUserId, code, (m, a) =>
-      this.transitions.moveStatus(
+  start(
+    doctorId: string,
+    doctorUserId: string,
+    code: string,
+    now = new Date(),
+  ) {
+    return this.act(doctorId, doctorUserId, code, (m, a) => {
+      if (a.kind === 'video' && a.status === 'booked' && tooEarly(a, now)) {
+        throw invalidTransition(
+          a.status,
+          'in_consultation',
+          [],
+          'Start a video consultation from 2 hours before its time.',
+        );
+      }
+      return this.transitions.moveStatus(
         m,
         a,
         'in_consultation',
@@ -365,8 +401,8 @@ export class ConsultationService {
               ? 'Check the patient in first.'
               : undefined,
         },
-      ),
-    );
+      );
+    });
   }
 
   /** in_consultation → completed; pay-at-clinic with paymentCollected → paid. */

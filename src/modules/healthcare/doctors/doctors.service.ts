@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   OnModuleInit,
   UnprocessableEntityException,
@@ -26,6 +27,7 @@ import { Business } from '../../businesses/entities/business.entity';
 import { BusinessesService } from '../../businesses/businesses.service';
 import { AccountViewService } from '../../auth/account-view.service';
 import { MediaService } from '../../media/media.service';
+import { NotificationsService } from '../../notifications/notifications.service';
 import { Specialty } from '../reference/entities/specialty.entity';
 import { Condition } from '../reference/entities/condition.entity';
 import { PracticeLocation } from '../practice/entities/practice-location.entity';
@@ -37,6 +39,35 @@ import { yearsSince } from '../common/time.util';
 
 export const MAX_ACTIVE_ACCOUNTS = 4;
 const MIN_ABOUT = 40;
+
+/**
+ * What this API offers the doctor app beyond the first release, so an app
+ * shows a control only when the server it talks to can do it.
+ */
+export const DOCTOR_FEATURES = [
+  'cross_kind_hours',
+  'buffer',
+  'schedule_dry_run',
+  'day_status',
+  'pause',
+  'mark_paid_later',
+  'listing_notice',
+] as const;
+
+/** The completeness keys in words, for the "you're hidden" notice. */
+const MISSING_WORDS: Record<string, string> = {
+  pmdc_verified: 'PMDC verification',
+  full_name: 'your full name',
+  gender: 'your gender',
+  photo: 'a photo',
+  primary_specialty: 'your specialty',
+  practicing_since: 'the year you started practising',
+  about: `an About of at least ${MIN_ABOUT} characters`,
+  languages: 'the languages you speak',
+  qualifications: 'a qualification',
+  active_location: 'a clinic or video consultation',
+  weekly_schedule: 'weekly hours',
+};
 
 const notFound = (what = 'Doctor') =>
   new NotFoundException({
@@ -78,12 +109,15 @@ export interface Completeness {
  */
 @Injectable()
 export class DoctorsService implements OnModuleInit {
+  private readonly logger = new Logger(DoctorsService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly businesses: BusinessesService,
     private readonly accounts: AccountViewService,
     private readonly media: MediaService,
     private readonly events: HealthEvents,
+    private readonly notifications: NotificationsService,
   ) {}
 
   onModuleInit(): void {
@@ -92,11 +126,13 @@ export class DoctorsService implements OnModuleInit {
     const doctorFlags = async (business: Business) => {
       if (business.subType !== 'doctor') return {};
       const [row] = await this.dataSource.query(
-        `SELECT is_listed, pmdc_verified_at FROM doctors WHERE business_id = $1`,
+        `SELECT is_listed, first_listed_at, pmdc_verified_at FROM doctors WHERE business_id = $1`,
         [business.id],
       );
       return {
         isListed: !!row?.is_listed,
+        // Listed once: the app opens on the practice, even while unlisted.
+        wasListed: !!row?.first_listed_at,
         pmdcVerified: !!row?.pmdc_verified_at,
       };
     };
@@ -250,6 +286,8 @@ export class DoctorsService implements OnModuleInit {
         patientsServed: d.patientsServed,
       },
       nextAvailableAt: d.nextAvailableAt,
+      wasListed: !!d.firstListedAt,
+      features: DOCTOR_FEATURES,
     };
   }
 
@@ -274,6 +312,7 @@ export class DoctorsService implements OnModuleInit {
           'photoUrl',
         );
     }
+    let notify: () => Promise<void> = async () => undefined;
     await this.dataSource.transaction(async (m) => {
       const d = await m.findOne(Doctor, {
         where: { id: doctorId },
@@ -430,8 +469,9 @@ export class DoctorsService implements OnModuleInit {
           );
       }
       await m.query(`SELECT doctor_search_refresh($1)`, [doctorId]);
-      await this.enforceListing(m, doctorId);
+      notify = await this.enforceListing(m, doctorId);
     });
+    await notify();
     await this.events.availabilityChanged(doctorId);
     return this.profile(doctorId);
   }
@@ -498,7 +538,7 @@ export class DoctorsService implements OnModuleInit {
     await this.dataSource.manager.update(
       Doctor,
       { id: doctorId },
-      { isListed: true },
+      { isListed: true, firstListedAt: d.firstListedAt ?? new Date() },
     );
     await this.events.availabilityChanged(doctorId);
     return this.completeness(doctorId);
@@ -514,11 +554,36 @@ export class DoctorsService implements OnModuleInit {
     return this.completeness(doctorId);
   }
 
-  /** A listed doctor whose profile stops being complete (last location closed…) is unlisted. */
-  async enforceListing(m: EntityManager, doctorId: string): Promise<void> {
+  /**
+   * A listed doctor whose profile stops being complete (last location closed,
+   * About shortened…) is unlisted — never silently: the answer is the notice
+   * to send after commit ("You're hidden from patients: add weekly hours").
+   */
+  async enforceListing(
+    m: EntityManager,
+    doctorId: string,
+  ): Promise<() => Promise<void>> {
     const c = await this.completeness(doctorId, m);
-    if (c.isListed && c.missing.length)
-      await m.update(Doctor, { id: doctorId }, { isListed: false });
+    if (!c.isListed || !c.missing.length) return async () => undefined;
+    await m.update(Doctor, { id: doctorId }, { isListed: false });
+    const [owner] = await m.query(
+      `SELECT b.owner_user_id FROM doctors d JOIN businesses b ON b.id = d.business_id WHERE d.id = $1`,
+      [doctorId],
+    );
+    const what = c.missing.map((k) => MISSING_WORDS[k] ?? k).join(', ');
+    return async () => {
+      if (!owner) return;
+      try {
+        await this.notifications.notify(owner.owner_user_id, {
+          type: 'health.listing.hidden',
+          title: 'You’re hidden from patients',
+          body: `Add ${what} to be listed again. Booked visits stay booked.`,
+          data: { missing: c.missing },
+        });
+      } catch (err) {
+        this.logger.warn(`notification failed: ${(err as Error).message}`);
+      }
+    };
   }
 
   // ── Payment accounts ─────────────────────────────────────────────────────

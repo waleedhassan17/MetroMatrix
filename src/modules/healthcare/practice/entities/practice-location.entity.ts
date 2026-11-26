@@ -26,6 +26,7 @@ const coordinate = {
   'CHK_practice_locations_rules',
   '"fee" >= 0 AND "slot_minutes" BETWEEN 10 AND 60',
 )
+@Check('CHK_practice_locations_buffer', '"buffer_minutes" BETWEEN 0 AND 60')
 export class PracticeLocation extends BaseEntity {
   @Column({ type: 'uuid', name: 'doctor_id' })
   doctorId!: string;
@@ -89,6 +90,10 @@ export class PracticeLocation extends BaseEntity {
 
   @Column({ type: 'smallint', name: 'slot_minutes', default: 15 })
   slotMinutes!: number;
+
+  /** A break after each patient (minutes): the next slot starts after it. */
+  @Column({ type: 'smallint', name: 'buffer_minutes', default: 0 })
+  bufferMinutes!: number;
 
   /** "Ask for a token at reception." */
   @Column({ type: 'text', nullable: true })

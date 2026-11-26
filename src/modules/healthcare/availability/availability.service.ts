@@ -22,11 +22,15 @@ import {
 import { parseTime, todayIn } from '../common/time.util';
 import { ErrorCode } from '../../../common/errors/codes';
 
-export const MAX_DAYS = 14;
+/** As far as the longest booking window (doctors choose 1–30 days). */
+export const MAX_DAYS = 30;
 const CACHE_MS = 30_000;
 
 interface LocationContext {
-  doctor: Pick<Doctor, 'id' | 'bookingWindowDays' | 'minNoticeMinutes'>;
+  doctor: Pick<
+    Doctor,
+    'id' | 'bookingWindowDays' | 'minNoticeMinutes' | 'isAccepting'
+  >;
   location: PracticeLocation;
   ranges: WeeklyRange[];
 }
@@ -73,7 +77,12 @@ export class AvailabilityService implements OnModuleInit {
   ): Promise<LocationContext> {
     const doctor = await m.findOne(Doctor, {
       where: { id: doctorId },
-      select: { id: true, bookingWindowDays: true, minNoticeMinutes: true },
+      select: {
+        id: true,
+        bookingWindowDays: true,
+        minNoticeMinutes: true,
+        isAccepting: true,
+      },
     });
     const location = await m.findOne(PracticeLocation, {
       where: { id: locationId, doctorId, isActive: true },
@@ -96,14 +105,14 @@ export class AvailabilityService implements OnModuleInit {
     };
   }
 
-  /** Time off (doctor-wide or at this location) and every active appointment of the doctor. */
-  async blocked(
+  /** Time off (doctor-wide or at this location) and every active appointment of the doctor, apart. */
+  async blockedParts(
     m: EntityManager,
     doctorId: string,
     locationId: string,
     from: Date,
     to: Date,
-  ): Promise<Interval[]> {
+  ): Promise<{ timeOff: Interval[]; booked: Interval[] }> {
     const off: Array<{ starts_at: Date; ends_at: Date }> = await m.query(
       `SELECT starts_at, ends_at FROM time_off
         WHERE doctor_id = $1 AND (location_id IS NULL OR location_id = $2)
@@ -117,19 +126,45 @@ export class AvailabilityService implements OnModuleInit {
       from,
       to,
     );
-    return [
-      ...off.map((o) => ({ start: o.starts_at, end: o.ends_at })),
-      ...booked.map((b) => ({ start: b.startsAt, end: b.endsAt })),
-    ];
+    return {
+      timeOff: off.map((o) => ({ start: o.starts_at, end: o.ends_at })),
+      booked: booked.map((b) => ({ start: b.startsAt, end: b.endsAt })),
+    };
   }
 
-  /** Days of slots for a location (raw instants). `fresh` bypasses the cache. */
+  /** Time off and every active appointment of the doctor, together. */
+  async blocked(
+    m: EntityManager,
+    doctorId: string,
+    locationId: string,
+    from: Date,
+    to: Date,
+  ): Promise<Interval[]> {
+    const { timeOff, booked } = await this.blockedParts(
+      m,
+      doctorId,
+      locationId,
+      from,
+      to,
+    );
+    return [...timeOff, ...booked];
+  }
+
+  /**
+   * Days of slots for a location (raw instants). `fresh` bypasses the cache;
+   * `ignorePause` shows a paused doctor their own hours (patients see none).
+   */
   async days(
     doctorId: string,
     locationId: string,
     fromDate: string | undefined,
     days: number,
-    opts: { m?: EntityManager; fresh?: boolean; now?: Date } = {},
+    opts: {
+      m?: EntityManager;
+      fresh?: boolean;
+      now?: Date;
+      ignorePause?: boolean;
+    } = {},
   ): Promise<{ ctx: LocationContext; days: DaySlots[] }> {
     if (days < 1 || days > MAX_DAYS) {
       throw new BadRequestException({
@@ -142,7 +177,8 @@ export class AvailabilityService implements OnModuleInit {
     const ctx = await this.context(m, doctorId, locationId);
     const tz = ctx.location.timezone;
     const from = fromDate ?? todayIn(tz, now);
-    const key = `${locationId}:${from}:${days}`;
+    const paused = !ctx.doctor.isAccepting && !opts.ignorePause;
+    const key = `${locationId}:${from}:${days}:${paused ? 'p' : ''}`;
     const hit = this.cache.get(key);
     if (!opts.fresh && hit && now.getTime() - hit.at < CACHE_MS)
       return { ctx, days: hit.days };
@@ -153,6 +189,13 @@ export class AvailabilityService implements OnModuleInit {
       minNoticeMinutes: ctx.doctor.minNoticeMinutes,
       bookingWindowDays: ctx.doctor.bookingWindowDays,
     });
+    const { timeOff, booked } = await this.blockedParts(
+      m,
+      doctorId,
+      locationId,
+      earliest,
+      windowEnd,
+    );
     const result = buildDays({
       tz,
       fromDate: from,
@@ -161,30 +204,37 @@ export class AvailabilityService implements OnModuleInit {
       minNoticeMinutes: ctx.doctor.minNoticeMinutes,
       bookingWindowDays: ctx.doctor.bookingWindowDays,
       slotMinutes: ctx.location.slotMinutes,
+      bufferMinutes: ctx.location.bufferMinutes,
       ranges: ctx.ranges,
-      blocked: await this.blocked(m, doctorId, locationId, earliest, windowEnd),
+      blocked: booked,
+      timeOff,
+      paused,
     });
     if (!opts.fresh)
       this.cache.set(key, { at: now.getTime(), doctorId, days: result });
     return { ctx, days: result };
   }
 
-  /** The patient view of a location's slots. */
+  /** The patient view of a location's slots (a paused doctor: `accepting: false`, no slots). */
   async slots(
     doctorId: string,
     locationId: string,
     fromDate: string | undefined,
     days: number,
+    opts: { ignorePause?: boolean } = {},
   ) {
     const { ctx, days: result } = await this.days(
       doctorId,
       locationId,
       fromDate,
       days,
+      opts,
     );
     const l = ctx.location;
     return {
       doctorId,
+      accepting: ctx.doctor.isAccepting,
+      bookingWindowDays: ctx.doctor.bookingWindowDays,
       location: {
         id: l.id,
         kind: l.kind,
@@ -194,6 +244,7 @@ export class AvailabilityService implements OnModuleInit {
         timezone: l.timezone,
         fee: l.fee,
         slotMinutes: l.slotMinutes,
+        bufferMinutes: l.bufferMinutes,
       },
       days: result.map((d) => dayView(d, l.timezone)),
     };
@@ -232,8 +283,10 @@ export class AvailabilityService implements OnModuleInit {
       minNoticeMinutes: ctx.doctor.minNoticeMinutes,
       bookingWindowDays: ctx.doctor.bookingWindowDays,
       slotMinutes: ctx.location.slotMinutes,
+      bufferMinutes: ctx.location.bufferMinutes,
       ranges: ctx.ranges,
-      blocked: off.map((o) => ({ start: o.starts_at, end: o.ends_at })),
+      blocked: [],
+      timeOff: off.map((o) => ({ start: o.starts_at, end: o.ends_at })),
     });
     const slot =
       day?.slots.find((s) => s.startsAt.getTime() === startsAt.getTime()) ??
@@ -249,14 +302,22 @@ export class AvailabilityService implements OnModuleInit {
     return { ctx, slot, free: clash.length === 0 };
   }
 
-  /** The n free slots nearest to an instant (offered when a slot was just taken). */
-  /** What patients will see, per active location — works before publishing too. */
+  /**
+   * What patients will see, per active location — works before publishing
+   * too. A paused doctor sees their hours as they'd be (`paused: true`):
+   * patients see none of them until bookings are switched back on.
+   */
   async preview(doctorId: string, fromDate: string | undefined, days: number) {
+    const [doctor] = await this.dataSource.query(
+      `SELECT is_accepting FROM doctors WHERE id = $1`,
+      [doctorId],
+    );
     const locations: Array<{ id: string }> = await this.dataSource.query(
       `SELECT id FROM practice_locations WHERE doctor_id = $1 AND is_active ORDER BY kind, created_at`,
       [doctorId],
     );
     return {
+      paused: doctor ? !doctor.is_accepting : false,
       locations: await Promise.all(
         locations.map(async (l) => {
           const { location, days: list } = await this.slots(
@@ -264,12 +325,15 @@ export class AvailabilityService implements OnModuleInit {
             l.id,
             fromDate,
             days,
+            { ignorePause: true },
           );
           return { location, days: list };
         }),
       ),
     };
   }
+
+  /** The n free slots nearest to an instant (offered when a slot was just taken). */
 
   async nearest(
     doctorId: string,
@@ -319,7 +383,8 @@ export class AvailabilityService implements OnModuleInit {
     let best: Date | null = null;
     for (const l of locations) {
       let next: Date | null = null;
-      if (l.isActive) {
+      // A paused doctor has no next slot for patients.
+      if (l.isActive && doctor.isAccepting) {
         const rows = await m.find(WeeklySchedule, {
           where: { locationId: l.id },
         });
@@ -337,6 +402,7 @@ export class AvailabilityService implements OnModuleInit {
               minNoticeMinutes: doctor.minNoticeMinutes,
               bookingWindowDays: doctor.bookingWindowDays,
               slotMinutes: l.slotMinutes,
+              bufferMinutes: l.bufferMinutes,
               ranges: rows.map((r) => ({
                 weekday: r.weekday,
                 start: parseTime(r.startTime),

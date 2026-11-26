@@ -338,7 +338,7 @@ describe('Healthcare P2: availability + discovery (e2e)', () => {
     expect(tomorrow.slots).toHaveLength(32);
     await anon
       .get(
-        `/health/doctors/${D.D2.doctorId}/locations/${clinic.D2}/slots?days=20`,
+        `/health/doctors/${D.D2.doctorId}/locations/${clinic.D2}/slots?days=31`, // up to the longest booking window (30)
       )
       .expect(400);
     await anon

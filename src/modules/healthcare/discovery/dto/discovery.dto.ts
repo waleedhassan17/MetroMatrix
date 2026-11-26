@@ -162,12 +162,17 @@ export class SlotsQueryDto {
   @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from must be YYYY-MM-DD' })
   from?: string;
 
-  @ApiPropertyOptional({ default: 7, minimum: 1, maximum: 14 })
+  @ApiPropertyOptional({
+    default: 7,
+    minimum: 1,
+    maximum: 30,
+    description: 'Up to the longest booking window (30 days).',
+  })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
-  @Max(14)
+  @Max(30)
   days?: number;
 }
 

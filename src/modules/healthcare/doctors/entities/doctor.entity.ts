@@ -108,6 +108,10 @@ export class Doctor extends BaseEntity {
   @Column({ type: 'boolean', name: 'is_listed', default: false })
   isListed!: boolean;
 
+  /** The first time patients could find the doctor: their app opens on the practice, not set-up, ever after. */
+  @Column({ type: 'timestamptz', name: 'first_listed_at', nullable: true })
+  firstListedAt!: Date | null;
+
   @Column({ type: 'boolean', name: 'is_accepting', default: true })
   isAccepting!: boolean;
 

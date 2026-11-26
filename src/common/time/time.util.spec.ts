@@ -45,6 +45,38 @@ describe('healthcare time util', () => {
     ]);
   });
 
+  it('steps past a break after each slot when asked', () => {
+    // 15-minute visits with a 5-minute break: 9:00, 9:20, 9:40, 10:00 (it ends at 10:15).
+    const slots = expandRange(
+      '2026-10-16',
+      parseTime('09:00'),
+      parseTime('10:15'),
+      15,
+      PKT,
+      20,
+    );
+    expect(slots.map((s) => formatTime12(s.startsAt, PKT))).toEqual([
+      '9:00 AM',
+      '9:20 AM',
+      '9:40 AM',
+      '10:00 AM',
+    ]);
+    expect(
+      slots.map((s) => (s.endsAt.getTime() - s.startsAt.getTime()) / 60_000),
+    ).toEqual([15, 15, 15, 15]);
+    // A step shorter than the slot is the slot (never overlapping slots).
+    expect(
+      expandRange(
+        '2026-10-16',
+        parseTime('09:00'),
+        parseTime('10:00'),
+        15,
+        PKT,
+        5,
+      ),
+    ).toHaveLength(4);
+  });
+
   it('expands a range into slots and buckets them by local period', () => {
     const slots = expandRange(
       '2026-10-16',

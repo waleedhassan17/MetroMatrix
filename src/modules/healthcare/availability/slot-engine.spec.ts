@@ -1,4 +1,9 @@
-import { buildDays, firstFreeSlot, EngineInput } from './slot-engine';
+import {
+  buildDays,
+  firstFreeSlot,
+  EngineInput,
+  slotsPerWeek,
+} from './slot-engine';
 import { parseTime, wallTimeToInstant } from '../common/time.util';
 
 const PKT = 'Asia/Karachi';
@@ -141,6 +146,64 @@ describe('slot engine', () => {
         blocked: [{ start: NOW, end: at('2026-10-17', '00:00') }],
       }),
     ).toBeNull();
+  });
+
+  it('leaves a break after each patient when the location has one', () => {
+    const [, tomorrow] = buildDays(
+      base({
+        bufferMinutes: 10,
+        ranges: [
+          { weekday: 6, start: parseTime('09:00'), end: parseTime('11:00') },
+        ],
+      }),
+    );
+    // 30-minute visits + 10-minute break: 9:00, 9:40, 10:20 (11:00 has no room).
+    expect(times(tomorrow)).toEqual(['09:00', '09:40', '10:20']);
+    expect(tomorrow.totalSlots).toBe(3);
+    expect(
+      slotsPerWeek(
+        [{ weekday: 1, start: parseTime('09:00'), end: parseTime('11:00') }],
+        30,
+        10,
+      ),
+    ).toBe(3);
+    expect(slotsPerWeek([{ weekday: 1, start: 0, end: 20 }], 30)).toBe(0);
+  });
+
+  it('says why each day has the slots it has', () => {
+    const days = buildDays(
+      base({
+        days: 5,
+        bookingWindowDays: 4,
+        ranges: [5, 6, 0].map((weekday) => ({
+          weekday,
+          start: parseTime('11:00'),
+          end: parseTime('12:00'),
+        })),
+        // Saturday fully booked; Sunday all time off.
+        blocked: [
+          { start: at('2026-10-17', '11:00'), end: at('2026-10-17', '12:00') },
+        ],
+        timeOff: [
+          { start: at('2026-10-18', '00:00'), end: at('2026-10-19', '00:00') },
+        ],
+      }),
+    );
+    expect(
+      days.map((d) => [d.date, d.status, d.totalSlots, d.slots.length]),
+    ).toEqual([
+      ['2026-10-16', 'open', 2, 2],
+      ['2026-10-17', 'full', 2, 0],
+      ['2026-10-18', 'time_off', 2, 0],
+      ['2026-10-19', 'closed', 0, 0], // Monday: no hours
+      ['2026-10-20', 'beyond_window', 0, 0],
+    ]);
+    // Paused: nothing to book, every day says so.
+    const paused = buildDays(base({ paused: true }));
+    expect(
+      paused.every((d) => d.status === 'paused' && d.slots.length === 0),
+    ).toBe(true);
+    expect(firstFreeSlot({ ...base({ paused: true }) })).toBeNull();
   });
 
   it('works in a DST zone: no slot in the spring-forward gap', () => {
