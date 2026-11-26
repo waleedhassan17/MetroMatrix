@@ -9,6 +9,7 @@ import { DataSource, EntityManager } from 'typeorm';
 import { Doctor } from '../doctors/entities/doctor.entity';
 import { PracticeLocation } from '../practice/entities/practice-location.entity';
 import { WeeklySchedule } from '../practice/entities/weekly-schedule.entity';
+import { ScheduleOverride } from '../practice/entities/schedule-override.entity';
 import { HealthEvents } from '../common/health-events';
 import {
   DaySlots,
@@ -19,11 +20,22 @@ import {
   dayView,
   firstFreeSlot,
 } from './slot-engine';
-import { parseTime, todayIn } from '../common/time.util';
+import { addDays, parseTime, todayIn } from '../common/time.util';
 import { ErrorCode } from '../../../common/errors/codes';
 
 /** As far as the longest booking window (doctors choose 1–30 days). */
 export const MAX_DAYS = 30;
+/**
+ * How far ahead a doctor may place a visit themselves (a follow-up in three
+ * months, a move past the patients' window): their own slots, with no notice.
+ */
+export const DOCTOR_WINDOW_DAYS = 120;
+
+/** The doctor's own booking: no pause, no minimum notice, the long window. */
+export interface DoctorBookingOptions {
+  minNoticeMinutes?: number;
+  bookingWindowDays?: number;
+}
 const CACHE_MS = 30_000;
 
 interface LocationContext {
@@ -33,6 +45,35 @@ interface LocationContext {
   >;
   location: PracticeLocation;
   ranges: WeeklyRange[];
+  /** Day-specific hours from yesterday on (local dates), in minutes. */
+  overrides: Map<string, Array<{ start: number; end: number }>>;
+}
+
+/** A location's day-specific hours from yesterday (its zone) on: date → ranges in minutes ([] = closed). */
+export async function overridesOf(
+  m: EntityManager,
+  locationId: string,
+  tz: string,
+  now = new Date(),
+): Promise<Map<string, Array<{ start: number; end: number }>>> {
+  const rows = await m
+    .createQueryBuilder(ScheduleOverride, 'o')
+    .where('o.location_id = :locationId AND o.date >= :from', {
+      locationId,
+      from: addDays(todayIn(tz, now), -1),
+    })
+    .getMany();
+  return new Map(
+    rows.map((o) => [
+      o.date,
+      o.closed
+        ? []
+        : o.ranges.map((r) => ({
+            start: parseTime(r.start),
+            end: parseTime(r.end),
+          })),
+    ]),
+  );
 }
 
 /**
@@ -102,6 +143,7 @@ export class AvailabilityService implements OnModuleInit {
         start: parseTime(r.startTime),
         end: parseTime(r.endTime),
       })),
+      overrides: await overridesOf(m, locationId, location.timezone),
     };
   }
 
@@ -164,7 +206,7 @@ export class AvailabilityService implements OnModuleInit {
       fresh?: boolean;
       now?: Date;
       ignorePause?: boolean;
-    } = {},
+    } & DoctorBookingOptions = {},
   ): Promise<{ ctx: LocationContext; days: DaySlots[] }> {
     if (days < 1 || days > MAX_DAYS) {
       throw new BadRequestException({
@@ -178,16 +220,23 @@ export class AvailabilityService implements OnModuleInit {
     const tz = ctx.location.timezone;
     const from = fromDate ?? todayIn(tz, now);
     const paused = !ctx.doctor.isAccepting && !opts.ignorePause;
+    const minNoticeMinutes =
+      opts.minNoticeMinutes ?? ctx.doctor.minNoticeMinutes;
+    const bookingWindowDays =
+      opts.bookingWindowDays ?? ctx.doctor.bookingWindowDays;
+    const custom =
+      opts.minNoticeMinutes !== undefined ||
+      opts.bookingWindowDays !== undefined;
     const key = `${locationId}:${from}:${days}:${paused ? 'p' : ''}`;
     const hit = this.cache.get(key);
-    if (!opts.fresh && hit && now.getTime() - hit.at < CACHE_MS)
+    if (!opts.fresh && !custom && hit && now.getTime() - hit.at < CACHE_MS)
       return { ctx, days: hit.days };
 
     const { earliest, windowEnd } = bookingBounds({
       tz,
       now,
-      minNoticeMinutes: ctx.doctor.minNoticeMinutes,
-      bookingWindowDays: ctx.doctor.bookingWindowDays,
+      minNoticeMinutes,
+      bookingWindowDays,
     });
     const { timeOff, booked } = await this.blockedParts(
       m,
@@ -201,16 +250,17 @@ export class AvailabilityService implements OnModuleInit {
       fromDate: from,
       days,
       now,
-      minNoticeMinutes: ctx.doctor.minNoticeMinutes,
-      bookingWindowDays: ctx.doctor.bookingWindowDays,
+      minNoticeMinutes,
+      bookingWindowDays,
       slotMinutes: ctx.location.slotMinutes,
       bufferMinutes: ctx.location.bufferMinutes,
       ranges: ctx.ranges,
+      overrides: ctx.overrides,
       blocked: booked,
       timeOff,
       paused,
     });
-    if (!opts.fresh)
+    if (!opts.fresh && !custom)
       this.cache.set(key, { at: now.getTime(), doctorId, days: result });
     return { ctx, days: result };
   }
@@ -221,7 +271,7 @@ export class AvailabilityService implements OnModuleInit {
     locationId: string,
     fromDate: string | undefined,
     days: number,
-    opts: { ignorePause?: boolean } = {},
+    opts: { ignorePause?: boolean } & DoctorBookingOptions = {},
   ) {
     const { ctx, days: result } = await this.days(
       doctorId,
@@ -234,7 +284,7 @@ export class AvailabilityService implements OnModuleInit {
     return {
       doctorId,
       accepting: ctx.doctor.isAccepting,
-      bookingWindowDays: ctx.doctor.bookingWindowDays,
+      bookingWindowDays: opts.bookingWindowDays ?? ctx.doctor.bookingWindowDays,
       location: {
         id: l.id,
         kind: l.kind,
@@ -261,14 +311,19 @@ export class AvailabilityService implements OnModuleInit {
     locationId: string,
     startsAt: Date,
     now = new Date(),
+    opts: DoctorBookingOptions = {},
   ) {
     const ctx = await this.context(m, doctorId, locationId);
     const tz = ctx.location.timezone;
+    const minNoticeMinutes =
+      opts.minNoticeMinutes ?? ctx.doctor.minNoticeMinutes;
+    const bookingWindowDays =
+      opts.bookingWindowDays ?? ctx.doctor.bookingWindowDays;
     const { earliest, windowEnd } = bookingBounds({
       tz,
       now,
-      minNoticeMinutes: ctx.doctor.minNoticeMinutes,
-      bookingWindowDays: ctx.doctor.bookingWindowDays,
+      minNoticeMinutes,
+      bookingWindowDays,
     });
     const off: Array<{ starts_at: Date; ends_at: Date }> = await m.query(
       `SELECT starts_at, ends_at FROM time_off
@@ -280,11 +335,12 @@ export class AvailabilityService implements OnModuleInit {
       fromDate: todayIn(tz, startsAt),
       days: 1,
       now,
-      minNoticeMinutes: ctx.doctor.minNoticeMinutes,
-      bookingWindowDays: ctx.doctor.bookingWindowDays,
+      minNoticeMinutes,
+      bookingWindowDays,
       slotMinutes: ctx.location.slotMinutes,
       bufferMinutes: ctx.location.bufferMinutes,
       ranges: ctx.ranges,
+      overrides: ctx.overrides,
       blocked: [],
       timeOff: off.map((o) => ({ start: o.starts_at, end: o.ends_at })),
     });
@@ -395,28 +451,31 @@ export class AvailabilityService implements OnModuleInit {
           minNoticeMinutes: doctor.minNoticeMinutes,
           bookingWindowDays: doctor.bookingWindowDays,
         });
-        const slot = rows.length
-          ? firstFreeSlot({
-              tz,
-              now,
-              minNoticeMinutes: doctor.minNoticeMinutes,
-              bookingWindowDays: doctor.bookingWindowDays,
-              slotMinutes: l.slotMinutes,
-              bufferMinutes: l.bufferMinutes,
-              ranges: rows.map((r) => ({
-                weekday: r.weekday,
-                start: parseTime(r.startTime),
-                end: parseTime(r.endTime),
-              })),
-              blocked: await this.blocked(
-                m,
-                doctorId,
-                l.id,
-                earliest,
-                windowEnd,
-              ),
-            })
-          : null;
+        const overrides = await overridesOf(m, l.id, tz, now);
+        const slot =
+          rows.length || [...overrides.values()].some((r) => r.length)
+            ? firstFreeSlot({
+                tz,
+                now,
+                minNoticeMinutes: doctor.minNoticeMinutes,
+                bookingWindowDays: doctor.bookingWindowDays,
+                slotMinutes: l.slotMinutes,
+                bufferMinutes: l.bufferMinutes,
+                ranges: rows.map((r) => ({
+                  weekday: r.weekday,
+                  start: parseTime(r.startTime),
+                  end: parseTime(r.endTime),
+                })),
+                overrides,
+                blocked: await this.blocked(
+                  m,
+                  doctorId,
+                  l.id,
+                  earliest,
+                  windowEnd,
+                ),
+              })
+            : null;
         next = slot?.startsAt ?? null;
       }
       if (

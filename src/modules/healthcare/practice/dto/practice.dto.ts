@@ -1,5 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  IsArray,
   IsBoolean,
   IsIn,
   IsInt,
@@ -14,6 +17,7 @@ import {
   MaxLength,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Trim } from '../../../../common/validation/transforms';
 import { IsPkPhone } from '../../../../common/validation/phone';
@@ -220,4 +224,66 @@ export class CreateTimeOffDto {
   @IsOptional()
   @IsBoolean()
   cancelAffected?: boolean;
+}
+
+export class OverrideRangeDto {
+  @ApiProperty({
+    example: '17:00',
+    description: 'Local wall-clock time, HH:mm.',
+  })
+  @Matches(HHMM, { message: 'start must be HH:mm' })
+  start!: string;
+
+  @ApiProperty({
+    example: '21:00',
+    description: 'HH:mm, or 24:00 for the end of the day.',
+  })
+  @Matches(HHMM, { message: 'end must be HH:mm (24:00 allowed)' })
+  end!: string;
+}
+
+export class ScheduleOverrideDto {
+  @ApiPropertyOptional({
+    description: 'true closes the day (ranges are ignored).',
+  })
+  @IsOptional()
+  @IsBoolean()
+  closed?: boolean;
+
+  @ApiPropertyOptional({
+    type: [OverrideRangeDto],
+    description: "The day's hours, replacing its weekly hours.",
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(10)
+  @ValidateNested({ each: true })
+  @Type(() => OverrideRangeDto)
+  ranges?: OverrideRangeDto[];
+
+  @ApiPropertyOptional({ example: 'Late clinic before Eid' })
+  @ValidateIf((_, v) => v !== null)
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(200)
+  note?: string | null;
+}
+
+export class OverridesQueryDto {
+  @ApiPropertyOptional({
+    example: '2026-11-01',
+    description: 'Local date; default today.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'from must be YYYY-MM-DD' })
+  from?: string;
+
+  @ApiPropertyOptional({
+    example: '2026-12-31',
+    description: 'Local date; default 60 days on.',
+  })
+  @IsOptional()
+  @Matches(/^\d{4}-\d{2}-\d{2}$/, { message: 'to must be YYYY-MM-DD' })
+  to?: string;
 }

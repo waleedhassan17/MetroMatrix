@@ -470,12 +470,16 @@ days, then erased by the nightly job.
 
 | Method | Path | Body / notes |
 |---|---|---|
-| GET PATCH | `/profile` | `{ title, fullName, gender, photoUrl (purpose doctor_photo; checked only when it changes, so the current photo may be re-sent), primarySpecialtyId, secondarySpecialtyIds, practicingSince, about, languages, qualifications[], experiences[], services[], conditionIds, bookingWindowDays (≤30), minNoticeMinutes, cancelCutoffMinutes, videoPrepayRequired, isAccepting }`. Arrays **replace** the stored lists. `videoPrepayRequired: true` needs an active payment account. `isAccepting: false` pauses new bookings (patients see no slots; booked visits stay). The GET also answers `isListed`, `wasListed` (listed at least once), `unlistedReason` (set only when staff took the profile down) and `features` — what this server offers the doctor app (`cross_kind_hours`, `buffer`, `schedule_dry_run`, `day_status`, `pause`, `mark_paid_later`, `listing_notice`, …), so an app shows a control only when its server can do it. |
+| GET PATCH | `/profile` | `{ title, fullName, gender, photoUrl (purpose doctor_photo; checked only when it changes, so the current photo may be re-sent), primarySpecialtyId, secondarySpecialtyIds, practicingSince, about, languages, qualifications[], experiences[], services[], conditionIds, bookingWindowDays (≤30), minNoticeMinutes, cancelCutoffMinutes, videoPrepayRequired, isAccepting }`. Arrays **replace** the stored lists. `videoPrepayRequired: true` needs an active payment account. `isAccepting: false` pauses new bookings (patients see no slots; booked visits stay). The GET also answers `isListed`, `wasListed` (listed at least once), `unlistedReason` (set only when staff took the profile down) and `features` — what this server offers the doctor app (`cross_kind_hours`, `buffer`, `schedule_dry_run`, `day_status`, `pause`, `mark_paid_later`, `listing_notice`, `overrides`, `walk_in`, `doctor_reschedule`, `follow_up_booking`, `doctor_slots`, `follow_up_reminder`), so an app shows a control only when its server can do it. |
 | GET | `/profile/completeness` | `{ percent, missing: [...], isListed }`. Checks: PMDC verified, name, gender, photo, primary specialty, practising since, about (40+ characters), languages, qualifications, an active location, a weekly schedule. |
 | POST | `/listing/publish` · `/listing/unpublish` | Publishing below 100%: `422 PROFILE_INCOMPLETE` (`details.missing`). Unlisted by an admin: `403`. A change that makes a listed profile incomplete (last hours cleared, About shortened…) unlists it and tells the doctor (`health.listing.hidden`, §6). |
 | GET POST | `/locations` | `{ kind: clinic\|video, name, addressLine?, area?, city?, lat?, lng?, phone?, timezone? (IANA, default Asia/Karachi), fee, slotMinutes (10–60), bufferMinutes (0–60, a break after each patient), instructions? }`. At most one active video location. |
 | PATCH DELETE | `/locations/:id` | Deactivating or deleting a location with future bookings: `409 LOCATION_HAS_BOOKINGS` (`details.appointments`). Switching one back on, or changing its `timezone`, re-checks its hours (`409 SCHEDULE_OVERLAP`). PATCH answers the location plus `outsideHours`: booked visits a new zone leaves outside its hours (they stay booked). |
 | GET PUT | `/locations/:id/schedule` | PUT takes `[{ weekday 0–6, start "HH:MM", end "HH:MM" or "24:00" }]` and replaces the week. Overlap with another active location **of the same kind** (two clinics) on the same weekday: `409 SCHEDULE_OVERLAP` (`details.reason: same_kind`, `details.range`, `details.conflict`). A clinic and the video consultation may share hours in the same zone: either can be booked, and booking one closes the other (`details.reason: timezone` when their zones differ). Answers the week plus `sharedWith` (`[{ locationId, locationName, kind, weekday, weekdayLabel, start, end }]`), `outsideHours` (booked visits the new hours leave out — never cancelled) and `slotsPerWeek`. `?dryRun=true` checks and answers the same without saving (`dryRun: true`). |
+| GET | `/locations/:id/overrides?from&to` | Day-specific hours (local dates; default today … 60 days on): `{ locationId, timezone, items: [{ date, closed, ranges: [{ start, end }], note }] }`. |
+| PUT | `/locations/:id/overrides/:date` | `{ closed?, ranges?: [{ start "HH:MM", end "HH:MM" or "24:00" }] (≤ 10), note? (≤ 200, the doctor's own) }`: that date's own hours (extra hours, shorter hours, or `closed: true`), replacing its weekly hours at this location. Today or later (≤ 1 year). Checked like the week: another location of the same kind can't overlap them that date (`409 SCHEDULE_OVERLAP`); a clinic and video may share (`sharedWith`). Answers `{ date, closed, ranges, note, sharedWith, outsideHours, slots, dryRun }`; `?dryRun=true` reports without saving. Booked visits the new hours leave out stay booked. |
+| DELETE | `/locations/:id/overrides/:date` | Back to the weekly hours that date: `{ removed, outsideHours }`. |
+| GET | `/locations/:id/slots?from&days` | Your own free slots there (for moving a visit or booking a follow-up): no minimum notice, bookings on or paused, up to 120 days ahead. Same shape as the patients' `Slots`. |
 | GET POST | `/time-off` | `{ startsAt, endsAt, locationId? (null = all), reason?, cancelAffected? }`. If bookings are affected: `409 TIME_OFF_CONFLICTS` (`details.appointments`), unless `cancelAffected: true`, which cancels them and tells the patients. |
 | DELETE | `/time-off/:id` | |
 | GET | `/availability/preview?from&days=7` | `{ paused, locations: [{ location, days }] }`: the slots patients will see. Works before publishing. A paused doctor sees their slots with `paused: true` (patients see none). |
@@ -486,6 +490,9 @@ days, then erased by the nightly job.
 | GET | `/appointments/:code` | Detail with `history` and `sharedRecords`. Audited (`phi.read`). |
 | POST | `/appointments/:code/check-in` · `/start` · `/complete` · `/no-show` | `complete` takes `{ paymentCollected? }`. See §3. Check-in (and starting a booked video consultation) opens 2 hours before the start: earlier is `409 INVALID_TRANSITION`, and `can.checkIn` / `can.start` say so. |
 | POST | `/appointments/:code/cancel` | `{ reason }` (required). The patient is told; a paid fee becomes `refund_due`. |
+| POST | `/appointments/walk-in` | `{ locationId (a clinic), startsAt? (a free slot today; default the one running now, else the next free one today), patient: { name, phone?, gender?, age? }, reason? }` → `201`: someone at the desk without a booking, **checked in** at once, paying at the clinic (`source: walk_in`). Walk-ins have no account: nothing is sent to them, they can't review, and only you see them (in Today, Patients and their history). A video location: `400`; no free time left today: `409 NO_FREE_SLOT`. |
+| POST | `/appointments/:code/reschedule` | `{ startsAt (one of your free slots), locationId? (another of the same kind), reason }`: move a **booked** visit. The old one is cancelled by you (`cancelReason: rescheduled`); the new one (`rescheduledFromId`) keeps the payment as it was, the shared reports and your notes, and the patient is told why (`health.appointment.moved`). The patient may still reschedule it once themselves. |
+| POST | `/appointments/:code/follow-up` | `{ locationId, startsAt }` → `201`: book the follow-up of a started or completed visit for the same person (a family member, or a walk-in, included), linked by `followUpOfId`, on that location's payment rules. The patient is told (`health.appointment.booked`). |
 | POST | `/appointments/:code/payment/confirm` · `/payment/reject` · `/refund` | reject: `{ reason }`. refund: `{ refundRef }`. |
 | POST | `/appointments/:code/payment/mark-paid` | Pay at clinic: the fee was collected at the desk or after the visit (checked in, in consultation or completed; `unpaid → paid`). `can.markPaid`. |
 | GET PUT | `/appointments/:code/notes` | `{ text, files?: [{ url, publicId, mime? }] }`. Files are signed for `medical_note`. These are **private notes, never shown to the patient**. The GET is audited. |
@@ -553,6 +560,7 @@ days, then erased by the nightly job.
 | `SLOT_TAKEN` | 409 | Someone holds that time, at this or another location. `details.alternatives` (3). |
 | `BOOKING_LIMIT` | 409 | 3 upcoming appointments with this doctor already. |
 | `PATIENT_OVERLAP` | 409 | This person already has an appointment at that time. |
+| `NO_FREE_SLOT` | 409 | A walk-in without a time: no free slot is left today at that clinic. |
 | `SCHEDULE_OVERLAP` | 409 | Weekly hours overlap another location's of the same kind (`details.reason: same_kind`), or a location in another zone (`timezone`). A clinic and the video consultation may share hours. |
 | `TIME_OFF_CONFLICTS` | 409 | Time off covers bookings (`details.appointments`). |
 | `LOCATION_HAS_BOOKINGS` | 409 | Deactivating or deleting a location with future bookings. |
@@ -582,6 +590,8 @@ Reused codes: `WRONG_SERVICE` (403), `INVALID_TRANSITION` (409), `REVIEW_NOT_ALL
 | `health.payment.proof` · `health.payment.confirmed` · `health.payment.rejected` · `health.payment.refunded` | doctor · patient | Transfer flow. |
 | `health.prescription` | patient | Prescription issued or updated. `data: { prescriptionId, appointmentCode }`. |
 | `health.review.new` · `health.review.reply` | doctor · patient | `data: { reviewId }`. |
+| `health.appointment.moved` | patient | The doctor moved the visit (new code, time and their reason). |
+| `health.followup.due` | patient | From 09:00 on the day a prescription's follow-up falls due, once, unless a later visit with that doctor is booked or done. `data: { doctorId, appointmentCode }`. |
 | `health.listing.hidden` | doctor | A change made a listed profile incomplete, so patients can't find it: "Add weekly hours to be listed again." `data: { missing }` (completeness keys). |
 
 ---
@@ -591,7 +601,7 @@ Reused codes: `WRONG_SERVICE` (403), `INVALID_TRANSITION` (409), `REVIEW_NOT_ALL
 | Schedule | Job |
 |---|---|
 | Every 5 min | Cancel prepaid video unpaid at `payBy`. Auto no-show for `booked` appointments past `endsAt + 2 h`. 24 h and 1 h reminders. |
-| Every 15 min | Refresh `next_available_at` for listed doctors (time passing). The 07:00-local doctor digest (once a day). |
+| Every 15 min | Refresh `next_available_at` for listed doctors (time passing; a paused doctor has none). The 07:00-local doctor digest (once a day). Follow-up reminders (`health.followup.due`, from 09:00 PKT on the due day). |
 | 02:00 PKT | Doctor aggregates: rating, satisfaction, wait and consult (shown from 5 samples), patients served, completed in 30 days. Top-booked. Symptom-checker text older than 30 days erased. |
 
 Running any job twice leaves the same state (QA #26).
@@ -672,4 +682,5 @@ What the Healthcare app reads beyond the first contract, each covered by
 | A11 | `DoctorAppointment.can.confirmPayment`, `can.rejectPayment`, `can.refund`. |
 | A12 | `GET /health/doctor/diagnoses/recent`. |
 | D1 | Doctor production rules (`test/health-doctor-practice.e2e-spec.ts`): clinic and video share hours; `bufferMinutes`; schedule `?dryRun`, `sharedWith`, `outsideHours`, `slotsPerWeek`; paused bookings (`accepting`, preview `paused`); day `status` and `totalSlots`; slots up to 30 days; check-in from 2 hours before; `payment/mark-paid` and `can.markPaid`; `health.listing.hidden`; `wasListed` on the doctor's business and profile; `features` on the profile. |
+| D2 | Doctor production features (same spec): day-specific hours (`/locations/:id/overrides`), the doctor's own slots, walk-ins (`source`, no account), the doctor moving a visit, follow-up booking (`followUpOfId`) and the follow-up reminder job. `PatientAppointment` and `DoctorAppointment` carry `source` and `followUpOfId`. |
 | Home | `HealthHome.city`, `cities`, `featuredScope`, `banners`, `emergencyNumbers`; `doctorCount` on its specialties; `icon` on conditions. Staff manage banners at `/admin/health/banners`. |

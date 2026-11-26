@@ -14,10 +14,12 @@ import {
   NotifyPayload,
 } from '../../notifications/notifications.service';
 import { formatTime12 } from '../common/time.util';
+import { TITLE_PREFIX } from '../discovery/discovery.service';
 
 const BATCH = 200;
 const UNPAID_REASON = 'The video consultation fee was not received in time.';
-type Notice = { userId: string; payload: NotifyPayload };
+/** `userId` null: a walk-in (no account), so nothing is sent. */
+type Notice = { userId: string | null; payload: NotifyPayload };
 
 /**
  * Healthcare's scheduled work, on the same rules as Shopping's: a
@@ -60,6 +62,7 @@ export class HealthJobsService {
     if (!this.enabled) return;
     await this.refreshNextAvailable();
     await this.doctorDigest();
+    await this.followUpReminders();
   }
 
   @Cron('0 2 * * *', { name: 'health-nightly', timeZone: 'Asia/Karachi' })
@@ -225,6 +228,46 @@ export class HealthJobsService {
     });
   }
 
+  /**
+   * From 09:00 PKT on the day a prescription's follow-up falls due: the
+   * patient hears "Time for your follow-up with Dr X" — once, and only if
+   * they haven't booked (or had) a later visit with that doctor. Walk-ins
+   * have no account; follow-ups more than 3 days overdue are left alone.
+   */
+  async followUpReminders(now = new Date()) {
+    return this.run('health:follow-up-reminders', async (m) => {
+      const [rows] = await m.query(
+        `UPDATE prescriptions p SET follow_up_reminded_at = now()
+           FROM appointments a, doctors d
+          WHERE a.id = p.appointment_id AND d.id = p.doctor_id
+            AND p.follow_up_in_days IS NOT NULL AND p.follow_up_reminded_at IS NULL
+            AND p.patient_user_id IS NOT NULL
+            AND extract(hour FROM ($1::timestamptz AT TIME ZONE 'Asia/Karachi')) >= 9
+            AND (p.issued_at AT TIME ZONE 'Asia/Karachi')::date + p.follow_up_in_days
+                  BETWEEN ($1::timestamptz AT TIME ZONE 'Asia/Karachi')::date - 3
+                      AND ($1::timestamptz AT TIME ZONE 'Asia/Karachi')::date
+            AND NOT EXISTS (
+              SELECT 1 FROM appointments n
+               WHERE n.doctor_id = p.doctor_id AND n.id <> a.id AND n.starts_at > a.starts_at
+                 AND n.patient_user_id = a.patient_user_id
+                 AND n.family_member_id IS NOT DISTINCT FROM a.family_member_id
+                 AND n.status IN ('booked', 'checked_in', 'in_consultation', 'completed'))
+        RETURNING p.patient_user_id, d.id AS doctor_id, d.title, d.full_name, a.code`,
+        [now],
+      );
+      const notices: Notice[] = rows.map((r: any) => ({
+        userId: r.patient_user_id,
+        payload: {
+          type: 'health.followup.due',
+          title: 'Time for your follow-up',
+          body: `With ${TITLE_PREFIX[r.title] ?? 'Dr.'} ${r.full_name}. Book a visit when it suits you.`,
+          data: { doctorId: r.doctor_id, appointmentCode: r.code },
+        },
+      }));
+      return { counts: { reminded: notices.length }, notices };
+    });
+  }
+
   /** 02:00 PKT: aggregates, top-booked, data retention (each registered by its owner). */
   async nightlyRun(now = new Date()) {
     return this.run('health:nightly', async (m) => {
@@ -261,6 +304,7 @@ export class HealthJobsService {
       return { skipped: true };
     }
     for (const n of result.notices) {
+      if (!n.userId) continue;
       try {
         await this.notifications.notify(n.userId, n.payload);
       } catch (err) {

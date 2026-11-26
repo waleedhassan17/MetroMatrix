@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { ApiClient, createTestApp, TestApp } from './utils/test-app';
 import { enrolledAdmin } from './utils/admin';
 import { SignedUp } from './utils/factories';
+import { HealthJobsService } from '../src/modules/healthcare/jobs/health-jobs.service';
 import { Admin, shopper } from './utils/shopping';
 import {
   Doctor,
@@ -393,5 +394,421 @@ describe('Healthcare: doctor practice rules (e2e)', () => {
     expect(notice.data).toEqual({ missing: ['weekly_schedule'] });
     const business = await expectOk(await d.api.get('/businesses/me'));
     expect(business).toMatchObject({ isListed: false, wasListed: true });
+  });
+
+  // ── Phase 3: day-specific hours, walk-ins, the doctor's own moves and follow-ups ──
+
+  /** A visit that has happened: moved close to now, checked in, started, completed. */
+  async function seen(d: Doctor, code: string) {
+    await sql(
+      `UPDATE appointments SET starts_at = now() + interval '5 minutes',
+              ends_at = now() + interval '5 minutes' + (ends_at - starts_at) WHERE code = $1`,
+      [code],
+    );
+    for (const step of ['check-in', 'start'])
+      await expectOk(
+        await d.api.post(`/health/doctor/appointments/${code}/${step}`),
+      );
+    return expectOk(
+      await d.api.post(`/health/doctor/appointments/${code}/complete`, {
+        paymentCollected: true,
+      }),
+    );
+  }
+
+  const notices = (userId: string, type: string) =>
+    sql(
+      `SELECT title, body, data FROM notifications WHERE user_id = $1 AND type = $2 ORDER BY created_at`,
+      [userId, type],
+    );
+
+  it("a day's own hours replace its weekly hours: closed, extra, checked like the week", async () => {
+    const { d, clinic } = await openDoctor();
+    await setSchedule(
+      d,
+      clinic.id,
+      EVERY_DAY.map((w) => [w, '09:00', '17:00'] as [number, string, string]),
+    );
+    const week = await slotsOf(d, clinic.id, 4);
+    const [day2, day3] = [week.days[2].date, week.days[3].date];
+
+    const closed = await expectOk(
+      await d.api.put(
+        `/health/doctor/locations/${clinic.id}/overrides/${day2}`,
+        {
+          closed: true,
+          note: 'Family wedding',
+        },
+      ),
+    );
+    expect(closed).toMatchObject({
+      date: day2,
+      closed: true,
+      ranges: [],
+      slots: 0,
+    });
+    const extra = await expectOk(
+      await d.api.put(
+        `/health/doctor/locations/${clinic.id}/overrides/${day3}`,
+        {
+          ranges: [
+            { start: '09:00', end: '12:00' },
+            { start: '18:00', end: '21:00' },
+          ],
+        },
+      ),
+    );
+    expect(extra).toMatchObject({
+      slots: 24,
+      sharedWith: [],
+      outsideHours: [],
+    });
+    const after = await slotsOf(d, clinic.id, 4);
+    expect(after.days[2]).toMatchObject({ status: 'closed', slots: [] });
+    const evening = after.days[3].slots.map((x: any) =>
+      x.startsAt.slice(11, 16),
+    );
+    expect(evening).toContain('20:45');
+    expect(evening).not.toContain('13:00');
+    const list = await expectOk(
+      await d.api.get(`/health/doctor/locations/${clinic.id}/overrides`),
+    );
+    expect(list.items.map((o: any) => [o.date, o.closed, o.note])).toEqual([
+      [day2, true, 'Family wedding'],
+      [day3, false, null],
+    ]);
+
+    // Another clinic can't take those evening hours that day.
+    const other = await addClinic(d, {
+      name: 'DHA Medical Centre',
+      area: 'DHA',
+    });
+    const clash = await d.api
+      .put(`/health/doctor/locations/${other.id}/overrides/${day3}`, {
+        ranges: [{ start: '19:00', end: '20:00' }],
+      })
+      .expect(409);
+    expect(clash.body.error.details.reason).toBe('same_kind');
+    // …nor make its weekly hours clash with that day.
+    const weekly = await d.api
+      .put(`/health/doctor/locations/${other.id}/schedule`, [
+        { weekday: after.days[3].weekday, start: '18:30', end: '19:30' },
+      ])
+      .expect(409);
+    expect(weekly.body.error.code).toBe('SCHEDULE_OVERLAP');
+
+    // A booked visit the new hours leave out is reported (dry run), never cancelled.
+    const p = await shopper(t);
+    const visit = await book(p, d, clinic.id, after.days[3].slots[0].startsAt);
+    const dry = await expectOk(
+      await d.api.put(
+        `/health/doctor/locations/${clinic.id}/overrides/${day3}?dryRun=true`,
+        { ranges: [{ start: '18:00', end: '21:00' }] },
+      ),
+    );
+    expect(dry).toMatchObject({
+      dryRun: true,
+      outsideHours: [{ code: visit.code }],
+    });
+    const yesterday = new Date(Date.parse(week.days[0].date) - 86400e3)
+      .toISOString()
+      .slice(0, 10);
+    await d.api
+      .put(`/health/doctor/locations/${clinic.id}/overrides/${yesterday}`, {
+        closed: true,
+      })
+      .expect(400);
+    await d.api
+      .put(`/health/doctor/locations/${clinic.id}/overrides/2026-02-30`, {
+        closed: true,
+      })
+      .expect(400);
+    await d.api
+      .put(`/health/doctor/locations/${clinic.id}/overrides/${day3}`, {})
+      .expect(400);
+    const removed = await expectOk(
+      await d.api.delete(
+        `/health/doctor/locations/${clinic.id}/overrides/${day2}`,
+      ),
+    );
+    expect(removed).toMatchObject({ removed: true, outsideHours: [] });
+    expect((await slotsOf(d, clinic.id, 4)).days[2].status).toBe('open');
+  });
+
+  it('a walk-in joins the queue checked in, and only the doctor ever sees them', async () => {
+    const { d, clinic } = await openDoctor();
+    const added = await expectOk(
+      await d.api.post('/health/doctor/appointments/walk-in', {
+        locationId: clinic.id,
+        patient: {
+          name: 'Bilal Ahmed',
+          phone: '+923001234567',
+          gender: 'male',
+          age: 41,
+        },
+        reason: 'Fever since yesterday',
+      }),
+      201,
+    );
+    expect(added).toMatchObject({
+      status: 'checked_in',
+      source: 'walk_in',
+      patient: { name: 'Bilal Ahmed', age: 41 },
+      payment: { method: 'pay_at_clinic', status: 'unpaid' },
+    });
+    const today = await expectOk(await d.api.get('/health/doctor/today'));
+    const row = today.queue.find((q: any) => q.code === added.code);
+    expect(row).toMatchObject({ status: 'checked_in', source: 'walk_in' });
+    const patients = await expectOk(
+      await d.api.get('/health/doctor/patients?q=Bilal'),
+    );
+    expect(patients.items).toHaveLength(1);
+    const history = await expectOk(
+      await d.api.get(`/health/doctor/patients/${row.patientKey}`),
+    );
+    expect(history.name).toBe('Bilal Ahmed');
+
+    // Seen and prescribed: no account, so nothing is sent anywhere.
+    await expectOk(
+      await d.api.post(`/health/doctor/appointments/${added.code}/start`),
+    );
+    await expectOk(
+      await d.api.post(
+        `/health/doctor/appointments/${added.code}/prescription`,
+        {
+          diagnosis: 'Viral fever',
+          medicines: [
+            {
+              name: 'Paracetamol',
+              strength: '500 mg',
+              form: 'tablet',
+              dosePattern: '1+1+1',
+              timing: 'after_meal',
+              durationDays: 3,
+            },
+          ],
+        },
+      ),
+      201,
+    );
+    const [rx] = await sql(
+      `SELECT p.patient_user_id FROM prescriptions p JOIN appointments a ON a.id = p.appointment_id WHERE a.code = $1`,
+      [added.code],
+    );
+    expect(rx.patient_user_id).toBeNull();
+    // Video locations take no walk-ins; a full day says so.
+    const video = await expectOk(
+      await d.api.post('/health/doctor/locations', {
+        kind: 'video',
+        fee: 1000,
+      }),
+      201,
+    );
+    await d.api
+      .post('/health/doctor/appointments/walk-in', {
+        locationId: video.id,
+        patient: { name: 'Sara' },
+      })
+      .expect(400);
+    await setSchedule(d, clinic.id, []);
+    const full = await d.api.post('/health/doctor/appointments/walk-in', {
+      locationId: clinic.id,
+      patient: { name: 'Sara' },
+    });
+    expect([full.status, full.body.error.code]).toEqual([409, 'NO_FREE_SLOT']);
+  });
+
+  it('the doctor moves a visit: payment, reports and notes go with it, the patient is told why', async () => {
+    const { d, clinic } = await openDoctor();
+    const p = await shopper(t);
+    const own = await expectOk(
+      await d.api.get(`/health/doctor/locations/${clinic.id}/slots?days=2`),
+    );
+    const [first, , third] = tomorrowFrom9(own);
+    const visit = await book(p, d, clinic.id, first);
+    await expectOk(
+      await d.api.put(`/health/doctor/appointments/${visit.code}/notes`, {
+        text: 'Bring the old reports.',
+      }),
+    );
+    const moved = await expectOk(
+      await d.api.post(`/health/doctor/appointments/${visit.code}/reschedule`, {
+        startsAt: third,
+        reason: 'I am in surgery that morning.',
+      }),
+    );
+    expect(moved.code).not.toBe(visit.code);
+    expect(moved.startsAt).toBe(third);
+    expect(moved.rescheduledFromId).toBe(visit.id);
+    const [old] = await sql(
+      `SELECT status, cancelled_by, cancel_reason FROM appointments WHERE code = $1`,
+      [visit.code],
+    );
+    expect(old).toMatchObject({
+      status: 'cancelled',
+      cancelled_by: 'doctor',
+      cancel_reason: 'rescheduled',
+    });
+    const notes = await expectOk(
+      await d.api.get(`/health/doctor/appointments/${moved.code}/notes`),
+    );
+    expect(notes.text).toBe('Bring the old reports.');
+    const [told] = await notices(p.userId, 'health.appointment.moved');
+    expect(told.body).toMatch(/surgery/);
+    // The patient may still move it once themselves.
+    const later = tomorrowFrom9(await slotsOf(d, clinic.id))[5];
+    await expectOk(
+      await p.api
+        .post(`/health/appointments/${moved.code}/reschedule`, {
+          startsAt: later,
+        })
+        .set('Idempotency-Key', randomUUID()),
+    );
+    // Only booked visits move, and only to a free time.
+    const [busy] = tomorrowFrom9(await slotsOf(d, clinic.id));
+    const second = await book(await shopper(t), d, clinic.id, busy);
+    const taken = await d.api.post(
+      `/health/doctor/appointments/${second.code}/reschedule`,
+      {
+        startsAt: later,
+        reason: 'Moving you',
+      },
+    );
+    expect(taken.status).toBe(409);
+  });
+
+  it('a follow-up is booked for the same person, family member included, and linked', async () => {
+    const { d, clinic } = await openDoctor();
+    const parent = await shopper(t);
+    const child = await expectOk(
+      await parent.api.post('/health/family-members', {
+        fullName: 'Zara Khan',
+        relation: 'child',
+        gender: 'female',
+        dateOfBirth: '2019-04-12',
+      }),
+      201,
+    );
+    const [slot] = tomorrowFrom9(await slotsOf(d, clinic.id));
+    const visit = await book(parent, d, clinic.id, slot, {
+      familyMemberId: child.id,
+    });
+    const early = await d.api.post(
+      `/health/doctor/appointments/${visit.code}/follow-up`,
+      {
+        locationId: clinic.id,
+        startsAt: slot,
+      },
+    );
+    expect(early.status).toBe(409); // not seen yet
+    await seen(d, visit.code);
+    const own = await expectOk(
+      await d.api.get(
+        `/health/doctor/locations/${clinic.id}/slots?from=${(await slotsOf(d, clinic.id, 8)).days[7].date}&days=1`,
+      ),
+    );
+    const at = own.days[0].slots.find((x: any) =>
+      x.startsAt.includes('T11:00'),
+    ).startsAt;
+    const follow = await expectOk(
+      await d.api.post(`/health/doctor/appointments/${visit.code}/follow-up`, {
+        locationId: clinic.id,
+        startsAt: at,
+      }),
+      201,
+    );
+    expect(follow).toMatchObject({
+      status: 'booked',
+      followUpOfId: visit.id,
+      familyMemberId: child.id,
+      patient: { name: 'Zara Khan' },
+      reason: 'Follow-up',
+    });
+    const booked = await notices(parent.userId, 'health.appointment.booked');
+    expect(booked[booked.length - 1].title).toMatch(/Follow-up booked/);
+  });
+
+  it('the follow-up reminder comes once on the due day, and not when a visit is already booked', async () => {
+    const jobs = t.app.get(HealthJobsService);
+    const { d, clinic } = await openDoctor();
+    const p = await shopper(t);
+    const [slot] = tomorrowFrom9(await slotsOf(d, clinic.id));
+    const visit = await book(p, d, clinic.id, slot);
+    await seen(d, visit.code);
+    await expectOk(
+      await d.api.post(
+        `/health/doctor/appointments/${visit.code}/prescription`,
+        {
+          diagnosis: 'Acne',
+          followUpInDays: 7,
+          medicines: [
+            {
+              name: 'Adapalene',
+              strength: '0.1%',
+              form: 'cream',
+              dosePattern: '0+0+1',
+              timing: 'bedtime',
+            },
+          ],
+        },
+      ),
+      201,
+    );
+    // Written 7 days ago (and the visit with it), so the follow-up is due today.
+    await sql(
+      `UPDATE appointments SET starts_at = starts_at - interval '7 days', ends_at = ends_at - interval '7 days' WHERE code = $1`,
+      [visit.code],
+    );
+    await sql(
+      `UPDATE prescriptions SET issued_at = issued_at - interval '7 days'
+        WHERE appointment_id = (SELECT id FROM appointments WHERE code = $1)`,
+      [visit.code],
+    );
+    // Noon in Karachi, today.
+    const noon = new Date(
+      `${new Date(Date.now() + 5 * 3600e3).toISOString().slice(0, 10)}T07:00:00Z`,
+    );
+    expect(await jobs.followUpReminders(noon)).toMatchObject({ reminded: 1 });
+    expect(await jobs.followUpReminders(noon)).toMatchObject({ reminded: 0 });
+    const [told] = await notices(p.userId, 'health.followup.due');
+    expect(told).toMatchObject({ title: 'Time for your follow-up' });
+    expect(told.data).toMatchObject({
+      doctorId: d.doctorId,
+      appointmentCode: visit.code,
+    });
+
+    // Another patient who already booked again hears nothing.
+    const q = await shopper(t);
+    const [s1, s2] = tomorrowFrom9(await slotsOf(d, clinic.id)).slice(2);
+    const v1 = await book(q, d, clinic.id, s1);
+    await seen(d, v1.code);
+    await expectOk(
+      await d.api.post(`/health/doctor/appointments/${v1.code}/prescription`, {
+        diagnosis: 'Acne',
+        followUpInDays: 7,
+        medicines: [
+          {
+            name: 'Adapalene',
+            strength: '0.1%',
+            form: 'cream',
+            dosePattern: '0+0+1',
+            timing: 'bedtime',
+          },
+        ],
+      }),
+      201,
+    );
+    await sql(
+      `UPDATE appointments SET starts_at = starts_at - interval '7 days', ends_at = ends_at - interval '7 days' WHERE code = $1`,
+      [v1.code],
+    );
+    await sql(
+      `UPDATE prescriptions SET issued_at = issued_at - interval '7 days'
+        WHERE appointment_id = (SELECT id FROM appointments WHERE code = $1)`,
+      [v1.code],
+    );
+    await book(q, d, clinic.id, s2);
+    expect(await jobs.followUpReminders(noon)).toMatchObject({ reminded: 0 });
+    expect(await notices(q.userId, 'health.followup.due')).toHaveLength(0);
   });
 });

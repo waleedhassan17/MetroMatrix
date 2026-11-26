@@ -16,6 +16,11 @@ import {
   LocationKind,
 } from '../../practice/entities/practice-location.entity';
 import { FamilyMember } from '../../family/entities/family-member.entity';
+import { WalkInPatient } from '../../consultation/entities/walk-in-patient.entity';
+
+/** `app`: the patient booked in the app. `walk_in`: the doctor added them at the clinic. */
+export const APPOINTMENT_SOURCES = ['app', 'walk_in'] as const;
+export type AppointmentSource = (typeof APPOINTMENT_SOURCES)[number];
 import {
   APPOINTMENT_ACTORS,
   APPOINTMENT_STATUSES,
@@ -67,14 +72,18 @@ export interface AccountSnapshot {
 @Index('IDX_appointments_patient_starts', { synchronize: false })
 @Index(['status', 'payBy'])
 @Check('CHK_appointments_times', '"ends_at" > "starts_at" AND "fee" >= 0')
+@Check(
+  'CHK_appointments_person',
+  `("patient_user_id" IS NULL) <> ("walk_in_patient_id" IS NULL) AND "source" IN ('app', 'walk_in')`,
+)
 export class Appointment extends BaseEntity {
   /** HC-XXXXXX */
   @Column({ type: 'varchar', length: 12 })
   code!: string;
 
-  /** The account that booked (and owns it), whoever it is for. */
-  @Column({ type: 'uuid', name: 'patient_user_id' })
-  patientUserId!: string;
+  /** The account that booked (and owns it), whoever it is for; null for a walk-in. */
+  @Column({ type: 'uuid', name: 'patient_user_id', nullable: true })
+  patientUserId!: string | null;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'patient_user_id' })
@@ -86,6 +95,21 @@ export class Appointment extends BaseEntity {
   @ManyToOne(() => FamilyMember, { onDelete: 'SET NULL' })
   @JoinColumn({ name: 'family_member_id' })
   familyMember?: FamilyMember;
+
+  /** A walk-in the doctor added at the clinic (exactly one of this and patientUserId). */
+  @Column({ type: 'uuid', name: 'walk_in_patient_id', nullable: true })
+  walkInPatientId!: string | null;
+
+  @ManyToOne(() => WalkInPatient, { onDelete: 'RESTRICT' })
+  @JoinColumn({ name: 'walk_in_patient_id' })
+  walkInPatient?: WalkInPatient;
+
+  @Column({ type: 'varchar', length: 10, default: 'app' })
+  source!: AppointmentSource;
+
+  /** The visit this one follows up (booked by the doctor). */
+  @Column({ type: 'uuid', name: 'follow_up_of_id', nullable: true })
+  followUpOfId!: string | null;
 
   @Column({ type: 'jsonb', name: 'patient_snapshot' })
   patientSnapshot!: PatientSnapshot;

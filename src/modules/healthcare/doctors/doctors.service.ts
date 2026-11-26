@@ -52,6 +52,12 @@ export const DOCTOR_FEATURES = [
   'pause',
   'mark_paid_later',
   'listing_notice',
+  'overrides',
+  'walk_in',
+  'doctor_reschedule',
+  'follow_up_booking',
+  'doctor_slots',
+  'follow_up_reminder',
 ] as const;
 
 /** The completeness keys in words, for the "you're hidden" notice. */

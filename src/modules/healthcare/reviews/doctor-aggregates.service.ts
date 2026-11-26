@@ -65,7 +65,7 @@ export class DoctorAggregatesService implements OnModuleInit {
             AND doctor_id IN (SELECT id FROM target)
           GROUP BY 1
        ), p AS (
-         SELECT doctor_id, count(DISTINCT coalesce(family_member_id, patient_user_id))::int AS served,
+         SELECT doctor_id, count(DISTINCT coalesce(family_member_id, patient_user_id, walk_in_patient_id))::int AS served,
                 count(*) FILTER (WHERE completed_at > $2::timestamptz - interval '30 days')::int AS c30
            FROM appointments WHERE status = 'completed' AND doctor_id IN (SELECT id FROM target)
           GROUP BY 1

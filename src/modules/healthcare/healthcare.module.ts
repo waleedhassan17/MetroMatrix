@@ -18,6 +18,8 @@ import {
 import { DoctorPaymentAccount } from './doctors/entities/doctor-payment-account.entity';
 import { PracticeLocation } from './practice/entities/practice-location.entity';
 import { WeeklySchedule } from './practice/entities/weekly-schedule.entity';
+import { ScheduleOverride } from './practice/entities/schedule-override.entity';
+import { WalkInPatient } from './consultation/entities/walk-in-patient.entity';
 import { TimeOff } from './practice/entities/time-off.entity';
 import { FamilyMember } from './family/entities/family-member.entity';
 import { Appointment } from './appointments/entities/appointment.entity';
@@ -137,6 +139,8 @@ import { AdminHealthBannersController } from './admin/admin-banners.controller';
       DoctorPaymentAccount,
       PracticeLocation,
       WeeklySchedule,
+      ScheduleOverride,
+      WalkInPatient,
       TimeOff,
       FamilyMember,
       Appointment,

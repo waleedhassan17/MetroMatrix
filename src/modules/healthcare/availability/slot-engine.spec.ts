@@ -206,6 +206,26 @@ describe('slot engine', () => {
     expect(firstFreeSlot({ ...base({ paused: true }) })).toBeNull();
   });
 
+  it("a date's own hours replace its weekly hours, and an empty list closes it", () => {
+    const days = buildDays(
+      base({
+        overrides: new Map([
+          [
+            '2026-10-17',
+            [{ start: parseTime('14:00'), end: parseTime('15:00') }],
+          ],
+          ['2026-10-18', []],
+        ]),
+      }),
+    );
+    expect(times(days[1])).toEqual(['14:00', '14:30']);
+    expect(days[2]).toMatchObject({
+      status: 'closed',
+      totalSlots: 0,
+      slots: [],
+    });
+  });
+
   it('works in a DST zone: no slot in the spring-forward gap', () => {
     const NY = 'America/New_York';
     const days = buildDays({

@@ -10,7 +10,12 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { DataSource, EntityManager } from 'typeorm';
-import { Appointment, PatientSnapshot } from './entities/appointment.entity';
+import {
+  Appointment,
+  AppointmentSource,
+  PatientSnapshot,
+} from './entities/appointment.entity';
+import { WalkInPatient } from '../consultation/entities/walk-in-patient.entity';
 import {
   AppointmentTransitionsService,
   Actor,
@@ -19,19 +24,25 @@ import {
 import { AppointmentViewsService } from './appointment-views.service';
 import {
   BookAppointmentDto,
+  DoctorRescheduleDto,
+  FollowUpDto,
   PaymentProofDto,
   RefundDto,
+  WalkInDto,
 } from './dto/appointment.dto';
 import { ACTIVE_STATUSES } from './appointment-status';
 import { Doctor } from '../doctors/entities/doctor.entity';
 import { DoctorsService } from '../doctors/doctors.service';
 import { PracticeLocation } from '../practice/entities/practice-location.entity';
 import { FamilyService, ageFrom } from '../family/family.service';
-import { AvailabilityService } from '../availability/availability.service';
-import { DiscoveryService } from '../discovery/discovery.service';
+import {
+  AvailabilityService,
+  DOCTOR_WINDOW_DAYS,
+} from '../availability/availability.service';
+import { DiscoveryService, TITLE_PREFIX } from '../discovery/discovery.service';
 import { HealthEvents } from '../common/health-events';
 import { LISTED_DOCTOR_SQL } from '../discovery/listing-sql';
-import { availabilityLabel, toZonedIso } from '../common/time.util';
+import { availabilityLabel, todayIn, toZonedIso } from '../common/time.util';
 import { newCode } from '../../../common/utils/codes';
 import { ErrorCode } from '../../../common/errors/codes';
 import { MediaService } from '../../media/media.service';
@@ -60,7 +71,8 @@ export const noAppointmentFaults: AppointmentFaultInjector = {
   afterOldCancelled: () => undefined,
 };
 
-type Notice = { userId: string; payload: NotifyPayload };
+/** `userId` null: a walk-in (no account), so nothing is sent. */
+type Notice = { userId: string | null; payload: NotifyPayload };
 
 const ACTIVE_SQL = `status IN ('booked', 'checked_in', 'in_consultation')`;
 
@@ -384,6 +396,21 @@ export class AppointmentsService implements OnModuleInit {
       videoRoom: location.kind === 'video' ? randomUUID() : null,
       ...carry,
     };
+    return this.insertRow(
+      m,
+      values,
+      { role: 'patient', userId },
+      carry?.rescheduledFromId ? 'Rescheduled' : null,
+    );
+  }
+
+  /** Insert a booked appointment under a fresh code, with its first event. */
+  private async insertRow(
+    m: EntityManager,
+    values: Partial<Appointment>,
+    actor: Actor,
+    note: string | null,
+  ): Promise<Appointment> {
     for (let attempt = 0; attempt < 5; attempt++) {
       const res = await m
         .createQueryBuilder()
@@ -403,13 +430,503 @@ export class AppointmentsService implements OnModuleInit {
           'status',
           null,
           'booked',
-          { role: 'patient', userId },
-          carry?.rescheduledFromId ? 'Rescheduled' : null,
+          actor,
+          note,
         );
         return a;
       }
     }
     throw new Error('Could not allocate an appointment code');
+  }
+
+  // ── The doctor's own bookings: move a visit, book a follow-up, a walk-in ──
+
+  /**
+   * A booking the doctor places: on their own grid (hours, day-specific
+   * hours, the break, time off), with no minimum notice, up to
+   * DOCTOR_WINDOW_DAYS ahead, bookings on or paused — and still never two
+   * visits at once (checkSlot, then the exclusion constraint). The person
+   * can't be in two visits at once either.
+   */
+  private async placeByDoctor(
+    m: EntityManager,
+    doctorId: string,
+    locationId: string,
+    startsAt: Date,
+    now: Date,
+    person: {
+      patientUserId: string | null;
+      familyMemberId: string | null;
+      walkInPatientId: string | null;
+      snapshot: PatientSnapshot;
+    },
+    rest: {
+      reason: string | null;
+      symptoms: string[];
+      source: AppointmentSource;
+      actor: Actor;
+      note: string | null;
+      carry?: Partial<Appointment>;
+      /** A walk-in may take the slot running now (it started up to this long ago). */
+      startedGraceMinutes?: number;
+    },
+  ): Promise<Appointment> {
+    const location = await m.findOne(PracticeLocation, {
+      where: { id: locationId, doctorId, isActive: true },
+    });
+    if (!location)
+      throw new NotFoundException({
+        code: ErrorCode.NOT_FOUND,
+        message: 'Location not found.',
+      });
+    const checkAt = rest.startedGraceMinutes
+      ? new Date(now.getTime() - rest.startedGraceMinutes * MIN)
+      : now;
+    const { slot, free } = await this.availability.checkSlot(
+      m,
+      doctorId,
+      locationId,
+      startsAt,
+      checkAt,
+      { minNoticeMinutes: 0, bookingWindowDays: DOCTOR_WINDOW_DAYS },
+    );
+    if (!slot) {
+      throw new BadRequestException({
+        code: ErrorCode.SLOT_INVALID,
+        message: 'That time is not one of your free slots there.',
+        details: { startsAt: startsAt.toISOString() },
+      });
+    }
+    if (!free) throw await this.slotTaken(doctorId, locationId, startsAt);
+    const [overlap] = person.walkInPatientId
+      ? await m.query(
+          `SELECT code FROM appointments WHERE walk_in_patient_id = $1 AND ${ACTIVE_SQL}
+              AND starts_at < $3 AND ends_at > $2 LIMIT 1`,
+          [person.walkInPatientId, slot.startsAt, slot.endsAt],
+        )
+      : await m.query(
+          `SELECT code FROM appointments
+            WHERE patient_user_id = $1 AND family_member_id IS NOT DISTINCT FROM $2 AND ${ACTIVE_SQL}
+              AND starts_at < $4 AND ends_at > $3 LIMIT 1`,
+          [
+            person.patientUserId,
+            person.familyMemberId,
+            slot.startsAt,
+            slot.endsAt,
+          ],
+        );
+    if (overlap) {
+      throw new ConflictException({
+        code: ErrorCode.PATIENT_OVERLAP,
+        message: 'They already have a visit at that time.',
+        details: { appointmentCode: overlap.code },
+      });
+    }
+    const method = location.kind === 'video' ? 'transfer' : 'pay_at_clinic';
+    const doctor = await m.findOneByOrFail(Doctor, { id: doctorId });
+    const accounts =
+      method === 'transfer'
+        ? await this.doctors.activeAccounts(m, doctor.id)
+        : [];
+    const prepay =
+      method === 'transfer' &&
+      doctor.videoPrepayRequired &&
+      accounts.length > 0;
+    const payBy = prepay
+      ? new Date(
+          Math.min(
+            Math.max(
+              now.getTime() + 10 * MIN,
+              Math.min(
+                now.getTime() + 120 * MIN,
+                slot.startsAt.getTime() - 30 * MIN,
+              ),
+            ),
+            slot.startsAt.getTime(),
+          ),
+        )
+      : null;
+    return this.insertRow(
+      m,
+      {
+        patientUserId: person.patientUserId,
+        familyMemberId: person.familyMemberId,
+        walkInPatientId: person.walkInPatientId,
+        source: rest.source,
+        patientSnapshot: person.snapshot,
+        doctorId,
+        locationId: location.id,
+        kind: location.kind,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        status: 'booked',
+        reason: rest.reason,
+        symptoms: rest.symptoms,
+        fee: location.fee,
+        paymentMethod: method,
+        paymentStatus: method === 'transfer' ? 'awaiting_transfer' : 'unpaid',
+        payBy,
+        paymentAccountSnapshot:
+          method === 'transfer'
+            ? accounts.map((a) => ({
+                kind: a.kind,
+                accountTitle: a.accountTitle,
+                accountNumber: a.accountNumber,
+                bankName: a.bankName,
+              }))
+            : null,
+        videoRoom: location.kind === 'video' ? randomUUID() : null,
+        ...rest.carry,
+      },
+      rest.actor,
+      rest.note,
+    );
+  }
+
+  /** The person a doctor's booking is for, snapshotted afresh for an app patient. */
+  private async personOf(m: EntityManager, a: Appointment, now: Date) {
+    return {
+      patientUserId: a.patientUserId,
+      familyMemberId: a.familyMemberId,
+      walkInPatientId: a.walkInPatientId,
+      snapshot: a.patientUserId
+        ? await this.snapshotPatient(m, a.patientUserId, a.familyMemberId, now)
+        : a.patientSnapshot,
+    };
+  }
+
+  private async doctorDisplayName(doctorId: string): Promise<string> {
+    const [d] = await this.dataSource.query(
+      `SELECT title, full_name FROM doctors WHERE id = $1`,
+      [doctorId],
+    );
+    if (!d) return 'Your doctor';
+    return `${TITLE_PREFIX[d.title] ?? 'Dr.'} ${d.full_name}`;
+  }
+
+  private async whenAt(a: Appointment) {
+    const [loc] = await this.dataSource.query(
+      `SELECT timezone, name FROM practice_locations WHERE id = $1`,
+      [a.locationId],
+    );
+    const when = availabilityLabel(a.startsAt, loc.timezone)
+      .replace(/^Available /, '')
+      .replace(/^Next available /, '');
+    return `${when} · ${loc.name}`;
+  }
+
+  /**
+   * The doctor moves a booked visit to another of their free times (another
+   * location of the same kind allowed): the old one is cancelled by the
+   * doctor ("rescheduled"), the new one keeps the payment as it was, the
+   * shared reports and the private notes, and the patient is told why.
+   */
+  async doctorReschedule(
+    doctorId: string,
+    doctorUserId: string,
+    code: string,
+    dto: DoctorRescheduleDto,
+    now = new Date(),
+  ) {
+    const startsAt = new Date(dto.startsAt);
+    let locationId = '';
+    let moved: Appointment;
+    try {
+      moved = await this.dataSource.transaction(async (m) => {
+        const old = await this.transitions.lock(m, { code, doctorId });
+        if (old.status !== 'booked')
+          throw invalidTransition(
+            old.status,
+            'cancelled',
+            [],
+            'Only a booked visit can be moved.',
+          );
+        locationId = dto.locationId ?? old.locationId;
+        if (locationId !== old.locationId) {
+          const target = await m.findOne(PracticeLocation, {
+            where: { id: locationId, doctorId, isActive: true },
+          });
+          if (!target)
+            throw new NotFoundException({
+              code: ErrorCode.NOT_FOUND,
+              message: 'Location not found.',
+            });
+          if (target.kind !== old.kind) {
+            const message =
+              'Move it to a location of the same kind (a clinic visit to a clinic, a video consultation to video).';
+            throw new BadRequestException({
+              code: ErrorCode.VALIDATION_FAILED,
+              message,
+              details: { fields: { locationId: [message] } },
+            });
+          }
+        }
+        if (startsAt.getTime() <= now.getTime()) {
+          const message = 'Choose a time from now on.';
+          throw new BadRequestException({
+            code: ErrorCode.VALIDATION_FAILED,
+            message,
+            details: { fields: { startsAt: [message] } },
+          });
+        }
+        const before = {
+          status: old.paymentStatus,
+          ref: old.paymentRef,
+          proof: old.paymentProofUrl,
+          paidAt: old.paidAt,
+        };
+        const actor: Actor = { role: 'doctor', userId: doctorUserId };
+        await this.transitions.moveStatus(m, old, 'cancelled', actor, {
+          note: `Moved by the doctor: ${dto.reason}`,
+          patch: { cancelledBy: 'doctor', cancelReason: 'rescheduled' },
+          settle: false,
+        });
+        const carried =
+          before.status === 'paid' || before.status === 'proof_submitted';
+        const fresh = await this.placeByDoctor(
+          m,
+          doctorId,
+          locationId,
+          startsAt,
+          now,
+          await this.personOf(m, old, now),
+          {
+            reason: old.reason,
+            symptoms: old.symptoms,
+            source: old.source,
+            actor,
+            note: 'Moved by the doctor',
+            carry: {
+              rescheduledFromId: old.id,
+              followUpOfId: old.followUpOfId,
+              ...(carried
+                ? {
+                    paymentStatus: before.status,
+                    paymentRef: before.ref,
+                    paymentProofUrl: before.proof,
+                    paidAt: before.paidAt,
+                  }
+                : {}),
+            },
+          },
+        );
+        await this.carryRecords(m, old.id, fresh.id);
+        await m.query(
+          `UPDATE medical_notes SET appointment_id = $2 WHERE appointment_id = $1`,
+          [old.id, fresh.id],
+        );
+        await this.transitions.movePayment(
+          m,
+          old,
+          'void',
+          carried ? SYSTEM : actor,
+          { note: carried ? `Payment moved to ${fresh.code}` : 'Moved' },
+        );
+        return fresh;
+      });
+    } catch (err) {
+      if (isExclusionViolation(err))
+        throw await this.slotTaken(doctorId, locationId, startsAt);
+      throw err;
+    }
+    await this.events.availabilityChanged(doctorId);
+    await this.send([
+      this.toPatient(
+        moved,
+        'health.appointment.moved',
+        `New time for your visit: ${moved.code}`,
+        `${await this.doctorDisplayName(doctorId)} moved it to ${await this.whenAt(moved)}. ${dto.reason}`,
+      ),
+    ]);
+    return this.doctorBrief(doctorId, moved.code);
+  }
+
+  /**
+   * The doctor books the follow-up of a visit for the same person (a family
+   * member included, or a walk-in), linked to it (`followUpOfId`), on that
+   * location's payment rules. The patient is told.
+   */
+  async bookFollowUp(
+    doctorId: string,
+    doctorUserId: string,
+    code: string,
+    dto: FollowUpDto,
+    now = new Date(),
+  ) {
+    const startsAt = new Date(dto.startsAt);
+    let booked: Appointment;
+    try {
+      booked = await this.dataSource.transaction(async (m) => {
+        const src = await this.transitions.lock(m, { code, doctorId });
+        if (!['in_consultation', 'completed'].includes(src.status))
+          throw invalidTransition(
+            src.status,
+            'booked',
+            [],
+            'Book a follow-up from a visit that has started or is completed.',
+          );
+        if (startsAt.getTime() <= now.getTime()) {
+          const message = 'Choose a time from now on.';
+          throw new BadRequestException({
+            code: ErrorCode.VALIDATION_FAILED,
+            message,
+            details: { fields: { startsAt: [message] } },
+          });
+        }
+        return this.placeByDoctor(
+          m,
+          doctorId,
+          dto.locationId,
+          startsAt,
+          now,
+          await this.personOf(m, src, now),
+          {
+            reason: 'Follow-up',
+            symptoms: [],
+            source: src.source,
+            actor: { role: 'doctor', userId: doctorUserId },
+            note: `Follow-up of ${src.code}`,
+            carry: { followUpOfId: src.id },
+          },
+        );
+      });
+    } catch (err) {
+      if (isExclusionViolation(err))
+        throw await this.slotTaken(doctorId, dto.locationId, startsAt);
+      throw err;
+    }
+    await this.events.availabilityChanged(doctorId);
+    await this.send([
+      this.toPatient(
+        booked,
+        'health.appointment.booked',
+        `Follow-up booked: ${booked.code}`,
+        `${await this.doctorDisplayName(doctorId)} booked your follow-up · ${await this.whenAt(booked)}`,
+      ),
+    ]);
+    return this.doctorBrief(doctorId, booked.code);
+  }
+
+  /**
+   * Someone at the clinic desk with no booking: the doctor adds them (name,
+   * phone, gender, age) to a free slot today — the one running now when no
+   * time is given, else the next free one — checked in at once, paying at
+   * the clinic. Walk-ins have no account: nothing is sent to them.
+   */
+  async addWalkIn(
+    doctorId: string,
+    doctorUserId: string,
+    dto: WalkInDto,
+    now = new Date(),
+  ) {
+    let locationId = dto.locationId;
+    let startsAt = dto.startsAt ? new Date(dto.startsAt) : now;
+    let added: Appointment;
+    try {
+      added = await this.dataSource.transaction(async (m) => {
+        const location = await m.findOne(PracticeLocation, {
+          where: { id: dto.locationId, doctorId, isActive: true },
+        });
+        if (!location)
+          throw new NotFoundException({
+            code: ErrorCode.NOT_FOUND,
+            message: 'Location not found.',
+          });
+        locationId = location.id;
+        if (location.kind !== 'clinic') {
+          const message = 'Walk-ins are for your clinics.';
+          throw new BadRequestException({
+            code: ErrorCode.VALIDATION_FAILED,
+            message,
+            details: { fields: { locationId: [message] } },
+          });
+        }
+        const tz = location.timezone;
+        const today = todayIn(tz, now);
+        const grace = location.slotMinutes;
+        if (dto.startsAt) {
+          if (todayIn(tz, startsAt) !== today) {
+            const message = 'A walk-in is for today.';
+            throw new BadRequestException({
+              code: ErrorCode.VALIDATION_FAILED,
+              message,
+              details: { fields: { startsAt: [message] } },
+            });
+          }
+        } else {
+          // The slot running now (it started up to a slot ago), else the next free one today.
+          const { days } = await this.availability.days(
+            doctorId,
+            location.id,
+            today,
+            1,
+            {
+              m,
+              fresh: true,
+              now: new Date(now.getTime() - grace * MIN),
+              ignorePause: true,
+              minNoticeMinutes: 0,
+              bookingWindowDays: DOCTOR_WINDOW_DAYS,
+            },
+          );
+          const next = (days[0]?.slots ?? []).find((s) => s.endsAt > now);
+          if (!next)
+            throw new ConflictException({
+              code: ErrorCode.NO_FREE_SLOT,
+              message:
+                'No free time is left today at this clinic. Add hours for today, or choose another clinic.',
+            });
+          startsAt = next.startsAt;
+        }
+        const person = await m.save(
+          m.create(WalkInPatient, {
+            doctorId,
+            name: dto.patient.name,
+            phone: dto.patient.phone ?? null,
+            gender: dto.patient.gender ?? null,
+            age: dto.patient.age ?? null,
+          }),
+        );
+        const actor: Actor = { role: 'doctor', userId: doctorUserId };
+        const a = await this.placeByDoctor(
+          m,
+          doctorId,
+          location.id,
+          startsAt,
+          now,
+          {
+            patientUserId: null,
+            familyMemberId: null,
+            walkInPatientId: person.id,
+            snapshot: {
+              name: dto.patient.name,
+              gender: dto.patient.gender ?? null,
+              age: dto.patient.age ?? null,
+              phone: dto.patient.phone ?? null,
+              relation: null,
+            },
+          },
+          {
+            reason: dto.reason ?? null,
+            symptoms: [],
+            source: 'walk_in',
+            actor,
+            note: 'Walk-in',
+            startedGraceMinutes: grace,
+          },
+        );
+        await this.transitions.moveStatus(m, a, 'checked_in', actor, {
+          note: 'Walk-in',
+        });
+        return a;
+      });
+    } catch (err) {
+      if (isExclusionViolation(err))
+        throw await this.slotTaken(doctorId, locationId, startsAt);
+      throw err;
+    }
+    await this.events.availabilityChanged(doctorId);
+    return this.doctorBrief(doctorId, added.code);
   }
 
   private async snapshotPatient(
@@ -571,10 +1088,16 @@ export class AppointmentsService implements OnModuleInit {
         doctorId = old.doctorId;
         locationId = old.locationId;
         if (old.rescheduledFromId) {
-          throw new ConflictException({
-            code: ErrorCode.RESCHEDULE_NOT_ALLOWED,
-            message: 'An appointment can be rescheduled only once.',
-          });
+          // Once by the patient; a move the doctor made doesn't count.
+          const [prev] = await m.query(
+            `SELECT cancelled_by FROM appointments WHERE id = $1`,
+            [old.rescheduledFromId],
+          );
+          if (prev?.cancelled_by !== 'doctor')
+            throw new ConflictException({
+              code: ErrorCode.RESCHEDULE_NOT_ALLOWED,
+              message: 'An appointment can be rescheduled only once.',
+            });
         }
         if (old.status !== 'booked')
           throw invalidTransition(
@@ -960,6 +1483,7 @@ export class AppointmentsService implements OnModuleInit {
 
   async send(notices: Notice[]) {
     for (const n of notices) {
+      if (!n.userId) continue;
       try {
         await this.notifications.notify(n.userId, n.payload);
       } catch (err) {

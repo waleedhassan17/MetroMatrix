@@ -34,12 +34,13 @@ const tooEarly = (a: { startsAt: Date }, now: Date) =>
   now.getTime() < a.startsAt.getTime() - CHECK_IN_FROM_MS;
 const STATUS_RANK = `CASE a.status WHEN 'in_consultation' THEN 0 WHEN 'checked_in' THEN 1 WHEN 'booked' THEN 2 WHEN 'completed' THEN 3 ELSE 4 END`;
 
-/** The person an appointment is for: the family member, else the booking account. */
+/** The person an appointment is for: the family member, else the booking account, else the walk-in. */
 export const personKeyOf = (a: {
   familyMemberId: string | null;
-  patientUserId: string;
-}) => a.familyMemberId ?? a.patientUserId;
-const PERSON_SQL = `coalesce(a.family_member_id, a.patient_user_id)`;
+  patientUserId: string | null;
+  walkInPatientId?: string | null;
+}) => a.familyMemberId ?? a.patientUserId ?? a.walkInPatientId ?? '';
+export const PERSON_SQL = `coalesce(a.family_member_id, a.patient_user_id, a.walk_in_patient_id)`;
 
 /**
  * The doctor's day: queue, visit flow, private notes and patient history.
@@ -291,7 +292,7 @@ export class ConsultationService {
       this.dataSource.query(
         `SELECT p.id, p.issued_at, p.diagnosis, a.code AS appointment_code
            FROM prescriptions p JOIN appointments a ON a.id = p.appointment_id
-          WHERE p.doctor_id = $1 AND coalesce(p.family_member_id, p.patient_user_id) = $2
+          WHERE p.doctor_id = $1 AND ${PERSON_SQL} = $2
           ORDER BY p.issued_at DESC LIMIT 50`,
         [doctorId, personKey],
       ),

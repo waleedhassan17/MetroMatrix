@@ -233,6 +233,8 @@
             "$ref": "#/components/schemas/AdminAppointmentsCancelViewPatient"
           },
           "patientUserId": {
+            "description": "null for a walk-in the doctor added at the clinic.",
+            "nullable": true,
             "type": "string"
           },
           "payment": {
@@ -536,6 +538,8 @@
             "$ref": "#/components/schemas/AdminAppointmentsDetailViewPatient"
           },
           "patientUserId": {
+            "description": "null for a walk-in the doctor added at the clinic.",
+            "nullable": true,
             "type": "string"
           },
           "payment": {
@@ -834,6 +838,8 @@
             "$ref": "#/components/schemas/AdminAppointmentsListViewPatient"
           },
           "patientUserId": {
+            "description": "null for a walk-in the doctor added at the clinic.",
+            "nullable": true,
             "type": "string"
           },
           "payment": {
@@ -10095,6 +10101,28 @@
         ],
         "type": "object"
       },
+      "DoctorRescheduleDto": {
+        "properties": {
+          "locationId": {
+            "description": "Another location of the same kind; default the same one.",
+            "type": "string"
+          },
+          "reason": {
+            "example": "I have a surgery that morning.",
+            "type": "string"
+          },
+          "startsAt": {
+            "description": "One of your free slots (GET /health/doctor/locations/:id/slots).",
+            "example": "2026-10-18T10:00:00.000+05:00",
+            "type": "string"
+          }
+        },
+        "required": [
+          "startsAt",
+          "reason"
+        ],
+        "type": "object"
+      },
       "DocumentNoteDto": {
         "properties": {
           "documentId": {
@@ -10237,6 +10265,23 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "FollowUpDto": {
+        "properties": {
+          "locationId": {
+            "description": "The location for the follow-up (clinic or video).",
+            "type": "string"
+          },
+          "startsAt": {
+            "example": "2026-11-08T10:00:00.000+05:00",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locationId",
+          "startsAt"
+        ],
         "type": "object"
       },
       "FoodBannerDto": {
@@ -11214,6 +11259,25 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "OverrideRangeDto": {
+        "properties": {
+          "end": {
+            "description": "HH:mm, or 24:00 for the end of the day.",
+            "example": "21:00",
+            "type": "string"
+          },
+          "start": {
+            "description": "Local wall-clock time, HH:mm.",
+            "example": "17:00",
+            "type": "string"
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ],
         "type": "object"
       },
       "OverviewView": {
@@ -12381,6 +12445,26 @@
         "required": [
           "imageUrl"
         ],
+        "type": "object"
+      },
+      "ScheduleOverrideDto": {
+        "properties": {
+          "closed": {
+            "description": "true closes the day (ranges are ignored).",
+            "type": "boolean"
+          },
+          "note": {
+            "example": "Late clinic before Eid",
+            "type": "object"
+          },
+          "ranges": {
+            "description": "The day's hours, replacing its weekly hours.",
+            "items": {
+              "$ref": "#/components/schemas/OverrideRangeDto"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "ScheduleRangeDto": {
@@ -14377,6 +14461,59 @@
         },
         "required": [
           "context"
+        ],
+        "type": "object"
+      },
+      "WalkInDto": {
+        "properties": {
+          "locationId": {
+            "description": "One of your clinics.",
+            "type": "string"
+          },
+          "patient": {
+            "$ref": "#/components/schemas/WalkInPersonDto"
+          },
+          "reason": {
+            "example": "Fever since yesterday",
+            "type": "string"
+          },
+          "startsAt": {
+            "description": "A free slot today; default the current one (or the next free today).",
+            "type": "string"
+          }
+        },
+        "required": [
+          "locationId",
+          "patient"
+        ],
+        "type": "object"
+      },
+      "WalkInPersonDto": {
+        "properties": {
+          "age": {
+            "maximum": 120,
+            "minimum": 0,
+            "type": "number"
+          },
+          "gender": {
+            "enum": [
+              "male",
+              "female",
+              "other"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "example": "Bilal Ahmed",
+            "type": "string"
+          },
+          "phone": {
+            "example": "+923001234567",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
         ],
         "type": "object"
       },
@@ -32581,6 +32718,36 @@
         ]
       }
     },
+    "/api/v1/health/doctor/appointments/walk-in": {
+      "post": {
+        "operationId": "DoctorAppointmentPayments_walkIn",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WalkInDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ locationId (a clinic), startsAt? (a free slot today; default the one running now, else the next), patient: { name, phone?, gender?, age? }, reason? } — someone at the desk without a booking: checked in at once, paying at the clinic. No account, so nothing is sent to them. NO_FREE_SLOT when today is full.",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
     "/api/v1/health/doctor/appointments/{code}": {
       "get": {
         "operationId": "Consultation_detail",
@@ -32712,6 +32879,45 @@
           }
         ],
         "summary": "{ paymentCollected? } — in_consultation → completed; collected → paid.",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
+    "/api/v1/health/doctor/appointments/{code}/follow-up": {
+      "post": {
+        "operationId": "DoctorAppointmentPayments_followUp",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FollowUpDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ locationId, startsAt } — book the follow-up of a started or completed visit for the same person (followUpOfId). The patient is told.",
         "tags": [
           "health · doctor"
         ]
@@ -33050,6 +33256,45 @@
         ]
       }
     },
+    "/api/v1/health/doctor/appointments/{code}/reschedule": {
+      "post": {
+        "operationId": "DoctorAppointmentPayments_reschedule",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "code",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DoctorRescheduleDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ startsAt, locationId? (same kind), reason } — move a booked visit to another of your free times (GET /health/doctor/locations/:id/slots). The payment, shared reports and notes move with it; the patient is told why (health.appointment.moved).",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
     "/api/v1/health/doctor/appointments/{code}/start": {
       "post": {
         "operationId": "Consultation_start",
@@ -33357,6 +33602,150 @@
         ]
       }
     },
+    "/api/v1/health/doctor/locations/{id}/overrides": {
+      "get": {
+        "operationId": "Practice_overrides",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Local date; default today.",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "example": "2026-11-01",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Local date; default 60 days on.",
+            "in": "query",
+            "name": "to",
+            "required": false,
+            "schema": {
+              "example": "2026-12-31",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "?from&to (local dates; default today … 60 days on) — day-specific hours: [{ date, closed, ranges, note }].",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
+    "/api/v1/health/doctor/locations/{id}/overrides/{date}": {
+      "delete": {
+        "operationId": "Practice_removeOverride",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Back to the weekly hours on that date; answers outsideHours (booked visits they leave out).",
+        "tags": [
+          "health · doctor"
+        ]
+      },
+      "put": {
+        "operationId": "Practice_setOverride",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "date",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "true: check and report (shared hours, visits outside them) without saving.",
+            "in": "query",
+            "name": "dryRun",
+            "required": false,
+            "schema": {
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleOverrideDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "{ closed?, ranges?: [{ start, end }], note? } — this date’s own hours (extra, shorter, or closed), replacing its weekly hours. Checked like the week (SCHEDULE_OVERLAP; a clinic and video may share). Answers sharedWith, outsideHours (booked visits left out — they stay booked), slots; ?dryRun=true reports without saving.",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
     "/api/v1/health/doctor/locations/{id}/schedule": {
       "get": {
         "operationId": "Practice_schedule",
@@ -33433,6 +33822,57 @@
           }
         ],
         "summary": "Replace the week: [{ weekday 0–6 (Sun–Sat), start \"HH:mm\", end \"HH:mm\" }] in the location’s zone. Overlapping another location of the same kind → SCHEDULE_OVERLAP; a clinic and the video consultation may share hours in one zone (sharedWith: booking either closes the other). Answers outsideHours (booked visits the new hours leave out — they stay booked) and slotsPerWeek; ?dryRun=true reports without saving.",
+        "tags": [
+          "health · doctor"
+        ]
+      }
+    },
+    "/api/v1/health/doctor/locations/{id}/slots": {
+      "get": {
+        "operationId": "Practice_ownSlots",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Local date; defaults to today.",
+            "in": "query",
+            "name": "from",
+            "required": false,
+            "schema": {
+              "example": "2026-10-16",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Up to the longest booking window (30 days).",
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "maximum": 30,
+              "minimum": 1,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "?from&days (≤30) — your own free slots at a location, for moving a visit or booking a follow-up: no minimum notice, bookings on or paused, up to 120 days ahead.",
         "tags": [
           "health · doctor"
         ]

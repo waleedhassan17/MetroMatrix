@@ -14,10 +14,13 @@ import { AppointmentViewsService } from './appointment-views.service';
 import {
   AppointmentReasonDto,
   BookAppointmentDto,
+  DoctorRescheduleDto,
+  FollowUpDto,
   PatientAppointmentQueryDto,
   PaymentProofDto,
   RefundDto,
   RescheduleDto,
+  WalkInDto,
 } from './dto/appointment.dto';
 import { HealthDoctor, HealthPatient } from '../common/health-roles.decorator';
 import {
@@ -143,6 +146,44 @@ export class DoctorAppointmentPaymentsController {
   @HttpCode(200)
   confirm(@CurrentDoctor() d: CurrentDoctorRef, @Param('code') code: string) {
     return this.appointments.confirmPayment(d.id, d.ownerUserId, code);
+  }
+
+  @Post('walk-in')
+  @HttpCode(201)
+  @ApiOperation({
+    summary:
+      '{ locationId (a clinic), startsAt? (a free slot today; default the one running now, else the next), patient: { name, phone?, gender?, age? }, reason? } — someone at the desk without a booking: checked in at once, paying at the clinic. No account, so nothing is sent to them. NO_FREE_SLOT when today is full.',
+  })
+  walkIn(@CurrentDoctor() d: CurrentDoctorRef, @Body() dto: WalkInDto) {
+    return this.appointments.addWalkIn(d.id, d.ownerUserId, dto);
+  }
+
+  @Post(':code/reschedule')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      '{ startsAt, locationId? (same kind), reason } — move a booked visit to another of your free times (GET /health/doctor/locations/:id/slots). The payment, shared reports and notes move with it; the patient is told why (health.appointment.moved).',
+  })
+  reschedule(
+    @CurrentDoctor() d: CurrentDoctorRef,
+    @Param('code') code: string,
+    @Body() dto: DoctorRescheduleDto,
+  ) {
+    return this.appointments.doctorReschedule(d.id, d.ownerUserId, code, dto);
+  }
+
+  @Post(':code/follow-up')
+  @HttpCode(201)
+  @ApiOperation({
+    summary:
+      '{ locationId, startsAt } — book the follow-up of a started or completed visit for the same person (followUpOfId). The patient is told.',
+  })
+  followUp(
+    @CurrentDoctor() d: CurrentDoctorRef,
+    @Param('code') code: string,
+    @Body() dto: FollowUpDto,
+  ) {
+    return this.appointments.bookFollowUp(d.id, d.ownerUserId, code, dto);
   }
 
   @Post(':code/payment/mark-paid')

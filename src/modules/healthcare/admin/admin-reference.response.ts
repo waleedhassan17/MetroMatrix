@@ -108,8 +108,12 @@ export class AdminAppointmentsListView {
   completedAt!: string | null;
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   cancelledAt!: string | null;
-  @ApiProperty({ type: String })
-  patientUserId!: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'null for a walk-in the doctor added at the clinic.',
+  })
+  patientUserId!: string | null;
   @ApiProperty({ type: () => AdminAppointmentsListViewDoctor })
   doctor!: AdminAppointmentsListViewDoctor;
   @ApiProperty({ type: Boolean })
@@ -238,8 +242,12 @@ export class AdminAppointmentsDetailView {
   completedAt!: string | null;
   @ApiProperty({ type: String, format: 'date-time', nullable: true })
   cancelledAt!: string | null;
-  @ApiProperty({ type: String })
-  patientUserId!: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'null for a walk-in the doctor added at the clinic.',
+  })
+  patientUserId!: string | null;
   @ApiProperty({ type: () => AdminAppointmentsDetailViewDoctor })
   doctor!: AdminAppointmentsDetailViewDoctor;
   @ApiProperty({ type: Boolean })
@@ -591,8 +599,12 @@ export class AdminAppointmentsCancelView {
   completedAt!: string | null;
   @ApiProperty({ type: String })
   cancelledAt!: string;
-  @ApiProperty({ type: String })
-  patientUserId!: string;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: 'null for a walk-in the doctor added at the clinic.',
+  })
+  patientUserId!: string | null;
   @ApiProperty({ type: () => AdminAppointmentsCancelViewDoctor })
   doctor!: AdminAppointmentsCancelViewDoctor;
   @ApiProperty({ type: Boolean })

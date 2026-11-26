@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
@@ -11,10 +12,13 @@ import {
   IsUUID,
   Length,
   MaxLength,
+  Max,
   Min,
   ValidateIf,
+  ValidateNested,
 } from 'class-validator';
 import { Trim } from '../../../../common/validation/transforms';
+import { IsPkPhone } from '../../../../common/validation/phone';
 import { PaginationQueryDto } from '../../../../common/pagination/pagination';
 import { PAYMENT_METHODS, PaymentMethod } from '../payment-status';
 import { APPOINTMENT_STATUSES, AppointmentStatus } from '../appointment-status';
@@ -161,4 +165,90 @@ export class CompleteDto {
   @IsOptional()
   @IsBoolean()
   paymentCollected?: boolean;
+}
+
+export class DoctorRescheduleDto {
+  @ApiProperty({
+    example: '2026-10-18T10:00:00.000+05:00',
+    description:
+      'One of your free slots (GET /health/doctor/locations/:id/slots).',
+  })
+  @IsISO8601({ strict: true })
+  startsAt!: string;
+
+  @ApiPropertyOptional({
+    description: 'Another location of the same kind; default the same one.',
+  })
+  @IsOptional()
+  @IsUUID()
+  locationId?: string;
+
+  @ApiProperty({ example: 'I have a surgery that morning.' })
+  @Trim()
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+}
+
+export class FollowUpDto {
+  @ApiProperty({
+    description: 'The location for the follow-up (clinic or video).',
+  })
+  @IsUUID()
+  locationId!: string;
+
+  @ApiProperty({ example: '2026-11-08T10:00:00.000+05:00' })
+  @IsISO8601({ strict: true })
+  startsAt!: string;
+}
+
+export class WalkInPersonDto {
+  @ApiProperty({ example: 'Bilal Ahmed' })
+  @Trim()
+  @IsString()
+  @Length(2, 120)
+  name!: string;
+
+  @ApiPropertyOptional({ example: '+923001234567' })
+  @IsOptional()
+  @IsPkPhone()
+  phone?: string;
+
+  @ApiPropertyOptional({ enum: ['male', 'female', 'other'] })
+  @IsOptional()
+  @IsIn(['male', 'female', 'other'])
+  gender?: 'male' | 'female' | 'other';
+
+  @ApiPropertyOptional({ minimum: 0, maximum: 120 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  @Max(120)
+  age?: number;
+}
+
+export class WalkInDto {
+  @ApiProperty({ description: 'One of your clinics.' })
+  @IsUUID()
+  locationId!: string;
+
+  @ApiPropertyOptional({
+    description:
+      'A free slot today; default the current one (or the next free today).',
+  })
+  @IsOptional()
+  @IsISO8601({ strict: true })
+  startsAt?: string;
+
+  @ApiProperty({ type: WalkInPersonDto })
+  @ValidateNested()
+  @Type(() => WalkInPersonDto)
+  patient!: WalkInPersonDto;
+
+  @ApiPropertyOptional({ example: 'Fever since yesterday' })
+  @IsOptional()
+  @Trim()
+  @IsString()
+  @MaxLength(300)
+  reason?: string;
 }

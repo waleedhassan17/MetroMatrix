@@ -70,6 +70,11 @@ export interface EngineInput {
   /** A break after each slot at this location (0 = back to back). */
   bufferMinutes?: number;
   ranges: WeeklyRange[];
+  /**
+   * Day-specific hours by local date (minutes since midnight): they replace
+   * that date's weekly hours; an empty list closes the day.
+   */
+  overrides?: Map<string, Array<{ start: number; end: number }>>;
   /** The doctor's active appointments at ANY location (callers may add time off here too). */
   blocked: Interval[];
   /** Time off, kept apart so a day it covers reads `time_off`. */
@@ -131,7 +136,9 @@ export function buildDays(input: EngineInput): DaySlots[] {
     const date = addDays(first, i);
     const weekday = weekdayOf(date);
     const beyond = localDayBounds(date, input.tz).start >= windowEnd;
-    const dayRanges = input.ranges.filter((x) => x.weekday === weekday);
+    const override = input.overrides?.get(date);
+    const dayRanges =
+      override ?? input.ranges.filter((x) => x.weekday === weekday);
     const slots: Slot[] = [];
     let total = 0;
     let off = 0;

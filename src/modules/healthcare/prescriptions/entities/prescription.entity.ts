@@ -42,8 +42,9 @@ export class Prescription extends BaseEntity {
   @JoinColumn({ name: 'doctor_id' })
   doctor?: Doctor;
 
-  @Column({ type: 'uuid', name: 'patient_user_id' })
-  patientUserId!: string;
+  /** The patient's account; null for a walk-in's prescription (printed or shared by the doctor). */
+  @Column({ type: 'uuid', name: 'patient_user_id', nullable: true })
+  patientUserId!: string | null;
 
   @ManyToOne(() => User)
   @JoinColumn({ name: 'patient_user_id' })
@@ -68,6 +69,14 @@ export class Prescription extends BaseEntity {
 
   @Column({ type: 'timestamptz', name: 'issued_at' })
   issuedAt!: Date;
+
+  /** When the patient was reminded that their follow-up is due (once). */
+  @Column({
+    type: 'timestamptz',
+    name: 'follow_up_reminded_at',
+    nullable: true,
+  })
+  followUpRemindedAt!: Date | null;
 }
 
 @Entity('prescription_medicines')

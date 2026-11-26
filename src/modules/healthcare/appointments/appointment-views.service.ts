@@ -172,6 +172,10 @@ export class AppointmentViewsService {
       cancelledBy: a.cancelledBy,
       cancelReason: a.cancelReason,
       rescheduledFromId: a.rescheduledFromId,
+      /** `app` (booked in the app) or `walk_in` (added at the clinic desk). */
+      source: a.source,
+      /** The visit this one follows up, when the doctor booked it as a follow-up. */
+      followUpOfId: a.followUpOfId,
       bookedAt: z(a.createdAt),
       checkedInAt: z(a.checkedInAt),
       startedAt: z(a.startedAt),

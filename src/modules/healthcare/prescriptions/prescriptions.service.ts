@@ -175,18 +175,20 @@ export class PrescriptionsService {
       targetId: id,
       details: { code },
     });
-    try {
-      await this.notifications.notify(patientUserId, {
-        type: 'health.prescription',
-        title: created
-          ? 'Your prescription is ready'
-          : 'Your prescription was updated',
-        body: `Open appointment ${code.toUpperCase()} to see it.`,
-        data: { prescriptionId: id, appointmentCode: code.toUpperCase() },
-      });
-    } catch (err) {
-      this.logger.warn(`notification failed: ${(err as Error).message}`);
-    }
+    // A walk-in has no account: the doctor prints or shares it.
+    if (patientUserId)
+      try {
+        await this.notifications.notify(patientUserId, {
+          type: 'health.prescription',
+          title: created
+            ? 'Your prescription is ready'
+            : 'Your prescription was updated',
+          body: `Open appointment ${code.toUpperCase()} to see it.`,
+          data: { prescriptionId: id, appointmentCode: code.toUpperCase() },
+        });
+      } catch (err) {
+        this.logger.warn(`notification failed: ${(err as Error).message}`);
+      }
     return (
       await this.views(
         [await this.dataSource.manager.findOneByOrFail(Prescription, { id })],

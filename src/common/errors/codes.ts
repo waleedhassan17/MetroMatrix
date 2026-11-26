@@ -94,6 +94,8 @@ export const ErrorCode = {
   LOCATION_HAS_BOOKINGS: 'LOCATION_HAS_BOOKINGS',
   CANCEL_CUTOFF_PASSED: 'CANCEL_CUTOFF_PASSED',
   RESCHEDULE_NOT_ALLOWED: 'RESCHEDULE_NOT_ALLOWED',
+  /** No free slot is left today at that clinic (a walk-in without a time). */
+  NO_FREE_SLOT: 'NO_FREE_SLOT',
   /** Outside the join window, or the appointment can't be joined. */
   VIDEO_NOT_JOINABLE: 'VIDEO_NOT_JOINABLE',
   /** A required prepayment hasn't been confirmed. */

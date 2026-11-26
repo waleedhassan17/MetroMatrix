@@ -80,10 +80,10 @@ export class DoctorInsightsService {
         ),
         this.dataSource.query(
           `WITH seen AS (
-           SELECT DISTINCT coalesce(a.family_member_id, a.patient_user_id) AS person
+           SELECT DISTINCT coalesce(a.family_member_id, a.patient_user_id, a.walk_in_patient_id) AS person
              FROM appointments a WHERE ${inRange} AND a.status = 'completed'
          ), first_visit AS (
-           SELECT coalesce(a.family_member_id, a.patient_user_id) AS person, min(a.starts_at) AS first_at
+           SELECT coalesce(a.family_member_id, a.patient_user_id, a.walk_in_patient_id) AS person, min(a.starts_at) AS first_at
              FROM appointments a WHERE a.doctor_id = $1 AND a.status = 'completed' GROUP BY 1
          )
          SELECT count(*) FILTER (WHERE f.first_at >= $2)::int AS new_patients,
