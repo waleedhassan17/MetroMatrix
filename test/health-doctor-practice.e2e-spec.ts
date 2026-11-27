@@ -259,6 +259,18 @@ describe('Healthcare: doctor practice rules (e2e)', () => {
       [d.doctorId],
     );
     expect(doctor.next_available_at).toBeNull();
+    // The card says so too, and where the clinic is.
+    const [me] = await sql(`SELECT full_name FROM doctors WHERE id = $1`, [
+      d.doctorId,
+    ]);
+    const cards = await expectOk(
+      await anon().get(
+        `/health/doctors?pageSize=50&q=${encodeURIComponent(me.full_name)}`,
+      ),
+    );
+    const card = cards.items.find((x: any) => x.id === d.doctorId);
+    expect(card).toMatchObject({ isAccepting: false });
+    expect(card).toHaveProperty('clinicArea');
 
     await expectOk(
       await d.api.patch('/health/doctor/profile', { isAccepting: true }),

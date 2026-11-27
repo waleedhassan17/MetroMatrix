@@ -239,7 +239,8 @@ export class DiscoveryService implements OnModuleInit {
     const rows = await this.dataSource.query(
       `SELECT * FROM (
          SELECT d.id, d.title, d.full_name, d.photo_url, d.gender, d.practicing_since, d.rating_avg, d.rating_count,
-                d.satisfaction_pct, d.avg_wait_minutes, d.pmdc_verified_at, d.is_top_booked,
+                d.satisfaction_pct, d.avg_wait_minutes, d.pmdc_verified_at, d.is_top_booked, d.is_accepting,
+                (SELECT l.area FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic' ORDER BY l.created_at, l.id LIMIT 1) AS clinic_area,
                 sp.id AS sp_id, sp.name AS sp_name, sp.name_ur AS sp_name_ur, sp.slug AS sp_slug,
                 (SELECT string_agg(q.degree, ', ' ORDER BY q.sort) FROM doctor_qualifications q WHERE q.doctor_id = d.id) AS qualifications,
                 EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'video') AS offers_video,
@@ -285,6 +286,10 @@ export class DiscoveryService implements OnModuleInit {
       avgWaitMinutes: r.avg_wait_minutes,
       pmdcVerified: !!r.pmdc_verified_at,
       isTopBooked: r.is_top_booked,
+      /** False while the doctor has paused new bookings (they still show; no times are offered). */
+      isAccepting: r.is_accepting ?? true,
+      /** The area of the doctor's first clinic ("Gulberg"), for the card's "where". */
+      clinicArea: r.clinic_area ?? null,
       minFee: r.min_fee,
       offersVideo: r.offers_video,
       offersClinic: r.offers_clinic,
@@ -446,7 +451,8 @@ export class DiscoveryService implements OnModuleInit {
     const params = new SqlParams();
     const rows = await this.dataSource.query(
       `SELECT d.id, d.title, d.full_name, d.photo_url, d.gender, d.practicing_since, d.rating_avg, d.rating_count,
-              d.satisfaction_pct, d.avg_wait_minutes, d.pmdc_verified_at, d.is_top_booked,
+              d.satisfaction_pct, d.avg_wait_minutes, d.pmdc_verified_at, d.is_top_booked, d.is_accepting,
+                (SELECT l.area FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic' ORDER BY l.created_at, l.id LIMIT 1) AS clinic_area,
               sp.id AS sp_id, sp.name AS sp_name, sp.name_ur AS sp_name_ur, sp.slug AS sp_slug,
               (SELECT string_agg(q.degree, ', ' ORDER BY q.sort) FROM doctor_qualifications q WHERE q.doctor_id = d.id) AS qualifications,
               EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'video') AS offers_video,
@@ -478,7 +484,8 @@ export class DiscoveryService implements OnModuleInit {
     const params = new SqlParams();
     const rows = await this.dataSource.query(
       `SELECT d.id, d.title, d.full_name, d.photo_url, d.gender, d.practicing_since, d.rating_avg, d.rating_count,
-              d.satisfaction_pct, d.avg_wait_minutes, d.pmdc_verified_at, d.is_top_booked,
+              d.satisfaction_pct, d.avg_wait_minutes, d.pmdc_verified_at, d.is_top_booked, d.is_accepting,
+                (SELECT l.area FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'clinic' ORDER BY l.created_at, l.id LIMIT 1) AS clinic_area,
               sp.id AS sp_id, sp.name AS sp_name, sp.name_ur AS sp_name_ur, sp.slug AS sp_slug,
               (SELECT string_agg(q.degree, ', ' ORDER BY q.sort) FROM doctor_qualifications q WHERE q.doctor_id = d.id) AS qualifications,
               EXISTS (SELECT 1 FROM practice_locations l WHERE l.doctor_id = d.id AND l.is_active AND l.kind = 'video') AS offers_video,

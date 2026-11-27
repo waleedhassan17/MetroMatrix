@@ -64,11 +64,15 @@ are Pakistan days (`Asia/Karachi`).
   "specialty": { "id": "a8d0…", "name": "Dermatologist", "nameUr": "ماہر امراض جلد", "slug": "dermatologist" },
   "qualifications": "MBBS, FCPS (Dermatology)", "yearsExperience": 15,
   "ratingAvg": 4.16, "ratingCount": 37, "satisfactionPct": 76, "avgWaitMinutes": 17,
-  "pmdcVerified": true, "isTopBooked": false, "minFee": 2000, "offersVideo": true, "offersClinic": true,
+  "pmdcVerified": true, "isTopBooked": false, "isAccepting": true, "clinicArea": "Model Town",
+  "minFee": 2000, "offersVideo": true, "offersClinic": true,
   "nextAvailable": { "at": "2026-10-16T18:15:00.000+05:00", "locationKind": "clinic", "label": "Available today, 6:15 PM" }
 }
 ```
 
+- `isAccepting` is `false` while the doctor has paused new bookings: the card still
+  shows, with no times. `clinicArea` is the area of their first active clinic (`null` for
+  a video-only doctor).
 - `satisfactionPct` is the share of visible reviews that recommend the doctor. It is
   `null` until there are 5 reviews.
 - `avgWaitMinutes` is **measured**, not self-reported:
