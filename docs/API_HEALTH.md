@@ -510,7 +510,7 @@ days, then erased by the nightly job.
 | POST | `/reviews/:id/reply` | `{ text }`. Public; replaces an earlier reply. |
 | GET | `/insights?range=7d\|30d\|90d` | See below. |
 
-**Insights** (`/insights`):
+**Insights** (`/insights`). A visit moved to another time (by the patient or the doctor) is not counted as cancelled: the new visit carries on.
 
 ```json
 {
@@ -663,6 +663,13 @@ times (so the wait and consult stats exist), and 0–40 reviews per doctor.
 All demo accounts use `SEED_DEMO_PASSWORD`. The seed never prints it.
 
 ---
+
+**The doctor app's practice tools** are on the first demo doctor (demo.dr01): a 5-minute
+break after each patient at their first clinic, video hours that share that clinic's
+evenings (booking either closes the other), the clinic closed on one day 9 days ahead (a
+day's own hours), and a completed walk-in, "Bilal Ahmed (demo)". Re-running the seed keeps
+them (the closed day moves to 9 days from the run).
+
 
 ## 10. Additions for the app (Chunk 3 P8)
 

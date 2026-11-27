@@ -49,6 +49,9 @@ export class DoctorInsightsService {
     const to = localDayBounds(lastDay, tz).end;
     const args = [doctorId, from, to, tz];
     const inRange = `a.doctor_id = $1 AND a.starts_at >= $2 AND a.starts_at < $3`;
+    // A visit moved to another time (by the patient or the doctor) isn't a cancellation:
+    // the new visit carries on.
+    const NOT_MOVED = `NOT (a.status = 'cancelled' AND a.cancel_reason IS NOT DISTINCT FROM 'rescheduled')`;
 
     const [perDay, [t], [times], [people], fees, ratingTrend] =
       await Promise.all([
@@ -65,7 +68,7 @@ export class DoctorInsightsService {
                 count(*) FILTER (WHERE a.status = 'cancelled' AND a.cancelled_by = 'doctor')::int AS cancelled_by_doctor,
                 count(*) FILTER (WHERE a.status = 'no_show')::int AS no_show,
                 count(*) FILTER (WHERE a.status IN ('booked', 'checked_in', 'in_consultation'))::int AS upcoming
-           FROM appointments a WHERE ${inRange}`,
+           FROM appointments a WHERE ${inRange} AND ${NOT_MOVED}`,
           args.slice(0, 3),
         ),
         this.dataSource.query(

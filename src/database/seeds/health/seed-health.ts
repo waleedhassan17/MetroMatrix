@@ -289,6 +289,12 @@ export async function seedHealth(
     );
   }
 
+  // ── The doctor app's practice tools, on the first demo doctor (idempotent) ──
+  await ds.transaction((m) => showcasePractice(m, result[0].doctorId, now));
+  log(
+    `[seed] practice showcase on ${result[0].key}: shared hours, a break, a closed day, a walk-in`,
+  );
+
   // ── Home banners (idempotent by title; re-pointed on every run) ──
   const bannerOwner: string = (
     await ds.query(
@@ -598,6 +604,108 @@ async function createDoctor(
   }
   await m.query(`SELECT doctor_search_refresh($1)`, [doctor.id]);
   return doctor.id;
+}
+
+/**
+ * The first demo doctor shows the doctor app's practice tools: a 5-minute
+ * break after each patient at their first clinic, video hours that share the
+ * clinic's evenings (booking either closes the other), the clinic closed on
+ * one day in 9 days' time, and a completed walk-in. Safe to run again.
+ */
+async function showcasePractice(m: EntityManager, doctorId: string, now: Date) {
+  const clinic = await m.findOne(PracticeLocation, {
+    where: { doctorId, kind: 'clinic', isActive: true },
+    order: { createdAt: 'ASC' },
+  });
+  if (!clinic) return;
+  await m.update(PracticeLocation, { id: clinic.id }, { bufferMinutes: 5 });
+  let video = await m.findOne(PracticeLocation, {
+    where: { doctorId, kind: 'video', isActive: true },
+  });
+  if (!video) {
+    video = await m.save(
+      m.create(PracticeLocation, {
+        doctorId,
+        kind: 'video',
+        name: 'Video consultation',
+        addressLine: null,
+        area: null,
+        city: null,
+        lat: null,
+        lng: null,
+        phone: null,
+        timezone: DEFAULT_TZ,
+        fee: Math.max(1000, clinic.fee - 500),
+        slotMinutes: 20,
+        instructions: 'Join from the app 10 minutes before your time.',
+        isActive: true,
+      }),
+    );
+  }
+  await m.delete(WeeklySchedule, { locationId: video.id });
+  await m.insert(
+    WeeklySchedule,
+    [1, 2, 3, 4, 5].flatMap((weekday) => [
+      { locationId: video!.id, weekday, startTime: '17:00', endTime: '21:00' },
+      { locationId: video!.id, weekday, startTime: '21:30', endTime: '23:00' },
+    ]),
+  );
+  // One closed day ahead (the demo's own; earlier runs' are replaced).
+  await m.query(
+    `DELETE FROM schedule_overrides WHERE location_id = $1 AND note LIKE 'Demo:%'`,
+    [clinic.id],
+  );
+  await m.query(
+    `INSERT INTO schedule_overrides (location_id, date, closed, ranges, note)
+     VALUES ($1, $2, true, '[]', 'Demo: clinic closed for a medical seminar')
+     ON CONFLICT (location_id, date) DO NOTHING`,
+    [clinic.id, addDays(todayIn(DEFAULT_TZ, now), 9)],
+  );
+  // A walk-in seen two days ago (no account: only the doctor sees them).
+  const [had] = await m.query(
+    `SELECT 1 FROM walk_in_patients WHERE doctor_id = $1 LIMIT 1`,
+    [doctorId],
+  );
+  if (had) return;
+  const [person] = await m.query(
+    `INSERT INTO walk_in_patients (doctor_id, name, phone, gender, age)
+     VALUES ($1, 'Bilal Ahmed (demo)', '+923001234567', 'male', 41) RETURNING id`,
+    [doctorId],
+  );
+  const date = addDays(todayIn(DEFAULT_TZ, now), -2);
+  const startsAt = wallTimeToInstant(
+    date,
+    parseTime('17:45'),
+    clinic.timezone,
+  )!;
+  const endsAt = new Date(startsAt.getTime() + clinic.slotMinutes * 60_000);
+  const startedAt = new Date(startsAt.getTime() + 4 * 60_000);
+  const completedAt = new Date(startedAt.getTime() + 9 * 60_000);
+  await m.query(
+    `INSERT INTO appointments (code, patient_user_id, walk_in_patient_id, source, patient_snapshot, doctor_id, location_id, kind,
+                               starts_at, ends_at, status, reason, symptoms, fee, payment_method, payment_status, paid_at,
+                               checked_in_at, started_at, completed_at, created_at, updated_at)
+     VALUES ($1, NULL, $2, 'walk_in', $3, $4, $5, 'clinic', $6, $7, 'completed', 'Fever since yesterday (demo walk-in)', '{}',
+             $8, 'pay_at_clinic', 'paid', $9, $6, $10, $9, $6, $9)`,
+    [
+      newCode('HC'),
+      person.id,
+      JSON.stringify({
+        name: 'Bilal Ahmed (demo)',
+        gender: 'male',
+        age: 41,
+        phone: '+923001234567',
+        relation: null,
+      }),
+      doctorId,
+      clinic.id,
+      startsAt,
+      endsAt,
+      clinic.fee,
+      completedAt,
+      startedAt,
+    ],
+  );
 }
 
 /** Past completed visits (measured wait/consult) and 0–40 reviews. Returns the review count. */
