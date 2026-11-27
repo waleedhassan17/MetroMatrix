@@ -815,4 +815,104 @@ describe('Healthcare: doctor practice rules (e2e)', () => {
     expect(await jobs.followUpReminders(noon)).toMatchObject({ reminded: 0 });
     expect(await notices(q.userId, 'health.followup.due')).toHaveLength(0);
   });
+  it('today says what still needs the doctor, and each count opens its list', async () => {
+    const { d, clinic } = await openDoctor();
+    const p = await shopper(t);
+    const times = tomorrowFrom9(await slotsOf(d, clinic.id));
+    const [feeVisit, transferVisit, refundVisit] = [
+      await book(p, d, clinic.id, times[0]),
+      await book(p, d, clinic.id, times[2]),
+      await book(p, d, clinic.id, times[4]),
+    ];
+    const attention = async () =>
+      (await expectOk(await d.api.get('/health/doctor/today'))).attention;
+    expect(await attention()).toEqual({
+      transfersToConfirm: 0,
+      feesToMark: 0,
+      prescriptionsToWrite: 0,
+      refundsDue: 0,
+      reviewsToReply: 0,
+    });
+    const profile = await expectOk(await d.api.get('/health/doctor/profile'));
+    expect(profile.features).toContain('attention');
+
+    // Seen today, the fee not taken: a fee to mark paid and a prescription to write.
+    await sql(
+      `UPDATE appointments SET starts_at = now() + interval '5 minutes',
+              ends_at = now() + interval '20 minutes' WHERE code = $1`,
+      [feeVisit.code],
+    );
+    for (const step of ['check-in', 'start'])
+      await expectOk(
+        await d.api.post(
+          `/health/doctor/appointments/${feeVisit.code}/${step}`,
+        ),
+      );
+    await expectOk(
+      await d.api.post(
+        `/health/doctor/appointments/${feeVisit.code}/complete`,
+        {
+          paymentCollected: false,
+        },
+      ),
+    );
+    // A transfer whose proof came in, and a refund still owed.
+    await sql(
+      `UPDATE appointments SET payment_method = 'transfer', payment_status = 'proof_submitted' WHERE code = $1`,
+      [transferVisit.code],
+    );
+    await sql(
+      `UPDATE appointments SET payment_status = 'refund_due' WHERE code = $1`,
+      [refundVisit.code],
+    );
+    // The patient reviews the visit; the doctor hasn't replied.
+    const review = await expectOk(
+      await p.api.post(`/health/appointments/${feeVisit.code}/review`, {
+        overall: 5,
+        diagnosis: 5,
+        recommend: true,
+      }),
+      201,
+    );
+    expect(await attention()).toEqual({
+      transfersToConfirm: 1,
+      feesToMark: 1,
+      prescriptionsToWrite: 1,
+      refundsDue: 1,
+      reviewsToReply: 1,
+    });
+
+    const listed = async (needs: string) =>
+      (
+        await expectOk(
+          await d.api.get(`/health/doctor/appointments?needs=${needs}`),
+        )
+      ).items.map((a: any) => a.code);
+    expect(await listed('transfer')).toEqual([transferVisit.code]);
+    expect(await listed('fee')).toEqual([feeVisit.code]);
+    expect(await listed('prescription')).toEqual([feeVisit.code]);
+    expect(await listed('refund')).toEqual([refundVisit.code]);
+    await d.api.get('/health/doctor/appointments?needs=everything').expect(400);
+
+    // Doing the thing clears its count.
+    await expectOk(
+      await d.api.post(
+        `/health/doctor/appointments/${feeVisit.code}/payment/mark-paid`,
+      ),
+    );
+    await expectOk(
+      await d.api.post(`/health/doctor/reviews/${review.id}/reply`, {
+        text: 'Thank you, glad it helped.',
+      }),
+    );
+    expect(await attention()).toMatchObject({
+      feesToMark: 0,
+      reviewsToReply: 0,
+    });
+    // Another doctor's lists never show these visits.
+    const other = await openDoctor();
+    expect(
+      (await expectOk(await other.d.api.get('/health/doctor/today'))).attention,
+    ).toMatchObject({ transfersToConfirm: 0, refundsDue: 0, feesToMark: 0 });
+  });
 });

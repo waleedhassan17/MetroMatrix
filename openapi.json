@@ -32700,6 +32700,21 @@
               ],
               "type": "string"
             }
+          },
+          {
+            "description": "What still needs the doctor, any date: transfer (proof to confirm), fee (a clinic fee to mark paid, last 30 days), prescription (completed in the last 24 hours, none written), refund (refund due). The counts are today's `attention`.",
+            "in": "query",
+            "name": "needs",
+            "required": false,
+            "schema": {
+              "enum": [
+                "transfer",
+                "fee",
+                "prescription",
+                "refund"
+              ],
+              "type": "string"
+            }
           }
         ],
         "responses": {

@@ -23,6 +23,15 @@ import { PaginationQueryDto } from '../../../../common/pagination/pagination';
 import { PAYMENT_METHODS, PaymentMethod } from '../payment-status';
 import { APPOINTMENT_STATUSES, AppointmentStatus } from '../appointment-status';
 
+/** The doctor's "Needs you" lists (GET /health/doctor/appointments?needs=…). */
+export const DOCTOR_NEEDS = [
+  'transfer',
+  'fee',
+  'prescription',
+  'refund',
+] as const;
+export type DoctorNeed = (typeof DOCTOR_NEEDS)[number];
+
 export class BookAppointmentDto {
   @ApiProperty()
   @IsUUID()
@@ -156,6 +165,15 @@ export class DoctorAppointmentQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsUUID()
   locationId?: string;
+
+  @ApiPropertyOptional({
+    enum: DOCTOR_NEEDS,
+    description:
+      "What still needs the doctor, any date: transfer (proof to confirm), fee (a clinic fee to mark paid, last 30 days), prescription (completed in the last 24 hours, none written), refund (refund due). The counts are today's `attention`.",
+  })
+  @IsOptional()
+  @IsIn(DOCTOR_NEEDS)
+  needs?: DoctorNeed;
 }
 
 export class CompleteDto {

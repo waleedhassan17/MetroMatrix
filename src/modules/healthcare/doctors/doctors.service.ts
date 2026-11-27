@@ -58,6 +58,7 @@ export const DOCTOR_FEATURES = [
   'follow_up_booking',
   'doctor_slots',
   'follow_up_reminder',
+  'attention',
 ] as const;
 
 /** The completeness keys in words, for the "you're hidden" notice. */

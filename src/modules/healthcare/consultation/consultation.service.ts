@@ -12,7 +12,10 @@ import {
   notFound,
   videoJoinState,
 } from '../appointments/appointment-views.service';
-import { DoctorAppointmentQueryDto } from '../appointments/dto/appointment.dto';
+import {
+  DoctorAppointmentQueryDto,
+  DoctorNeed,
+} from '../appointments/dto/appointment.dto';
 import { allowedMoves } from '../appointments/appointment-status';
 import { MedicalNote } from './entities/medical-note.entity';
 import { NotesDto, PatientQueryDto } from './dto/consultation.dto';
@@ -32,6 +35,24 @@ export const NO_SHOW_AFTER_MS = 15 * MIN;
 export const CHECK_IN_FROM_MS = 120 * MIN;
 const tooEarly = (a: { startsAt: Date }, now: Date) =>
   now.getTime() < a.startsAt.getTime() - CHECK_IN_FROM_MS;
+/**
+ * What still needs the doctor, as SQL over `appointments a` (any date): a
+ * transfer's proof to confirm, a clinic fee to mark paid (the last 30 days),
+ * a prescription to write (completed in the last 24 hours, the edit window),
+ * a refund to record. `now()` names the request's clock as a parameter, and
+ * is called only by the filters that read it (Postgres refuses a parameter
+ * nothing uses).
+ */
+const NEEDS_SQL: Record<DoctorNeed, (now: () => string) => string> = {
+  transfer: () =>
+    `a.payment_method = 'transfer' AND a.payment_status = 'proof_submitted' AND a.status <> 'cancelled'`,
+  fee: (now) =>
+    `a.payment_method = 'pay_at_clinic' AND a.payment_status = 'unpaid' AND a.status IN ('checked_in', 'in_consultation', 'completed') AND a.starts_at >= ${now()}::timestamptz - interval '30 days'`,
+  prescription: (now) =>
+    `a.status = 'completed' AND a.completed_at >= ${now()}::timestamptz - interval '24 hours' AND NOT EXISTS (SELECT 1 FROM prescriptions p WHERE p.appointment_id = a.id)`,
+  refund: () => `a.payment_status = 'refund_due'`,
+};
+
 const STATUS_RANK = `CASE a.status WHEN 'in_consultation' THEN 0 WHEN 'checked_in' THEN 1 WHEN 'booked' THEN 2 WHEN 'completed' THEN 3 ELSE 4 END`;
 
 /** The person an appointment is for: the family member, else the booking account, else the walk-in. */
@@ -197,7 +218,10 @@ export class ConsultationService {
       [doctorId, now],
     );
     const loaded = await this.load(rows.map((r) => r.id));
-    const queue = await this.doctorViews(doctorId, loaded, now);
+    const [queue, attention] = await Promise.all([
+      this.doctorViews(doctorId, loaded, now),
+      this.attention(doctorId, now),
+    ]);
     return {
       date: todayIn('Asia/Karachi', now),
       counts: {
@@ -207,9 +231,27 @@ export class ConsultationService {
           .length,
         remaining: queue.filter((q) => q.status === 'booked').length,
         done: queue.filter((q) => q.status === 'completed').length,
+        noShow: queue.filter((q) => q.status === 'no_show').length,
       },
+      attention,
       queue,
     };
+  }
+
+  /** The "Needs you" counts (any date), and the reviews still waiting for a reply. */
+  async attention(doctorId: string, now = new Date()) {
+    const count = (need: DoctorNeed) =>
+      `(SELECT count(*)::int FROM appointments a WHERE a.doctor_id = $1 AND ${NEEDS_SQL[need](() => '$2')})`;
+    const [row]: Array<Record<string, number>> = await this.dataSource.query(
+      `SELECT ${count('transfer')} AS "transfersToConfirm",
+              ${count('fee')} AS "feesToMark",
+              ${count('prescription')} AS "prescriptionsToWrite",
+              ${count('refund')} AS "refundsDue",
+              (SELECT count(*)::int FROM doctor_reviews r
+                WHERE r.doctor_id = $1 AND r.doctor_reply IS NULL AND r.hidden_at IS NULL) AS "reviewsToReply"`,
+      [doctorId, now],
+    );
+    return row;
   }
 
   async list(doctorId: string, q: DoctorAppointmentQueryDto) {
@@ -228,6 +270,8 @@ export class ConsultationService {
     if (q.to) where.push(`a.starts_at < ${params.add(new Date(q.to))}`);
     if (q.status) where.push(`a.status = ${params.add(q.status)}`);
     if (q.locationId) where.push(`a.location_id = ${params.add(q.locationId)}`);
+    if (q.needs)
+      where.push(`(${NEEDS_SQL[q.needs](() => params.add(new Date()))})`);
     const whereSql = where.join(' AND ');
     const [{ total }] = await this.dataSource.query(
       `SELECT count(*)::int AS total FROM appointments a WHERE ${whereSql}`,
